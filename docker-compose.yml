@@ -1,0 +1,82 @@
+# AI听觉康复助手 Docker Compose 配置
+# 启动命令: docker-compose up -d
+# 停止命令: docker-compose down
+# 查看日志: docker-compose logs -f [service_name]
+
+version: '3.8'
+
+services:
+  # 前端服务 - React + Vite
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"  # 映射到主机3000端口
+    depends_on:
+      backend:
+        condition: service_healthy  # 等待后端健康后再启动
+    restart: unless-stopped
+
+  # 后端服务 - FastAPI + SQLAlchemy
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"  # 映射到主机8000端口
+    env_file:
+      - ./backend/.env  # 从.env文件加载环境变量
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/cochlear_rehab
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy  # 等待数据库健康后再启动
+      redis:
+        condition: service_healthy  # 等待Redis健康后再启动
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  # PostgreSQL 数据库
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=cochlear_rehab  # 数据库名
+      - POSTGRES_USER=postgres      # 用户名
+      - POSTGRES_PASSWORD=postgres  # 密码（生产环境请修改）
+    volumes:
+      - postgres_data:/var/lib/postgresql/data  # 持久化数据
+    ports:
+      - "5432:5432"  # 映射到主机5432端口
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cochlear_rehab"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"  # 映射到主机6379端口
+    volumes:
+      - redis_data:/data  # 持久化数据
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+# 数据卷定义
+volumes:
+  postgres_data:  # PostgreSQL数据卷
+  redis_data:     # Redis数据卷

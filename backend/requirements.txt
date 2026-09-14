@@ -1,0 +1,34 @@
+# 依赖列表（与 pyproject.toml 保持同步）
+# 推荐使用: pip install -e ".[dev]"
+fastapi==0.110.0
+uvicorn[standard]==0.29.0
+sqlalchemy[asyncio]==2.0.29
+alembic==1.13.1
+asyncpg==0.29.0
+redis[hiredis]==5.0.3
+pydantic==2.6.4
+pydantic-settings==2.2.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+httpx==0.27.0
+loguru==0.7.2
+python-multipart==0.0.9
+
+# 任务队列 (ARQ)
+arq==0.26.0
+
+# AI SDK (阿里云百炼)
+dashscope==1.17.0
+
+# 科学计算 (IRT / 音素对齐)
+numpy==1.26.4
+scipy==1.12.0
+
+# 音频处理 (发音评分)
+librosa==0.10.2
+soundfile==0.12.1
+
+# 测试依赖
+pytest==8.1.0
+pytest-asyncio==0.23.0
+aiosqlite==0.20.0

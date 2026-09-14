@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─────────────────────────────────────
+   老年友好全局样式基线
+   ───────────────────────────────────── */
+
+:root {
+  font-size: 18px;           /* PRD 要求最小 18px */
+  line-height: 1.6;
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Noto Sans SC', 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f5f5f5;
+  color: #212121;
+}
+
+/* 触控目标最小尺寸 48px */
+button, a, input, select, textarea {
+  min-height: 48px;
+  min-width: 48px;
+}
+
+/* 链接加大点击区域 */
+a {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  text-decoration-skip-ink: auto;
+}
+
+/* 焦点可见性增强（无障碍） */
+:focus-visible {
+  outline: 3px solid #1565c0;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* 高对比度模式支持 */
+@media (prefers-contrast: high) {
+  :root {
+    --mui-palette-primary-main: #0d47a1;
+    --mui-palette-text-primary: #000000;
+    --mui-palette-background-default: #ffffff;
+  }
+
+  body {
+    background-color: #ffffff;
+  }
+}
+
+/* 减少动画（前庭功能敏感用户） */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* 选中文字高对比 */
+::selection {
+  background-color: #1565c0;
+  color: #ffffff;
+}

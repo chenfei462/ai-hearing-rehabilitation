@@ -1,0 +1,11 @@
+[
+  {
+    "id": "msg-1789396272091-t0v3oi",
+    "from": "team-lead",
+    "to": "@team",
+    "type": "broadcast",
+    "content": "团队已创建完成，4个成员正在并行工作：\n1. security-fix: 修复P1安全类问题（Token存储、python-jose替换、passlib替换）\n2. arch-fix: 修复P1架构类问题（API层绕过Service、ReportService拆分、DialogueService拆分）\n3. code-quality-fix: 修复P2架构和代码问题（题库复用、store合并、AI网关注入、重试逻辑统一）\n4. test-doc-fix: 修复P2测试和文档问题（测试重写、mock fixtures、文档更新）\n\n请各位成员专注于自己的任务，完成后发送总结消息。如果有依赖关系请通过消息沟通。",
+    "timestamp": "2026-09-14T14:31:12.091Z",
+    "read": true
+  }
+]

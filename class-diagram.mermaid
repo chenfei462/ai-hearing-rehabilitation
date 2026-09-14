@@ -1,0 +1,172 @@
+%% 核心数据模型与服务类图（AI 辅助人工耳蜗术后听觉康复助手 MVP）
+classDiagram
+    class User {
+        +int id
+        +str phone
+        +str role
+        +str nickname
+        +int birth_year
+        +dict cochlear_info
+        +dict consent_flags
+        +datetime created_at
+        +login(code) Token
+        +verify() bool
+    }
+
+    class UserAbility {
+        +int id
+        +int user_id
+        +str level
+        +float theta
+        +float se
+        +datetime updated_at
+        +update_theta(new_theta, se)
+    }
+
+    class ItemBank {
+        +int id
+        +str level
+        +str content_type
+        +str text
+        +str audio_url
+        +dict phonemes
+        +float difficulty_b
+        +dict tags
+        +bool is_active
+    }
+
+    class TrainingSession {
+        +int id
+        +int user_id
+        +str level
+        +datetime start_time
+        +datetime end_time
+        +int total_items
+        +int correct_items
+        +float accuracy
+        +str status
+        +finish() void
+    }
+
+    class TrainingItem {
+        +int id
+        +int session_id
+        +int item_id
+        +str user_answer
+        +bool is_correct
+        +int response_ms
+        +float ai_score
+    }
+
+    class DialogueSession {
+        +int id
+        +int user_id
+        +str scenario
+        +int turn_count
+        +str status
+        +datetime started_at
+        +add_turn(turn) void
+    }
+
+    class DialogueTurn {
+        +int id
+        +int session_id
+        +int turn_index
+        +str user_text
+        +str ai_text
+        +str user_audio_url
+        +str ai_audio_url
+        +int latency_ms
+    }
+
+    class PronunciationAttempt {
+        +int id
+        +int user_id
+        +str target_text
+        +dict target_phonemes
+        +dict asr_phonemes
+        +float accuracy
+        +float fluency
+        +float completeness
+        +float overall
+        +dict suggestions
+        +str audio_url
+    }
+
+    class IRTEngine {
+        +estimate_ability(responses, items) tuple
+        +select_next_item(theta, items) ItemBank
+        +decide_next_action(recent_accuracies) str
+        +probability(theta, b) float
+    }
+
+    class PronunciationScorer {
+        +align(target_phonemes, asr_phonemes) list
+        +score(alignment) dict
+        +suggestions(detail) list
+    }
+
+    class ASRGateway {
+        +recognize(audio_bytes, stream) ASRResult
+        +recognize_phonemes(audio_bytes) list
+    }
+
+    class TTSGateway {
+        +synthesize(text, voice) bytes
+        +synthesize_cached(text, voice) str
+    }
+
+    class LLMGateway {
+        +chat(session_id, user_text, scenario) str
+        +greeting(scenario) str
+    }
+
+    class TrainingService {
+        +start_session(user, level) TrainingSession
+        +next_item(session_id) ItemBank
+        +submit_answer(session_id, item_id, answer) dict
+        +finish_session(session_id) dict
+    }
+
+    class DialogueService {
+        +list_scenarios() list
+        +start_session(user, scenario) DialogueSession
+        +handle_turn(session_id, audio) DialogueTurn
+        +finish_session(session_id) dict
+    }
+
+    class PronunciationService {
+        +next_task(user) dict
+        +evaluate(user, audio, target_text) PronunciationAttempt
+    }
+
+    class AuthService {
+        +send_sms(phone) void
+        +login(phone, code) Token
+        +login_wx(wx_code) Token
+    }
+
+    class ReportService {
+        +summary(user, range) dict
+        +patients(therapist) list
+    }
+
+    User "1" --> "0..*" UserAbility : has
+    User "1" --> "0..*" TrainingSession : owns
+    User "1" --> "0..*" DialogueSession : owns
+    User "1" --> "0..*" PronunciationAttempt : makes
+    TrainingSession "1" --> "0..*" TrainingItem : contains
+    ItemBank "1" --> "0..*" TrainingItem : referenced_by
+    DialogueSession "1" --> "0..*" DialogueTurn : contains
+
+    TrainingService ..> IRTEngine : uses
+    TrainingService ..> ASRGateway : uses
+    TrainingService ..> TTSGateway : uses
+    DialogueService ..> ASRGateway : uses
+    DialogueService ..> LLMGateway : uses
+    DialogueService ..> TTSGateway : uses
+    PronunciationService ..> ASRGateway : uses
+    PronunciationService ..> PronunciationScorer : uses
+    PronunciationService ..> TTSGateway : uses
+    AuthService ..> User : manages
+    ReportService ..> TrainingSession : reads

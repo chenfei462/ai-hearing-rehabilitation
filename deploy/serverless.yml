@@ -1,0 +1,106 @@
+# ──────────────────────────────────────
+# 阿里云函数计算 FC Serverless 部署配置
+# ──────────────────────────────────────
+# 使用: s deploy
+
+edition: 3.0.0
+name: cochlear-rehab-assistant
+access: default  # 阿里云密钥别名
+
+vars:
+  region: cn-hangzhou
+  # 数据库和 Redis 通过环境变量注入
+
+resources:
+  # ─── 后端 API 函数 ───
+  backend:
+    component: fc
+    props:
+      region: ${vars.region}
+      functionName: cochlear-rehab-api
+      description: "AI 听觉康复助手后端 API"
+      runtime: custom-container
+      handler: not-used  # 容器运行时不需要 handler
+      timeout: 60
+      memorySize: 1024
+      cpu: 1
+      diskSize: 10240
+      instanceConcurrency: 100  # 单实例并发
+      instanceLifecycleConfig:
+        preFreeze:
+          handler: not-used
+          timeout: 60
+        preStop:
+          handler: not-used
+          timeout: 60
+
+      # 容器配置
+      customContainerConfig:
+        image: registry.cn-hangzhou.aliyuncs.com/cochlear-rehab/backend:latest
+        port: 8000
+        accelerationType: Default
+        instanceType: ecs.c7.large
+
+      # 环境变量
+      environmentVariables:
+        APP_NAME: "AI听觉康复助手"
+        APP_VERSION: "0.1.0"
+        DEBUG: "false"
+        # 以下值通过阿里云控制台或 s config 设置
+        DATABASE_URL: ${env.DATABASE_URL}
+        REDIS_URL: ${env.REDIS_URL}
+        SECRET_KEY: ${env.SECRET_KEY}
+        DASHSCOPE_API_KEY: ${env.DASHSCOPE_API_KEY}
+
+      # VPC 配置（访问 RDS 和 Redis）
+      vpcConfig:
+        vpcId: ${env.VPC_ID}
+        vswitchIds:
+          - ${env.VSWITCH_ID}
+        securityGroupId: ${env.SECURITY_GROUP_ID}
+
+      # 触发器 - HTTP
+      triggers:
+        - triggerName: http-trigger
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            disableURLInternet: false
+
+      # 自定义域名（可选）
+      # customDomains:
+      #   - domainName: auto
+      #     protocol: HTTPS
+      #     routeConfigs:
+      #       - path: /*
+      #         functionName: cochlear-rehab-api
+
+  # ─── 前端静态资源 (OSS) ───
+  frontend:
+    component: oss
+    props:
+      region: ${vars.region}
+      bucket: cochlear-rehab-web
+      acl: public-read
+      website:
+        index: index.html
+        error: index.html  # SPA 路由
+      cors:
+        - allowedOrigin: "*"
+          allowedMethod:
+            - GET
+            - HEAD
+          maxAgeSeconds: 3600
+
+  # ─── CDN 加速（可选） ───
+  # cdn:
+  #   component: cdn
+  #   props:
+  #     domain: your-domain.com
+  #     origin: cochlear-rehab-web.oss-cn-hangzhou.aliyuncs.com

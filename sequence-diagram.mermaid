@@ -1,0 +1,36 @@
+%% 核心调用时序汇总（AI 辅助人工耳蜗术后听觉康复助手 MVP）
+
+%% ========== 1. 听觉训练（含 IRT 自适应） ==========
+sequenceDiagram
+    participant U as 用户
+    participant FE as 前端
+    participant API as FastAPI 训练服务
+    participant IRT as IRT 引擎
+    participant DB as PostgreSQL
+    participant OSS as OSS/CDN
+
+    U->>FE: 选择级别 点击开始
+    FE->>API: POST /training/sessions {level}
+    API->>DB: 创建 session 读取 UserAbility(theta)
+    API->>IRT: 选首题(最大信息量)
+    IRT-->>API: item_id, difficulty_b
+    API->>DB: 记录 session 返回 first_item
+    API-->>FE: {session_id, first_item}
+    loop 每道题
+        FE->>OSS: 拉取题目音频
+        U->>FE: 听音 选择/复述答案
+        FE->>API: POST /sessions/{id}/answer {item_id, answer}
+        API->>API: 判定对错 计算 ai_score
+        API->>IRT: 更新能力估计(EAP theta)
+        IRT->>IRT: 连续3次>=80% 升级 / <60% 降级
+        IRT-->>API: theta, se, next_action
+        API->>DB: 写 training_items 更新 user_abilities
+        API-->>FE: {is_correct, next_action}
+        FE->>API: GET /sessions/{id}/next
+        API->>IRT: 下一题选题
+        API-->>FE: next_item
+    end
+    U->>FE: 结束训练
+    FE->>API: POST /sessions/{id}/finish
+    API->>DB: 汇总 accuracy 更新 session
+    API-->>FE: {accuracy, ability_after}

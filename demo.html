@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 听觉康复助手 - 天猫AI黑客松</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #06b6d4;
+            --accent: #f59e0b;
+            --success: #10b981;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            overflow-x: hidden;
+        }
+
+        /* 动态背景 */
+        .bg-animation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+        }
+
+        .bg-animation::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.1) 0%, transparent 50%);
+            animation: rotate 20s linear infinite;
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* 浮动粒子 */
+        .particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .particle {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: var(--primary);
+            border-radius: 50%;
+            opacity: 0.3;
+            animation: float 15s infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0) translateX(0); opacity: 0.3; }
+            25% { transform: translateY(-100px) translateX(50px); opacity: 0.6; }
+            50% { transform: translateY(-200px) translateX(-50px); opacity: 0.3; }
+            75% { transform: translateY(-100px) translateX(100px); opacity: 0.6; }
+        }
+
+        /* 导航栏 */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            padding: 1.5rem 5%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(20px);
+            background: rgba(15, 23, 42, 0.8);
+            z-index: 100;
+            border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .logo-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: color 0.3s;
+            font-weight: 500;
+        }
+
+        .nav-links a:hover {
+            color: var(--text);
+        }
+
+        /* Hero 区域 */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 120px 5% 80px;
+            position: relative;
+        }
+
+        .hero-content {
+            text-align: center;
+            max-width: 900px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 20px;
+            background: rgba(99, 102, 241, 0.2);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 100px;
+            font-size: 0.9rem;
+            color: var(--primary);
+            margin-bottom: 2rem;
+            animation: fadeInUp 1s ease;
+        }
+
+        .badge::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.5); }
+        }
+
+        h1 {
+            font-size: 4.5rem;
+            font-weight: 900;
+            line-height: 1.1;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, #fff 0%, #6366f1 50%, #06b6d4 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: fadeInUp 1s ease 0.2s backwards;
+        }
+
+        .hero-subtitle {
+            font-size: 1.3rem;
+            color: var(--text-muted);
+            max-width: 600px;
+            margin: 0 auto 3rem;
+            line-height: 1.8;
+            animation: fadeInUp 1s ease 0.4s backwards;
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            animation: fadeInUp 1s ease 0.6s backwards;
+        }
+
+        .btn {
+            padding: 16px 32px;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s;
+            cursor: pointer;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 30px rgba(99, 102, 241, 0.6);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* 波形动画 */
+        .wave-container {
+            margin-top: 4rem;
+            animation: fadeInUp 1s ease 0.8s backwards;
+        }
+
+        .wave {
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            gap: 4px;
+            height: 80px;
+        }
+
+        .wave-bar {
+            width: 6px;
+            background: linear-gradient(to top, var(--primary), var(--secondary));
+            border-radius: 3px;
+            animation: wave 1.5s ease-in-out infinite;
+        }
+
+        @keyframes wave {
+            0%, 100% { height: 20px; }
+            50% { height: 60px; }
+        }
+
+        /* 统计数据 */
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 4rem;
+            margin-top: 4rem;
+            animation: fadeInUp 1s ease 1s backwards;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 3rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, var(--accent), #f97316);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-label {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            margin-top: 0.5rem;
+        }
+
+        /* 功能模块 */
+        .section {
+            padding: 100px 5%;
+            position: relative;
+            z-index: 1;
+        }
+
+        .section-title {
+            text-align: center;
+            margin-bottom: 4rem;
+        }
+
+        .section-title h2 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+
+        .section-title p {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border-radius: 24px;
+            padding: 2.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.4s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            transform: scaleX(0);
+            transition: transform 0.4s;
+        }
+
+        .feature-card:hover::before {
+            transform: scaleX(1);
+        }
+
+        .feature-card:hover {
+            transform: translateY(-8px);
+            border-color: rgba(99, 102, 241, 0.3);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .feature-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .feature-card:nth-child(1) .feature-icon { background: linear-gradient(135deg, #6366f1, #818cf8); }
+        .feature-card:nth-child(2) .feature-icon { background: linear-gradient(135deg, #06b6d4, #22d3ee); }
+        .feature-card:nth-child(3) .feature-icon { background: linear-gradient(135deg, #10b981, #34d399); }
+        .feature-card:nth-child(4) .feature-icon { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
+
+        .feature-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .feature-card p {
+            color: var(--text-muted);
+            line-height: 1.8;
+        }
+
+        .feature-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 1.5rem;
+        }
+
+        .tag {
+            padding: 6px 14px;
+            background: rgba(99, 102, 241, 0.15);
+            border-radius: 100px;
+            font-size: 0.85rem;
+            color: var(--primary);
+        }
+
+        /* 技术栈 */
+        .tech-stack {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .tech-item {
+            background: var(--bg-card);
+            padding: 1.5rem 2rem;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: all 0.3s;
+        }
+
+        .tech-item:hover {
+            border-color: var(--primary);
+            transform: translateY(-4px);
+        }
+
+        .tech-logo {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .tech-info h4 {
+            font-size: 1rem;
+            margin-bottom: 4px;
+        }
+
+        .tech-info p {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        /* 演示区域 */
+        .demo-section {
+            padding: 100px 5%;
+            background: linear-gradient(180deg, var(--bg-dark) 0%, #1e1b4b 100%);
+        }
+
+        .demo-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4rem;
+            align-items: center;
+        }
+
+        .demo-phone {
+            background: #000;
+            border-radius: 40px;
+            padding: 12px;
+            box-shadow: 0 40px 80px rgba(0, 0, 0, 0.5);
+            position: relative;
+        }
+
+        .phone-screen {
+            background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+            border-radius: 30px;
+            padding: 2rem;
+            min-height: 500px;
+        }
+
+        .phone-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .phone-time {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .phone-notch {
+            width: 120px;
+            height: 30px;
+            background: #000;
+            border-radius: 0 0 20px 20px;
+        }
+
+        .app-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .app-card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .app-card-desc {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            margin-top: 1rem;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            border-radius: 4px;
+            animation: progress 2s ease-in-out infinite;
+        }
+
+        @keyframes progress {
+            0% { width: 30%; }
+            50% { width: 70%; }
+            100% { width: 30%; }
+        }
+
+        .demo-text h2 {
+            font-size: 2.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .demo-text p {
+            color: var(--text-muted);
+            line-height: 1.8;
+            margin-bottom: 2rem;
+        }
+
+        .demo-features {
+            list-style: none;
+        }
+
+        .demo-features li {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 1rem;
+            font-size: 1.1rem;
+        }
+
+        .demo-features li::before {
+            content: '✓';
+            width: 24px;
+            height: 24px;
+            background: var(--success);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            flex-shrink: 0;
+        }
+
+        /* CTA */
+        .cta {
+            text-align: center;
+            padding: 100px 5%;
+            position: relative;
+            z-index: 1;
+        }
+
+        .cta h2 {
+            font-size: 3rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .cta p {
+            color: var(--text-muted);
+            font-size: 1.2rem;
+            margin-bottom: 3rem;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* 页脚 */
+        footer {
+            padding: 3rem 5%;
+            text-align: center;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-muted);
+        }
+
+        /* 动画 */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .fade-in {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.8s ease;
+        }
+
+        .fade-in.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            h1 { font-size: 2.5rem; }
+            .features-grid { grid-template-columns: 1fr; }
+            .demo-container { grid-template-columns: 1fr; }
+            .stats { flex-direction: column; gap: 2rem; }
+            .nav-links { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-animation"></div>
+    
+    <div class="particles" id="particles"></div>
+
+    <nav>
+        <div class="logo">
+            <div class="logo-icon">🎧</div>
+            <span>AI 听觉康复助手</span>
+        </div>
+        <ul class="nav-links">
+            <li><a href="#features">功能</a></li>
+            <li><a href="#tech">技术栈</a></li>
+            <li><a href="#demo">演示</a></li>
+            <li><a href="#contact">联系我们</a></li>
+        </ul>
+    </nav>
+
+    <section class="hero">
+        <div class="hero-content">
+            <div class="badge">天猫 AI 黑客松参赛作品</div>
+            <h1>让声音重获新生</h1>
+            <p class="hero-subtitle">
+                基于 IRT 自适应算法与 AI 语音技术，为人工耳蜗术后患者打造个性化的听觉康复训练方案
+            </p>
+            <div class="hero-buttons">
+                <a href="#demo" class="btn btn-primary">🎯 体验演示</a>
+                <a href="#features" class="btn btn-secondary">📖 了解更多</a>
+            </div>
+            <div class="wave-container">
+                <div class="wave" id="wave">
+                    <!-- JS 生成波形条 -->
+                </div>
+            </div>
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-number" id="stat1">85%</div>
+                    <div class="stat-label">语音识别准确率</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="stat2">&lt;3s</div>
+                    <div class="stat-label">对话响应延迟</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="stat3">4级</div>
+                    <div class="stat-label">自适应训练难度</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" id="features">
+        <div class="section-title">
+            <h2>核心功能模块</h2>
+            <p>四大功能模块，全方位助力听觉康复</p>
+        </div>
+        <div class="features-grid">
+            <div class="feature-card fade-in">
+                <div class="feature-icon">🎯</div>
+                <h3>听觉训练</h3>
+                <p>基于 IRT 项目反应理论的自适应训练系统，根据用户表现实时调整难度，实现精准康复</p>
+                <div class="feature-tags">
+                    <span class="tag">音节训练</span>
+                    <span class="tag">词语训练</span>
+                    <span class="tag">语句训练</span>
+                    <span class="tag">噪声环境</span>
+                </div>
+            </div>
+            <div class="feature-card fade-in">
+                <div class="feature-icon">💬</div>
+                <h3>对话陪练</h3>
+                <p>AI 驱动的场景对话系统，模拟真实生活场景，帮助用户练习日常交流技能</p>
+                <div class="feature-tags">
+                    <span class="tag">餐厅点餐</span>
+                    <span class="tag">问路导航</span>
+                    <span class="tag">电话交流</span>
+                </div>
+            </div>
+            <div class="feature-card fade-in">
+                <div class="feature-icon">🎤</div>
+                <h3>发音反馈</h3>
+                <p>音素级发音评估，DTW 动态对齐算法精准定位发音问题，提供个性化纠正建议</p>
+                <div class="feature-tags">
+                    <span class="tag">实时评分</span>
+                    <span class="tag">音素对齐</span>
+                    <span class="tag">波形对比</span>
+                </div>
+            </div>
+            <div class="feature-card fade-in">
+                <div class="feature-icon">📊</div>
+                <h3>训练报告</h3>
+                <p>全面的数据分析与可视化，追踪训练进度，为听力师提供远程管理依据</p>
+                <div class="feature-tags">
+                    <span class="tag">趋势分析</span>
+                    <span class="tag">能力评估</span>
+                    <span class="tag">依从率</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" id="tech" style="background: rgba(99, 102, 241, 0.05);">
+        <div class="section-title">
+            <h2>技术栈</h2>
+            <p>现代化技术架构，稳定高效</p>
+        </div>
+        <div class="tech-stack">
+            <div class="tech-item fade-in">
+                <div class="tech-logo" style="background: #61dafb;">⚛️</div>
+                <div class="tech-info">
+                    <h4>React 18</h4>
+                    <p>前端框架</p>
+                </div>
+            </div>
+            <div class="tech-item fade-in">
+                <div class="tech-logo" style="background: #3178c6;">📘</div>
+                <div class="tech-info">
+                    <h4>TypeScript</h4>
+                    <p>类型安全</p>
+                </div>
+            </div>
+            <div class="tech-item fade-in">
+                <div class="tech-logo" style="background: #06b6d4;">⚡</div>
+                <div class="tech-info">
+                    <h4>FastAPI</h4>
+                    <p>异步后端</p>
+                </div>
+            </div>
+            <div class="tech-item fade-in">
+                <div class="tech-logo" style="background: #336791;">🐘</div>
+                <div class="tech-info">
+                    <h4>PostgreSQL</h4>
+                    <p>数据存储</p>
+                </div>
+            </div>
+            <div class="tech-item fade-in">
+                <div class="tech-logo" style="background: #ff6b6b;">🔴</div>
+                <div class="tech-info">
+                    <h4>Redis</h4>
+                    <p>缓存队列</p>
+                </div>
+            </div>
+            <div class="tech-item fade-in">
+                <div class="tech-logo" style="background: #ff9a00;">🤖</div>
+                <div class="tech-info">
+                    <h4>阿里云百炼</h4>
+                    <p>AI 能力</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="demo-section" id="demo">
+        <div class="demo-container">
+            <div class="demo-phone fade-in">
+                <div class="phone-screen">
+                    <div class="phone-header">
+                        <span class="phone-time">9:41</span>
+                        <div class="phone-notch"></div>
+                        <span class="phone-time">100%</span>
+                    </div>
+                    <div class="app-card">
+                        <div class="app-card-title">👋 欢迎回来，张阿姨</div>
+                        <div class="app-card-desc">今天是您康复训练的第 28 天</div>
+                    </div>
+                    <div class="app-card">
+                        <div class="app-card-title">🎯 今日训练目标</div>
+                        <div class="app-card-desc">完成 3 轮语句训练</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill"></div>
+                        </div>
+                    </div>
+                    <div class="app-card">
+                        <div class="app-card-title">📈 本周进度</div>
+                        <div class="app-card-desc">正确率: 78% ↑</div>
+                    </div>
+                </div>
+            </div>
+            <div class="demo-text fade-in">
+                <h2>为老年用户<br>量身定制</h2>
+                <p>
+                    我们深知老年用户的特殊需求，从界面设计到交互体验，每一处细节都经过精心考量
+                </p>
+                <ul class="demo-features">
+                    <li>大字体设计，最小 18px</li>
+                    <li>触控目标 ≥ 48px，易于点击</li>
+                    <li>语音引导，操作更简单</li>
+                    <li>高对比度模式，清晰可见</li>
+                    <li>简洁流程，减少认知负担</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <section class="cta">
+        <h2 class="fade-in">准备好开始了吗？</h2>
+        <p class="fade-in">加入我们，让每一位听障患者都能享受到高质量的康复训练</p>
+        <div class="hero-buttons fade-in">
+            <a href="#" class="btn btn-primary">🚀 立即体验</a>
+            <a href="#" class="btn btn-secondary">📧 联系我们</a>
+        </div>
+    </section>
+
+    <footer>
+        <p>© 2025 AI 听觉康复助手 - 天猫 AI 黑客松参赛作品</p>
+        <p style="margin-top: 0.5rem; font-size: 0.9rem;">技术栈: React + FastAPI + PostgreSQL + 阿里云百炼</p>
+    </footer>
+
+    <script>
+        // 生成波形条
+        const waveContainer = document.getElementById('wave');
+        for (let i = 0; i < 30; i++) {
+            const bar = document.createElement('div');
+            bar.className = 'wave-bar';
+            bar.style.animationDelay = `${i * 0.1}s`;
+            waveContainer.appendChild(bar);
+        }
+
+        // 生成粒子
+        const particlesContainer = document.getElementById('particles');
+        for (let i = 0; i < 30; i++) {
+            const particle = document.createElement('div');
+            particle.className = 'particle';
+            particle.style.left = `${Math.random() * 100}%`;
+            particle.style.top = `${Math.random() * 100}%`;
+            particle.style.animationDelay = `${Math.random() * 15}s`;
+            particle.style.animationDuration = `${15 + Math.random() * 10}s`;
+            particlesContainer.appendChild(particle);
+        }
+
+        // 滚动动画
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, { threshold: 0.1 });
+
+        document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+
+        // 平滑滚动
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                document.querySelector(this.getAttribute('href')).scrollIntoView({
+                    behavior: 'smooth'
+                });
+            });
+        });
+    </script>
+</body>
+</html>
