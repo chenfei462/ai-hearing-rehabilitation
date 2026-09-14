@@ -41,7 +41,7 @@ class TestAuthAPI:
     async def test_get_me_with_token(self, client: AsyncClient, auth_token: str):
         response = await client.get(
             "/api/auth/me",
-            headers={"Authorization": f"Bearer {auth_token}"},
+            cookies={"access_token": auth_token},
         )
         assert response.status_code == 200
         data = response.json()
@@ -53,11 +53,11 @@ class TestTrainingAPI:
     """训练 API 测试"""
 
     async def test_start_session(self, client: AsyncClient, auth_token: str):
-        headers = {"Authorization": f"Bearer {auth_token}"}
+        cookies = {"access_token": auth_token}
         response = await client.post(
             "/api/training/sessions",
             params={"level": "syllable"},
-            headers=headers,
+            cookies=cookies,
         )
         assert response.status_code == 200
         data = response.json()
@@ -65,12 +65,12 @@ class TestTrainingAPI:
         assert "session_id" in data["data"]
 
     async def test_submit_answer(self, client: AsyncClient, auth_token: str):
-        headers = {"Authorization": f"Bearer {auth_token}"}
+        cookies = {"access_token": auth_token}
         # 先开始会话
         response = await client.post(
             "/api/training/sessions",
             params={"level": "syllable"},
-            headers=headers,
+            cookies=cookies,
         )
         session_id = response.json()["data"]["session_id"]
 
@@ -78,22 +78,22 @@ class TestTrainingAPI:
         response = await client.post(
             f"/api/training/sessions/{session_id}/answer",
             params={"item_id": 1, "answer": "测试"},
-            headers=headers,
+            cookies=cookies,
         )
         assert response.status_code == 200
 
     async def test_finish_session(self, client: AsyncClient, auth_token: str):
-        headers = {"Authorization": f"Bearer {auth_token}"}
+        cookies = {"access_token": auth_token}
         response = await client.post(
             "/api/training/sessions",
             params={"level": "syllable"},
-            headers=headers,
+            cookies=cookies,
         )
         session_id = response.json()["data"]["session_id"]
 
         response = await client.post(
             f"/api/training/sessions/{session_id}/finish",
-            headers=headers,
+            cookies=cookies,
         )
         assert response.status_code == 200
         data = response.json()
@@ -112,11 +112,11 @@ class TestDialogueAPI:
         assert len(data["data"]) >= 3
 
     async def test_start_dialogue(self, client: AsyncClient, auth_token: str):
-        headers = {"Authorization": f"Bearer {auth_token}"}
+        cookies = {"access_token": auth_token}
         response = await client.post(
             "/api/dialogue/sessions",
             params={"scenario": "restaurant"},
-            headers=headers,
+            cookies=cookies,
         )
         assert response.status_code == 200
         data = response.json()
@@ -129,8 +129,8 @@ class TestPronunciationAPI:
     """发音 API 测试"""
 
     async def test_get_next_task(self, client: AsyncClient, auth_token: str):
-        headers = {"Authorization": f"Bearer {auth_token}"}
-        response = await client.get("/api/pronunciation/next", headers=headers)
+        cookies = {"access_token": auth_token}
+        response = await client.get("/api/pronunciation/next", cookies=cookies)
         assert response.status_code == 200
         data = response.json()
         assert "text" in data["data"]
@@ -142,11 +142,11 @@ class TestReportAPI:
     """报告 API 测试"""
 
     async def test_get_summary(self, client: AsyncClient, auth_token: str):
-        headers = {"Authorization": f"Bearer {auth_token}"}
+        cookies = {"access_token": auth_token}
         response = await client.get(
             "/api/report/summary",
             params={"days": 30},
-            headers=headers,
+            cookies=cookies,
         )
         assert response.status_code == 200
         data = response.json()
@@ -166,13 +166,13 @@ class TestUserFlow:
             json={"phone": "13900139000", "code": "1234"},
         )
         token = login_resp.json()["data"]["token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        cookies = {"access_token": token}
 
         # 2. 开始训练
         session_resp = await client.post(
             "/api/training/sessions",
             params={"level": "syllable"},
-            headers=headers,
+            cookies=cookies,
         )
         session_data = session_resp.json()["data"]
         session_id = session_data["session_id"]
@@ -180,7 +180,7 @@ class TestUserFlow:
         # 3. 获取下一题
         next_resp = await client.get(
             f"/api/training/sessions/{session_id}/next",
-            headers=headers,
+            cookies=cookies,
         )
         assert next_resp.status_code == 200
 
@@ -188,14 +188,14 @@ class TestUserFlow:
         answer_resp = await client.post(
             f"/api/training/sessions/{session_id}/answer",
             params={"item_id": 1, "answer": "测试答案"},
-            headers=headers,
+            cookies=cookies,
         )
         assert answer_resp.status_code == 200
 
         # 5. 结束训练
         finish_resp = await client.post(
             f"/api/training/sessions/{session_id}/finish",
-            headers=headers,
+            cookies=cookies,
         )
         assert finish_resp.status_code == 200
         finish_data = finish_resp.json()["data"]
@@ -209,7 +209,7 @@ class TestUserFlow:
             json={"phone": "13900139001", "code": "1234"},
         )
         token = login_resp.json()["data"]["token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        cookies = {"access_token": token}
 
         # 2. 查看场景列表
         scenarios_resp = await client.get("/api/dialogue/scenarios")
@@ -220,7 +220,7 @@ class TestUserFlow:
         session_resp = await client.post(
             "/api/dialogue/sessions",
             params={"scenario": "restaurant"},
-            headers=headers,
+            cookies=cookies,
         )
         session_data = session_resp.json()["data"]
         assert session_data["greeting"] != ""
@@ -233,14 +233,16 @@ class TestUserFlow:
             json={"phone": "13900139002", "code": "1234"},
         )
         token = login_resp.json()["data"]["token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        cookies = {"access_token": token}
 
         # 2. 查看报告（即使没有训练数据也应该正常返回）
         report_resp = await client.get(
             "/api/report/summary",
             params={"days": 7},
-            headers=headers,
+            cookies=cookies,
         )
         assert report_resp.status_code == 200
         data = report_resp.json()["data"]
         assert "total_sessions" in data
+
+

@@ -118,3 +118,68 @@ async def therapist_token(test_engine) -> str:
 
     await _ensure_user(test_engine, 2, "13900139000", "therapist", "测试听力师")
     return create_access_token(data={"sub": "2", "role": "therapist"})
+
+
+import sys
+from unittest.mock import AsyncMock, MagicMock
+
+# 模拟 Redis 模块
+mock_redis_module = MagicMock()
+mock_redis_client = AsyncMock()
+mock_redis_client.ping.return_value = True
+mock_redis_client.get.return_value = None
+mock_redis_client.set.return_value = True
+mock_redis_client.delete.return_value = True
+mock_redis_client.setex.return_value = True
+mock_redis_module.from_url.return_value = mock_redis_client
+mock_redis_module.Redis = MagicMock()
+
+sys.modules['redis'] = mock_redis_module
+sys.modules['redis.asyncio'] = mock_redis_module
+
+
+import sys
+from unittest.mock import AsyncMock, MagicMock
+
+# 创建模拟的Redis客户端
+mock_redis_client = AsyncMock()
+mock_redis_client.ping.return_value = True
+mock_redis_client.get.return_value = None
+mock_redis_client.set.return_value = True
+mock_redis_client.delete.return_value = True
+mock_redis_client.setex.return_value = True
+
+# 创建模拟的Redis模块
+mock_redis_module = MagicMock()
+mock_redis_module.from_url.return_value = mock_redis_client
+mock_redis_module.Redis = MagicMock()
+
+# 注入到sys.modules
+sys.modules['redis'] = mock_redis_module
+sys.modules['redis.asyncio'] = mock_redis_module
+
+# Redis 模拟（用于测试环境没有 Redis 的情况）
+import sys
+from unittest.mock import AsyncMock, MagicMock
+
+# 创建模拟的Redis客户端
+mock_redis_client = AsyncMock()
+mock_redis_client.ping.return_value = True
+mock_redis_client.get.return_value = None
+mock_redis_client.set.return_value = True
+mock_redis_client.delete.return_value = True
+mock_redis_client.setex.return_value = True
+
+# 创建模拟的Redis模块
+mock_redis_module = MagicMock()
+mock_redis_module.from_url.return_value = mock_redis_client
+mock_redis_module.Redis = MagicMock()
+
+# 注入到sys.modules
+sys.modules['redis'] = mock_redis_module
+sys.modules['redis.asyncio'] = mock_redis_module
+
+# 重写get_redis函数
+import app.core.redis
+app.core.redis.get_redis = AsyncMock(return_value=mock_redis_client)
+app.core.redis.redis_client = mock_redis_client
