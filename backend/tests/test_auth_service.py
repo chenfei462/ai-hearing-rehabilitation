@@ -68,12 +68,15 @@ class TestVerifySms:
     """测试 verify_sms 方法"""
 
     @pytest.mark.asyncio
-    async def test_verify_sms_success(self, auth_service):
-        """测试验证码验证成功"""
+    async def test_verify_sms_success_with_string(self, auth_service):
+        """测试验证码验证成功 (Redis decode_responses=True 模式)
+
+        Redis 配置 decode_responses=True 时，get() 返回字符串而非字节。
+        """
         with patch('app.services.auth_service.get_redis') as mock_redis:
             mock_redis_client = AsyncMock()
             mock_redis.return_value = mock_redis_client
-            mock_redis_client.get.return_value = b'1234'
+            mock_redis_client.get.return_value = '1234'
             mock_redis_client.delete = AsyncMock()
 
             result = await auth_service.verify_sms('13800138000', '1234')
@@ -87,7 +90,7 @@ class TestVerifySms:
         with patch('app.services.auth_service.get_redis') as mock_redis:
             mock_redis_client = AsyncMock()
             mock_redis.return_value = mock_redis_client
-            mock_redis_client.get.return_value = b'1234'
+            mock_redis_client.get.return_value = '1234'
 
             result = await auth_service.verify_sms('13800138000', '9999')
 

@@ -44,7 +44,7 @@ class AuthService:
         try:
             redis = await get_redis()
             stored = await redis.get(f"sms:{phone}")
-            if stored and stored.decode() == code:
+            if stored and stored == code:
                 await redis.delete(f"sms:{phone}")
                 return True
         except Exception as e:
