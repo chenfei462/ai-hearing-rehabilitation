@@ -74,6 +74,10 @@ async def handle_turn(
 
     redis = await get_redis()
     service = DialogueService(db, redis_client=redis)
+    # Add ownership check
+    session = await service.get_session(session_id)
+    if not session or session.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail={"code": 40301, "message": "无权访问该对话session"})
     try:
         result = await service.handle_turn(session_id, audio_bytes)
         return success_response(data=result)
@@ -93,6 +97,10 @@ async def finish_session(
     """结束对话会话，获取对话小结"""
     redis = await get_redis()
     service = DialogueService(db, redis_client=redis)
+    # Add ownership check
+    session = await service.get_session(session_id)
+    if not session or session.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail={"code": 40301, "message": "无权访问该对话session"})
     try:
         result = await service.finish_session(session_id)
         return success_response(data=result)

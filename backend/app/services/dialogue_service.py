@@ -98,6 +98,15 @@ class DialogueService:
             "max_turns": MAX_TURNS,
         }
 
+    async def get_session(self, session_id: int) -> Optional[DialogueSession]:
+        """
+        获取会话详情（用于所有权检查）
+        """
+        result = await self.db.execute(
+            select(DialogueSession).where(DialogueSession.id == session_id)
+        )
+        return result.scalar_one_or_none()
+
     async def handle_turn(self, session_id: int, audio_bytes: bytes) -> dict:
         """
         处理一轮对话：ASR → LLM → TTS
