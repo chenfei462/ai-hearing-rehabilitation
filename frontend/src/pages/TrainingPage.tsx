@@ -237,7 +237,7 @@ export default function TrainingPage() {
     setFeedback(null);
     setProgress(0);
     setTotalAnswered(0);
-    recorder.clearRecording();
+    recorder.resetRecording();
   };
 
   // 渲染级别选择界面
@@ -393,20 +393,20 @@ export default function TrainingPage() {
                   或者使用语音回答
                 </Typography>
                 <IconButton
-                  onClick={recorder.isRecording ? stopRecordingAndSubmit : startRecording}
+                  onClick={recorder.status === 'recording' ? stopRecordingAndSubmit : startRecording}
                   sx={{
                     width: 64,
                     height: 64,
-                    bgcolor: recorder.isRecording ? 'error.main' : 'secondary.main',
+                    bgcolor: recorder.status === 'recording' ? 'error.main' : 'secondary.main',
                     color: 'white',
                     '&:hover': {
-                      bgcolor: recorder.isRecording ? 'error.dark' : 'secondary.dark',
+                      bgcolor: recorder.status === 'recording' ? 'error.dark' : 'secondary.dark',
                     },
                   }}
                 >
-                  {recorder.isRecording ? <MicOff sx={{ fontSize: 32 }} /> : <Mic sx={{ fontSize: 32 }} />}
+                  {recorder.status === 'recording' ? <MicOff sx={{ fontSize: 32 }} /> : <Mic sx={{ fontSize: 32 }} />}
                 </IconButton>
-                {recorder.isRecording && (
+                {recorder.status === 'recording' && (
                   <Typography variant="body2" color="error" sx={{ mt: 1 }}>
                     录音中... {recorder.duration.toFixed(1)}s
                   </Typography>
@@ -633,7 +633,7 @@ export default function TrainingPage() {
 
       {/* 录音错误提示 */}
       {recorder.error && (
-        <Alert severity="warning" sx={{ mb: 3 }} onClose={() => recorder.clearRecording()}>
+        <Alert severity="warning" sx={{ mb: 3 }} onClose={() => recorder.resetRecording()}>
           {recorder.error}
         </Alert>
       )}
