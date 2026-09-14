@@ -121,5 +121,5 @@ def downgrade() -> None:
     op.drop_table("training_items")
     op.drop_table("training_sessions")
     op.drop_table("item_bank")
-    op.create_table("user_abilities")
+    op.drop_table("user_abilities")
     op.drop_table("users")
