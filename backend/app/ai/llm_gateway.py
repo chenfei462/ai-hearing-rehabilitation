@@ -342,17 +342,16 @@ class QwenLLMGateway(LLMGatewayBase):
                         delta = choices[0].get("message", {}).get("content", "")
                         if delta:
                             full_content += delta
+                            # 流式输出安全检查 - 在发送前检查
+                            is_safe, reason = self._check_safety_output(full_content)
+                            if not is_safe:
+                                logger.warning(f"[LLM] 流式输出安全检查未通过: {reason}")
+                                yield {"error": "内容安全检查未通过"}
+                                return
                             yield delta
                 else:
                     logger.warning(f"[LLM] 流式响应错误: {response}")
                     break
-
-            # 输出安全检查 (对完整内容)
-            is_safe, reason = self._check_safety_output(full_content)
-            if not is_safe:
-                # 已经流式输出了部分内容，无法撤回
-                # 在实际产品中应使用更完善的流式安全过滤
-                logger.warning(f"[LLM] 流式输出安全检查未通过: {reason}")
 
         except Exception as e:
             logger.error(f"[LLM] 流式对话失败: {e}")
