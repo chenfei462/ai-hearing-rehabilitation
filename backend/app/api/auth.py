@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.errors import AppException, ErrorCode
@@ -7,8 +7,10 @@ from app.schemas.response import ApiResponse, success_response
 from app.services.auth_service import AuthService
 from app.api.deps import get_current_user
 from app.models.user import User
+from app.core.config import get_settings
 
 router = APIRouter()
+settings = get_settings()
 
 
 @router.post("/sms/send", response_model=ApiResponse)
@@ -20,7 +22,7 @@ async def send_sms(request: SmsRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=ApiResponse)
-async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(request: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
     """手机号 + 验证码登录"""
     service = AuthService(db)
     result = await service.login(request.phone, request.code)
@@ -30,7 +32,33 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
             message="验证码错误或已过期",
             http_status=401,
         )
-    return {"code": 0, "data": result, "message": "ok"}
+    
+    # 设置 httpOnly cookie
+    response.set_cookie(
+        key="access_token",
+        value=result["token"],
+        httponly=True,
+        secure=settings.COOKIE_SECURE,
+        samesite=settings.COOKIE_SAMESITE,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_DAYS * 24 * 3600,
+        path="/",
+    )
+    
+    # 返回用户信息（不再返回 token）
+    return {"code": 0, "data": {"user": result["user"]}, "message": "ok"}
+
+
+@router.post("/logout", response_model=ApiResponse)
+async def logout(response: Response):
+    """登出并清除 cookie"""
+    response.delete_cookie(
+        key="access_token",
+        path="/",
+        httponly=True,
+        secure=settings.COOKIE_SECURE,
+        samesite=settings.COOKIE_SAMESITE,
+    )
+    return {"code": 0, "data": {"message": "已登出"}, "message": "ok"}
 
 
 @router.get("/me", response_model=ApiResponse)

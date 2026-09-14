@@ -10,7 +10,6 @@ export interface LoginRequest {
 }
 
 export interface LoginResponse {
-  token: string;
   user: {
     id: number;
     phone: string;
@@ -57,4 +56,9 @@ export async function getMe(): Promise<UserProfile> {
 /** 更新无障碍偏好 */
 export async function updatePreferences(data: PreferencesUpdate): Promise<void> {
   await api.put('/auth/users/me/preferences', data);
+}
+
+/** 登出 */
+export async function logout(): Promise<void> {
+  await api.post('/auth/logout');
 }

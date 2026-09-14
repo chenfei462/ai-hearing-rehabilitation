@@ -3,15 +3,7 @@ import axios from 'axios';
 const api = axios.create({
   baseURL: '/api',
   timeout: 30000,
-});
-
-// 请求拦截器：添加鉴权 token
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
+  withCredentials: true, // 自动携带 cookies
 });
 
 // 响应拦截器：统一处理错误
@@ -21,7 +13,7 @@ api.interceptors.response.use(
     if (error.response) {
       const { code, message } = error.response.data;
       if (code === 40101) {
-        localStorage.removeItem('token');
+        // Token 无效或过期，跳转登录页
         window.location.href = '/login';
       }
       return Promise.reject({ code, message });

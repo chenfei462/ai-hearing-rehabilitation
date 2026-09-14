@@ -68,8 +68,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const result = await loginWithPhone({ phone, code });
-      login(result.user, result.token);
-      localStorage.setItem('token', result.token);
+      login(result.user);
       navigate('/', { replace: true });
     } catch (err: any) {
       setError(err?.message || '登录失败，请检查验证码');
