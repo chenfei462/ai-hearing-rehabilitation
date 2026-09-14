@@ -6,11 +6,11 @@
 - [x] Task 2: 修复useRecorder API不匹配 (P0)
 - [x] Task 3: 为训练API添加认证和session归属校验 (P0)
 - [x] Task 4: 修复Alembic downgrade bug (P0)
-- [ ] Task 5: 修复健康检查状态码 (P0)
+- [x] Task 5: 修复健康检查状态码 (P0)
 
 ## P1 — 安全阻断（上线前完成）
 
-- [ ] Task 6: 修复对话API IDOR漏洞 (P1)
+- [x] Task 6: 修复对话API IDOR漏洞 (P1)
 - [ ] Task 7: 修复流式输出安全检查滞后 (P1)
 - [ ] Task 8: Token迁移到httpOnly Cookie (P1)
 - [ ] Task 9: 修改DEBUG默认值 (P1)
@@ -27,7 +27,7 @@
 - [ ] 健康检查状态码：degraded状态返回503
 
 ### P1验证
-- [ ] 对话API IDOR：用户无法访问他人session
+- [x] 对话API IDOR：用户无法访问他人session
 - [ ] 流式安全检查：不安全内容被拦截
 - [ ] Token安全：token不在localStorage中
 - [ ] DEBUG配置：默认为False
