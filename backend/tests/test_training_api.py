@@ -73,7 +73,7 @@ async def user1_session_id(test_engine, user1_token: str) -> int:
         resp = await ac.post(
             "/api/training/sessions",
             params={"level": "syllable"},
-            headers={"Authorization": f"Bearer {user1_token}"},
+            cookies={"access_token": user1_token},
         )
         assert resp.status_code == 200, f"创建 session 失败: {resp.text}"
         return resp.json()["data"]["session_id"]
@@ -139,7 +139,7 @@ class TestTrainingOwnership:
         """用户 2 不能获取用户 1 的 session 下一题（403）"""
         resp = await client.get(
             f"/api/training/sessions/{user1_session_id}/next",
-            headers={"Authorization": f"Bearer {user2_token}"},
+            cookies={"access_token": user2_token},
         )
         assert resp.status_code == 403
         body = resp.json()
@@ -155,7 +155,7 @@ class TestTrainingOwnership:
         resp = await client.post(
             f"/api/training/sessions/{user1_session_id}/answer",
             params={"item_id": 1, "answer": "test", "response_ms": 1000},
-            headers={"Authorization": f"Bearer {user2_token}"},
+            cookies={"access_token": user2_token},
         )
         assert resp.status_code == 403
         body = resp.json()
@@ -170,7 +170,7 @@ class TestTrainingOwnership:
         """用户 2 不能结束用户 1 的 session（403）"""
         resp = await client.post(
             f"/api/training/sessions/{user1_session_id}/finish",
-            headers={"Authorization": f"Bearer {user2_token}"},
+            cookies={"access_token": user2_token},
         )
         assert resp.status_code == 403
         body = resp.json()
@@ -184,7 +184,7 @@ class TestTrainingOwnership:
         """访问不存在的 session 也应返回 403（防枚举）"""
         resp = await client.get(
             "/api/training/sessions/99999/next",
-            headers={"Authorization": f"Bearer {user1_token}"},
+            cookies={"access_token": user1_token},
         )
         assert resp.status_code == 403
 
@@ -197,7 +197,7 @@ class TestTrainingOwnership:
         """session 所有者可以正常访问"""
         resp = await client.get(
             f"/api/training/sessions/{user1_session_id}/next",
-            headers={"Authorization": f"Bearer {user1_token}"},
+            cookies={"access_token": user1_token},
         )
         # 成功（200）或没有更多题目（404），但绝不是 403
         assert resp.status_code in (200, 404)

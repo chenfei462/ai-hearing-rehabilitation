@@ -1,0 +1,13 @@
+{
+  "mode": "直通模式",
+  "familiarity": "unknown_but_technical",
+  "terminology_explanation": false,
+  "language": "zh-CN",
+  "constraints": {
+    "status": "在校学生",
+    "income": "零收入",
+    "budget": "≈0元",
+    "weekly_hours": "15-30h（推测）"
+  },
+  "notes": "用户明确要求不要提问，全程直推"
+}

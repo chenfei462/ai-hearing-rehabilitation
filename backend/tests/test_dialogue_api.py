@@ -24,7 +24,7 @@ class TestHandleTurnOwnership:
 
     async def test_handle_turn_other_user_session(self, client: AsyncClient, auth_token: str):
         """测试用户无法访问其他用户的session (IDOR防护)"""
-        headers = {"Authorization": f"Bearer {auth_token}"}
+        cookies = {"access_token": auth_token}
 
         with patch("app.api.dialogue.DialogueService") as MockService:
             mock_service = AsyncMock()
@@ -38,7 +38,7 @@ class TestHandleTurnOwnership:
 
             response = await client.post(
                 "/api/dialogue/sessions/1/turn",
-                headers=headers,
+                cookies=cookies,
                 files={"audio": ("test.wav", b"fake_audio", "audio/wav")},
             )
 
@@ -49,7 +49,7 @@ class TestHandleTurnOwnership:
 
     async def test_handle_turn_nonexistent_session(self, client: AsyncClient, auth_token: str):
         """测试访问不存在的session返回403"""
-        headers = {"Authorization": f"Bearer {auth_token}"}
+        cookies = {"access_token": auth_token}
 
         with patch("app.api.dialogue.DialogueService") as MockService:
             mock_service = AsyncMock()
@@ -60,7 +60,7 @@ class TestHandleTurnOwnership:
 
             response = await client.post(
                 "/api/dialogue/sessions/999/turn",
-                headers=headers,
+                cookies=cookies,
                 files={"audio": ("test.wav", b"fake_audio", "audio/wav")},
             )
 
@@ -70,7 +70,7 @@ class TestHandleTurnOwnership:
 
     async def test_handle_turn_own_session(self, client: AsyncClient, auth_token: str):
         """测试用户可以访问自己的session"""
-        headers = {"Authorization": f"Bearer {auth_token}"}
+        cookies = {"access_token": auth_token}
 
         with patch("app.api.dialogue.DialogueService") as MockService:
             mock_service = AsyncMock()
@@ -94,7 +94,7 @@ class TestHandleTurnOwnership:
 
             response = await client.post(
                 "/api/dialogue/sessions/1/turn",
-                headers=headers,
+                cookies=cookies,
                 files={"audio": ("test.wav", b"fake_audio", "audio/wav")},
             )
 
@@ -115,7 +115,7 @@ class TestFinishSessionOwnership:
 
     async def test_finish_session_other_user_session(self, client: AsyncClient, auth_token: str):
         """测试用户无法结束其他用户的session (IDOR防护)"""
-        headers = {"Authorization": f"Bearer {auth_token}"}
+        cookies = {"access_token": auth_token}
 
         with patch("app.api.dialogue.DialogueService") as MockService:
             mock_service = AsyncMock()
@@ -129,7 +129,7 @@ class TestFinishSessionOwnership:
 
             response = await client.post(
                 "/api/dialogue/sessions/1/finish",
-                headers=headers,
+                cookies=cookies,
             )
 
             assert response.status_code == 403
@@ -139,7 +139,7 @@ class TestFinishSessionOwnership:
 
     async def test_finish_session_nonexistent_session(self, client: AsyncClient, auth_token: str):
         """测试结束不存在的session返回403"""
-        headers = {"Authorization": f"Bearer {auth_token}"}
+        cookies = {"access_token": auth_token}
 
         with patch("app.api.dialogue.DialogueService") as MockService:
             mock_service = AsyncMock()
@@ -150,7 +150,7 @@ class TestFinishSessionOwnership:
 
             response = await client.post(
                 "/api/dialogue/sessions/999/finish",
-                headers=headers,
+                cookies=cookies,
             )
 
             assert response.status_code == 403
@@ -159,7 +159,7 @@ class TestFinishSessionOwnership:
 
     async def test_finish_session_own_session(self, client: AsyncClient, auth_token: str):
         """测试用户可以结束自己的session"""
-        headers = {"Authorization": f"Bearer {auth_token}"}
+        cookies = {"access_token": auth_token}
 
         with patch("app.api.dialogue.DialogueService") as MockService:
             mock_service = AsyncMock()
@@ -182,7 +182,7 @@ class TestFinishSessionOwnership:
 
             response = await client.post(
                 "/api/dialogue/sessions/1/finish",
-                headers=headers,
+                cookies=cookies,
             )
 
             assert response.status_code == 200
@@ -190,3 +190,4 @@ class TestFinishSessionOwnership:
             assert data["code"] == 0
             assert data["data"]["session_id"] == 1
             assert data["data"]["turn_count"] == 3
+

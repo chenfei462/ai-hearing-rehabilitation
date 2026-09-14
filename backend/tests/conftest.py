@@ -41,7 +41,7 @@ def test_settings():
     return Settings(
         DATABASE_URL=TEST_DATABASE_URL,
         REDIS_URL="redis://localhost:6379/1",
-        SECRET_KEY="test-secret-key",
+        SECRET_KEY="your-secret-key-here-change-in-production",
         DEBUG=False,
     )
 
@@ -49,6 +49,9 @@ def test_settings():
 @pytest_asyncio.fixture(scope="session")
 async def test_engine():
     """测试数据库引擎（session 级别共享）"""
+    # 导入所有模型以确保它们被注册到 Base.metadata
+    import app.models  # noqa: F401
+
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 
     async with engine.begin() as conn:

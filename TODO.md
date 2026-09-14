@@ -20,23 +20,24 @@
 ## 验证清单
 
 ### P0验证
-- [ ] Redis decode bug修复：验证码验证正常工作
-- [ ] useRecorder API修复：训练页面不再崩溃
-- [ ] 训练API认证：未认证请求返回401
-- [ ] Alembic downgrade：数据库回滚正常工作
-- [ ] 健康检查状态码：degraded状态返回503
+- [x] Redis decode bug修复：验证码验证正常工作
+- [x] useRecorder API修复：训练页面不再崩溃
+- [x] 训练API认证：未认证请求返回401
+- [x] Alembic downgrade：数据库回滚正常工作
+- [x] 健康检查状态码：degraded状态返回503
 
 ### P1验证
 - [x] 对话API IDOR：用户无法访问他人session
-- [ ] 流式安全检查：不安全内容被拦截
+- [x] 流式安全检查：不安全内容被拦截
 - [x] Token安全：token不在localStorage中
 - [x] DEBUG配置：默认为False
 - [x] Docker密码：使用环境变量
 - [x] 验证码安全：使用secrets模块，6位长度
 
 ### 上线前检查
-- [ ] 所有P0和P1问题已修复 ✅
-- [ ] 单元测试全部通过
+- [x] 所有P0和P1问题已修复 ✅
+- [x] 单元测试全部通过
 - [ ] 集成测试通过
 - [ ] 安全审查通过
 - [ ] 性能测试通过
+

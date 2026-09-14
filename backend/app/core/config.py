@@ -142,6 +142,13 @@ class Settings(BaseSettings):
     ]
     """安全护栏关键词列表。用户输入命中时，AI 将拒绝讨论并引导回训练话题"""
 
+    # ── Cookie 安全 ──────────────────────────────────────────
+    COOKIE_SECURE: bool = False
+    """Cookie 是否仅通过 HTTPS 传输。生产环境应设为 True"""
+
+    COOKIE_SAMESITE: str = "lax"
+    """Cookie SameSite 策略。可选值: lax, strict, none"""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
@@ -166,11 +173,4 @@ def get_settings() -> Settings:
 
 # 向后兼容：模块级 settings 实例
 settings = get_settings()
-
-    # ── Cookie 安全 ──────────────────────────────────────────
-    COOKIE_SECURE: bool = False
-    """Cookie 是否仅通过 HTTPS 传输。生产环境应设为 True"""
-
-    COOKIE_SAMESITE: str = "lax"
-    """Cookie SameSite 策略。可选值: lax, strict, none"""
 
