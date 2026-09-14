@@ -1,5 +1,5 @@
 import json
-import random
+import secrets
 import logging
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +24,7 @@ class AuthService:
         临时方案：生成 4 位随机验证码，存入 Redis（5 分钟过期）。
         生产环境需集成阿里云 SMS。
         """
-        code = f"{random.randint(1000, 9999)}"
+        code = f"{secrets.randbelow(900000) + 100000}"
         try:
             redis = await get_redis()
             await redis.setex(f"sms:{phone}", 300, code)
@@ -105,3 +105,4 @@ class AuthService:
         current_info["accessibility"] = accessibility
         user.cochlear_info = current_info
         await self.db.flush()
+
