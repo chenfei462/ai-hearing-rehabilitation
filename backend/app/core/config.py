@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     APP_VERSION: str = "0.1.0"
     """应用版本号，遵循语义化版本规范"""
 
-    DEBUG: bool = True
+    DEBUG: bool = False
     """调试模式开关。生产环境务必设为 False，会禁用 Swagger/ReDoc 文档"""
 
     # ── 数据库 ────────────────────────────────────────────
@@ -173,3 +173,4 @@ settings = get_settings()
 
     COOKIE_SAMESITE: str = "lax"
     """Cookie SameSite 策略。可选值: lax, strict, none"""
+
