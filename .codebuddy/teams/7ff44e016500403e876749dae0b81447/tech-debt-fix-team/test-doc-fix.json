@@ -34,5 +34,14 @@
     "content": "arch-fix 报告 test_role_permissions.py 的5个测试失败：conftest 的 auth_token/therapist_token 用 sub=\"1\"/\"2\" 直接生成 JWT，但测试库中无对应用户，get_current_user 返回 401（期望 403/200）。请检查并修复这些 fixture，确保测试数据库中有对应用户或调整测试期望。",
     "timestamp": "2026-09-14T14:59:50.349Z",
     "read": true
+  },
+  {
+    "id": "shutdown-1789400017636",
+    "from": "team-lead",
+    "to": "test-doc-fix",
+    "type": "shutdown_request",
+    "content": "{\"type\":\"shutdown_request\",\"request_id\":\"shutdown-1789400017636\",\"reason\":\"任务已完成，感谢贡献。\",\"from\":\"team-lead\",\"timestamp\":\"2026-09-14T15:33:37.636Z\"}",
+    "timestamp": "2026-09-14T15:33:37.636Z",
+    "read": true
   }
 ]

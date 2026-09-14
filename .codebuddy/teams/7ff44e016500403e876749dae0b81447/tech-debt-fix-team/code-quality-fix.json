@@ -7,5 +7,23 @@
     "content": "团队已创建完成，4个成员正在并行工作：\n1. security-fix: 修复P1安全类问题（Token存储、python-jose替换、passlib替换）\n2. arch-fix: 修复P1架构类问题（API层绕过Service、ReportService拆分、DialogueService拆分）\n3. code-quality-fix: 修复P2架构和代码问题（题库复用、store合并、AI网关注入、重试逻辑统一）\n4. test-doc-fix: 修复P2测试和文档问题（测试重写、mock fixtures、文档更新）\n\n请各位成员专注于自己的任务，完成后发送总结消息。如果有依赖关系请通过消息沟通。",
     "timestamp": "2026-09-14T14:31:12.091Z",
     "read": true
+  },
+  {
+    "id": "msg-1789399876908-8lrhml",
+    "from": "team-lead",
+    "to": "code-quality-fix",
+    "type": "message",
+    "content": "请确认当前任务进度如何？如有完成的请发送报告。",
+    "timestamp": "2026-09-14T15:31:16.908Z",
+    "read": true
+  },
+  {
+    "id": "shutdown-1789400010755",
+    "from": "team-lead",
+    "to": "code-quality-fix",
+    "type": "shutdown_request",
+    "content": "{\"type\":\"shutdown_request\",\"request_id\":\"shutdown-1789400010755\",\"reason\":\"请报告当前状态。如任务已完成请回复完成报告，如未完成请回复进度。\",\"from\":\"team-lead\",\"timestamp\":\"2026-09-14T15:33:30.755Z\"}",
+    "timestamp": "2026-09-14T15:33:30.755Z",
+    "read": true
   }
 ]

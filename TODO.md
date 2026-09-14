@@ -4,8 +4,8 @@
 
 - [x] Task 1: 修复Redis decode bug (P0)
 - [x] Task 2: 修复useRecorder API不匹配 (P0)
-- [ ] Task 3: 为训练API添加认证和session归属校验 (P0)
-- [ ] Task 4: 修复Alembic downgrade bug (P0)
+- [x] Task 3: 为训练API添加认证和session归属校验 (P0)
+- [x] Task 4: 修复Alembic downgrade bug (P0)
 - [ ] Task 5: 修复健康检查状态码 (P0)
 
 ## P1 — 安全阻断（上线前完成）

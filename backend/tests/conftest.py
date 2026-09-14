@@ -9,13 +9,30 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy import select
 
 from app.core.database import Base, get_db
 from app.core.config import Settings
+from app.models.user import User
 
 
 # 测试数据库 URL（使用 SQLite 内存数据库）
 TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+
+
+async def _ensure_user(engine, user_id: int, phone: str, role: str, nickname: str):
+    """确保用户存在，已存在则更新"""
+    async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with async_session() as session:
+        existing = await session.execute(select(User).where(User.id == user_id))
+        user = existing.scalar_one_or_none()
+        if user is None:
+            session.add(User(id=user_id, phone=phone, role=role, nickname=nickname))
+        else:
+            user.phone = phone
+            user.role = role
+            user.nickname = nickname
+        await session.commit()
 
 
 @pytest.fixture(scope="session")
@@ -23,7 +40,7 @@ def test_settings():
     """测试配置"""
     return Settings(
         DATABASE_URL=TEST_DATABASE_URL,
-        REDIS_URL="redis://localhost:6379/1",  # 使用不同的 DB
+        REDIS_URL="redis://localhost:6379/1",
         SECRET_KEY="test-secret-key",
         DEBUG=False,
     )
@@ -84,44 +101,17 @@ async def client(test_engine):
 
 @pytest_asyncio.fixture
 async def auth_token(test_engine) -> str:
-    """
-    获取普通用户的认证 token。
-
-    先在测试数据库中创建用户，再签发 JWT，
-    确保 get_current_user 能通过 DB 查询。
-    """
+    """获取普通用户的认证 token（id=1）"""
     from app.core.security import create_access_token
-    from app.models.user import User
 
-    async_session = async_sessionmaker(
-        test_engine, class_=AsyncSession, expire_on_commit=False
-    )
-    async with async_session() as session:
-        user = User(id=1, phone="13800138000", role="patient", nickname="测试用户")
-        session.add(user)
-        await session.commit()
-
-    token = create_access_token(data={"sub": "1", "role": "patient"})
-    return token
+    await _ensure_user(test_engine, 1, "13800138000", "patient", "测试用户")
+    return create_access_token(data={"sub": "1", "role": "patient"})
 
 
 @pytest_asyncio.fixture
 async def therapist_token(test_engine) -> str:
-    """
-    获取听力师角色的认证 token。
-
-    先在测试数据库中创建听力师用户，再签发 JWT。
-    """
+    """获取听力师角色的认证 token（id=2）"""
     from app.core.security import create_access_token
-    from app.models.user import User
 
-    async_session = async_sessionmaker(
-        test_engine, class_=AsyncSession, expire_on_commit=False
-    )
-    async with async_session() as session:
-        user = User(id=2, phone="13900139000", role="therapist", nickname="测试听力师")
-        session.add(user)
-        await session.commit()
-
-    token = create_access_token(data={"sub": "2", "role": "therapist"})
-    return token
+    await _ensure_user(test_engine, 2, "13900139000", "therapist", "测试听力师")
+    return create_access_token(data={"sub": "2", "role": "therapist"})

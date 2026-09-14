@@ -34,5 +34,50 @@
     "content": "## security.py jose+passlib 替换分析报告\n\n### 现状\n\n`backend/app/core/security.py` 当前使用：\n- `python-jose[cryptography]==3.3.0` — JWT 编解码\n- `passlib[bcrypt]==1.7.4` — bcrypt 密码哈希\n\n这两个库**仅在 `security.py` 中直接导入**，项目其余部分通过以下 4 个导出函数间接使用：\n1. `create_access_token(data: dict) -> str`\n2. `verify_token(token: str) -> dict | None`\n3. `verify_password(plain_password: str, hashed_password: str) -> bool`\n4. `get_password_hash(password: str) -> str`\n\n### 消费方清单\n\n**`create_access_token` 被以下位置调用：**\n- `backend/app/services/auth_service.py` (第 82 行) — 登录生成 token\n- `backend/tests/conftest.py` (第 94、107 行) — `auth_token` 和 `therapist_token` fixture\n- `backend/app/db/init_db.py` (第 11 行) — 数据库初始化（可能用于种子数据）\n\n**`verify_token` 被以下位置调用：**\n- `backend/app/api/deps.py` (第 16 行) — `get_current_user` 中解码 JWT\n\n**`verify_password` / `get_password_hash`：**\n- 当前无其他文件调用（项目使用短信验证码登录，非密码登录），但保留作为公共 API。\n\n### 推荐替换方案\n\n| 旧依赖 | 替换为 | 理由 |\n|--------|--------|------|\n| `python-jose[cryptography]` | `PyJWT>=2.8,<3` | 维护活跃，社区首选，API 类似，同样支持 HS256 |\n| `passlib[bcrypt]` | `bcrypt>=4.1,<5` | passlib 已长期不维护；bcrypt 4.x 自身提供 `hashpw`/`checkpw` |\n\n### Token 兼容性关键点\n\n1. **签名算法一致**：配置中 `ALGORITHM = \"HS256\"`，PyJWT 和 python-jose 对 HS256 的实现完全一致（HMAC-SHA256），**同一 SECRET_KEY 生成的 token 互相可解码**。\n2. **Token payload 格式不变**：`create_access_token` 设置 `{\"sub\": str(user.id), \"role\": user.role, \"exp\": expire}`，PyJWT 的 `jwt.encode()` 输出相同的标准 JWT 格式。\n3. **异常映射**：`jose.JWTError` → `jwt.exceptions.PyJWTError`（或更精确的 `jwt.InvalidTokenError`）。需要在 `verify_token` 中捕获新异常类型。\n\n### 关于 401 兼容性风险\n\narch-fix 提到测试中 `get_current_user` 返回 401。分析后**这不是替换引入的问题**，而是现有行为：\n- `conftest.py` 的 `auth_token` fixture 用 `create_access_token({\"sub\": \"1\", \"role\": \"user\"})` 生成 token\n- `get_current_user` 解码后从 payload 取 `user_id = payload.get(\"sub\")`，然后查 DB\n- 测试中如果 DB 里不存在 id=1 的用户，`auth_service.get_user_by_id(1)` 返回 None → 401\n\n替换 jose 为 PyJWT **不会加剧此问题**，因为 token 格式完全兼容。但建议 code-quality-fix 在测试 fixture 中确保用户记录存在。\n\n### 需要修改的文件\n\n| 文件 | 修改内容 |\n|------|---------|\n| `backend/app/core/security.py` | 替换 import，调整 encode/decode 调用 |\n| `backend/requirements.txt` | `python-jose[cryptography]` → `PyJWT>=2.8,<3`；`passlib[bcrypt]` → `bcrypt>=4.1,<5` |\n| `backend/pyproject.toml` | 同上 dependencies 更新 |\n\n**不需要修改的文件**（仅使用导出函数，接口不变）：\n- `backend/app/api/deps.py`\n- `backend/app/services/auth_service.py`\n- `backend/tests/conftest.py`\n- `backend/app/db/init_db.py`\n\n### security.py 改写后预期代码\n\n```python\nfrom datetime import datetime, timedelta, timezone\nimport jwt  # PyJWT\nimport bcrypt\nfrom .config import get_settings\n\nsettings = get_settings()\n\ndef create_access_token(data: dict) -> str:\n    to_encode = data.copy()\n    expire = datetime.now(timezone.utc) + timedelta(days=settings.ACCESS_TOKEN_EXPIRE_DAYS)\n    to_encode.update({\"exp\": expire})\n    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)\n\ndef verify_token(token: str) -> dict | None:\n    try:\n        return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])\n    except jwt.PyJWTError:\n        return None\n\ndef verify_password(plain_password: str, hashed_password: str) -> bool:\n    return bcrypt.checkpw(plain_password.encode(\"utf-8\"), hashed_password.encode(\"utf-8\"))\n\ndef get_password_hash(password: str) -> str:\n    return bcrypt.hashpw(password.encode(\"utf-8\"), bcrypt.gensalt()).decode(\"utf-8\")\n```\n\n### 结论\n\n替换是安全的、向后兼容的，不会破坏现有 token 或测试行为。唯一的例外映射变化在 `verify_token` 内部封装，外部调用者无感知。建议 code-quality-fix 配合检查测试 fixture 的用户创建逻辑。",
     "timestamp": "2026-09-14T15:02:13.205Z",
     "read": true
+  },
+  {
+    "id": "msg-1789399835890-ypx7r7",
+    "from": "test-doc-fix",
+    "to": "team-lead",
+    "type": "message",
+    "content": "已修复，刚才已同步给 arch-fix。\n\n修改内容（conftest.py 第 85-127 行）：\n1. `auth_token` 改为 async fixture，依赖 `test_engine`，先创建 `User(id=1, role=\"patient\")` 再签发 JWT\n2. `therapist_token` 同理，先创建 `User(id=2, role=\"therapist\")` 再签发 JWT\n3. JWT 中 role 从 \"user\" 改为 \"patient\"，与 User 模型一致\n\n这样 `get_current_user` 能从 DB 查到用户，不会再返回 401。正常用户访问听力师接口会走 `get_current_therapist` 的 role 检查返回 403。",
+    "timestamp": "2026-09-14T15:30:35.890Z",
+    "read": true
+  },
+  {
+    "id": "resp-1789400011189-6o22e6",
+    "from": "code-quality-fix",
+    "to": "team-lead",
+    "type": "shutdown_response",
+    "content": "{\"type\":\"shutdown_response\",\"request_id\":\"shutdown-1789400010755\",\"approve\":true,\"reason\":\"Auto-acknowledged by team-member runtime\",\"from\":\"code-quality-fix\",\"timestamp\":\"2026-09-14T15:33:31.189Z\"}",
+    "timestamp": "2026-09-14T15:33:31.189Z",
+    "read": true
+  },
+  {
+    "id": "resp-1789400019200-accr4w",
+    "from": "arch-fix",
+    "to": "team-lead",
+    "type": "shutdown_response",
+    "content": "{\"type\":\"shutdown_response\",\"request_id\":\"shutdown-1789400017205\",\"approve\":true,\"reason\":\"Auto-acknowledged by team-member runtime\",\"from\":\"arch-fix\",\"timestamp\":\"2026-09-14T15:33:39.200Z\"}",
+    "timestamp": "2026-09-14T15:33:39.200Z",
+    "read": true
+  },
+  {
+    "id": "resp-1789400019201-kdrjeu",
+    "from": "test-doc-fix",
+    "to": "team-lead",
+    "type": "shutdown_response",
+    "content": "{\"type\":\"shutdown_response\",\"request_id\":\"shutdown-1789400017636\",\"approve\":true,\"reason\":\"Auto-acknowledged by team-member runtime\",\"from\":\"test-doc-fix\",\"timestamp\":\"2026-09-14T15:33:39.201Z\"}",
+    "timestamp": "2026-09-14T15:33:39.201Z",
+    "read": true
+  },
+  {
+    "id": "timeout-1789400070228-hk031d",
+    "from": "security-fix",
+    "to": "team-lead",
+    "type": "message",
+    "content": "[System] Shutdown timeout: \"security-fix\" did not acknowledge the shutdown_request (request_id=shutdown-1789400010198) within 60s and has been force-terminated.Any unreported deliverables from this teammate may have been lost.You can proceed with team_delete or continue with the remaining teammates.",
+    "timestamp": "2026-09-14T15:34:30.228Z",
+    "read": true
   }
 ]

@@ -2,6 +2,7 @@
 健康检查 API
 """
 from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from datetime import datetime, timezone
 
 from app.schemas.response import success_response
@@ -66,8 +67,16 @@ async def detailed_health_check():
 
     health_status["status"] = "healthy" if overall_healthy else "degraded"
 
-    status_code = 200 if overall_healthy else 503
-    return success_response(
-        data=health_status,
-        message="健康检查完成",
-    )
+    response_data = {
+        "code": 0,
+        "data": health_status,
+        "message": "健康检查完成",
+    }
+
+    if overall_healthy:
+        return response_data
+    else:
+        return JSONResponse(
+            status_code=503,
+            content=response_data,
+        )

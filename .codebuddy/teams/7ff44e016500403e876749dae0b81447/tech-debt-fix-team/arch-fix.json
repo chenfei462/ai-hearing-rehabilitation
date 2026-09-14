@@ -25,5 +25,14 @@
     "content": "已修复 test_role_permissions.py 的 401 问题。\n\n根因确认：auth_token/therapist_token fixture 只签发 JWT，但测试 DB 中不存在对应用户，get_current_user 查 DB 失败返回 401。\n\n修复方式：将两个 fixture 改为 async，依赖 test_engine，在签发 token 前先通过 async_session 创建 User 记录：\n- auth_token: User(id=1, role=\"patient\") + JWT sub=\"1\"\n- therapist_token: User(id=2, role=\"therapist\") + JWT sub=\"2\"\n\n同时将 JWT 中的 role 从 \"user\" 改为 \"patient\"，与 User 模型的默认值一致。\n\ntest_dialogue_service.py 未触碰，你的 3 处修改已保留。",
     "timestamp": "2026-09-14T15:02:00.855Z",
     "read": true
+  },
+  {
+    "id": "shutdown-1789400017205",
+    "from": "team-lead",
+    "to": "arch-fix",
+    "type": "shutdown_request",
+    "content": "{\"type\":\"shutdown_request\",\"request_id\":\"shutdown-1789400017205\",\"reason\":\"任务已完成，感谢贡献。\",\"from\":\"team-lead\",\"timestamp\":\"2026-09-14T15:33:37.205Z\"}",
+    "timestamp": "2026-09-14T15:33:37.205Z",
+    "read": true
   }
 ]

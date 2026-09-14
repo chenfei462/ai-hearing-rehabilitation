@@ -22,6 +22,13 @@ class TrainingService:
         await self.db.flush()
         return session
 
+    async def get_session(self, session_id: int) -> Optional[TrainingSession]:
+        """根据 ID 获取训练 session"""
+        result = await self.db.execute(
+            select(TrainingSession).where(TrainingSession.id == session_id)
+        )
+        return result.scalar_one_or_none()
+
     async def get_user_ability(self, user_id: int, level: str) -> UserAbility:
         result = await self.db.execute(
             select(UserAbility).where(
@@ -138,4 +145,3 @@ class TrainingService:
             "total_items": session.total_items,
             "correct_items": session.correct_items,
         }
-

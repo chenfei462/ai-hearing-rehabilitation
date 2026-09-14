@@ -1,0 +1,2 @@
+SECRET_KEY ����ȫ����⵽Ĭ��ֵ���ֵ������ .env �ļ�������һ��ǿ�����Կ�����磺
+  SECRET_KEY=<���� python -c 'import secrets; print(secrets.token_urlsafe(64))' ����>

@@ -1,0 +1,2 @@
+SECRET_KEY 不安全！检测到默认值或空值。请在 .env 文件中设置一个强随机密钥，例如：
+  SECRET_KEY=<运行 python -c 'import secrets; print(secrets.token_urlsafe(64))' 生成>
