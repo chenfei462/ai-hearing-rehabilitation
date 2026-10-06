@@ -1,0 +1,79 @@
+{
+  "goalStartedAt": "2026-10-06T19:03:00Z",
+  "goalObjective": "Autonomous Delivery Orchestrator: M0 -> M0 Gate -> ... -> M10 -> M10 Gate -> Release Gate -> PROJECT_READY (no fake completion; stop at PAUSED_FOR_HUMAN or BLOCKED if unsafe).",
+  "currentMilestone": "M0",
+  "currentTask": "M0-004",
+  "goalStatus": "IN_PROGRESS",
+  "lastSafeCommit": "7be3c50",
+  "currentHead": "7be3c50",
+  "branch": "feature/m0-baseline",
+  "modelPolicy": {
+    "allowed": ["qmodel_38max", "qfmodel"],
+    "executor": ".qoder/workflows/project-feature-delivery.js",
+    "violations": []
+  },
+  "preExistingUntracked": {
+    "path": "docs/qgraphflow/dialogue-turn-sequence/",
+    "status": "PRE_EXISTING_UNCHANGED",
+    "fingerprint": {
+      "graph.json": "e88c0295861951c58b55028eae611218e1f15089",
+      "index.html": "cde38f82a5404a2dab46dbda86aa5e070545a676",
+      "fileCount": 2
+    }
+  },
+  "completedTasks": [
+    {
+      "id": "M0-001",
+      "title": "仓库清单与真相基线文档",
+      "status": "TASK_PASS",
+      "commit": "abc6a78",
+      "deliverable": "deliverables/baseline/REPO_INVENTORY.md"
+    },
+    {
+      "id": "M0-002",
+      "title": "后端测试基线",
+      "status": "TASK_PASS",
+      "commit": "7be3c50",
+      "deliverable": "deliverables/baseline/BACKEND_TEST_BASELINE.md",
+      "gateHealth": "PASS",
+      "projectBaselineHealth": "DEGRADED"
+    }
+  ],
+  "blockedTasks": [],
+  "skippedTasks": [],
+  "inProgressTasks": [],
+  "completedMilestones": [],
+  "taskCommits": {
+    "M0-001": "abc6a78",
+    "M0-002": "7be3c50"
+  },
+  "milestoneGateResults": {},
+  "m0Dag": {
+    "M0-001": { "deps": [], "pri": "P0", "status": "TASK_PASS" },
+    "M0-002": { "deps": ["M0-001"], "pri": "P0", "status": "TASK_PASS" },
+    "M0-003": { "deps": ["M0-001"], "pri": "P0", "status": "READY", "criticalPath": false },
+    "M0-004": { "deps": ["M0-001"], "pri": "P0", "status": "READY", "criticalPath": true },
+    "M0-005": { "deps": ["M0-002", "M0-004"], "pri": "P0", "status": "BACKLOG" },
+    "M0-006": { "deps": ["M0-002"], "pri": "P0", "status": "READY" },
+    "M0-007": { "deps": ["M0-005"], "pri": "P0", "status": "BACKLOG" },
+    "M0-008": { "deps": ["M0-003", "M0-004"], "pri": "P0", "status": "BACKLOG" }
+  },
+  "criticalPath": "M0-001 -> M0-004 -> KB-001 -> KB-002 -> KB-003 -> KB-004 -> ING-001 -> ING-005 -> ING-007 -> ING-008 -> ING-009 -> RAG-001 -> RAG-003 -> RAG-006 -> RAG-007 -> RAG-008 -> RAG-010 -> UI-001 -> EVAL-005 -> OPS-004",
+  "findings": {
+    "F-01": { "summary": "metrics endpoint auth contract mismatch (401 vs test expecting 200)", "status": "OPEN", "disposition": "Max must judge API contract per §107; do NOT let Flash pick code-vs-test.", "severity": "P1" },
+    "F-02": { "summary": "full ruff 291 findings vs CI selected-rules clean", "status": "OPEN", "disposition": "No auto mass-reformat per §108; resolve lint policy via catalog ARCH task.", "severity": "P2" },
+    "F-08": { "summary": "safe Postgres migration test env missing", "status": "IN_PROGRESS_MITIGATION", "disposition": "§32-35 authorize one-time isolated non-5432 postgres test container for M0-004/M0-005.", "severity": "P0-for-M0-004" },
+    "F-11": { "summary": "integration/security/performance evidence gap", "status": "OPEN", "disposition": "Addressed by M0-005/M0-006/M0-007 baseline tasks.", "severity": "P1" },
+    "F-13": { "summary": "adaptive engine RNG nondeterministic in tests", "status": "OPEN", "disposition": "Per §106 resolve via catalog/Fix mechanism if a deterministic gate needs it; never treat a single green run as fixed.", "severity": "P2" },
+    "COV-GAP": { "summary": "backend coverage ~61%", "status": "OPEN", "disposition": "Per §109 threshold must be defined by formal OPS/Quality task; no self-invented 80/90%.", "severity": "P2" },
+    "NB-01": { "summary": "unknown PostgreSQL listener on localhost:5432 (PID 6892)", "status": "OPEN", "disposition": "§31 treat as UNKNOWN_DATABASE_INSTANCE; never connect/mutate.", "severity": "P0-safety" },
+    "NB-03": { "summary": "httpx deprecation warning", "status": "OPEN", "disposition": "Per §110 classify P1/P2; no auto major upgrade.", "severity": "P2" },
+    "ENV-F03": { "summary": "runbook venv drift (docs reference venv, local uses backend/.venv / venv312)", "status": "OPEN", "disposition": "Doc drift; resolve per §70/§111 if it blocks safe ops.", "severity": "P2" }
+  },
+  "humanDecisionsRequired": [],
+  "notes": {
+    "dbSafety": "backend/alembic.ini:5 default sqlalchemy.url points to postgresql://...@localhost:5432/cochlear_rehab (the UNKNOWN listener). Any migration test MUST override the URL to a Goal-created isolated non-5432 container; NEVER touch 5432.",
+    "dockerAvailable": "Docker 29.5.2 / Compose v5.1.4 confirmed available for §32-35 isolated test container.",
+    "serialPolicy": "Overnight default serial (§18); progress files committed before Workflow launch and updated only after TASK_PASS (§116/§117)."
+  }
+}
