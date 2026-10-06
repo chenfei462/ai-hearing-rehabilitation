@@ -4,8 +4,8 @@
   "currentMilestone": "M0",
   "currentTask": "M0-004",
   "goalStatus": "IN_PROGRESS",
-  "lastSafeCommit": "2ab8ad5",
-  "currentHead": "2ab8ad5",
+  "lastSafeCommit": "7e027c7",
+  "currentHead": "7e027c7",
   "branch": "feature/m0-baseline",
   "modelPolicy": {
     "allowed": ["qmodel_38max", "qfmodel"],
@@ -64,7 +64,7 @@
     "M0-001": { "deps": [], "pri": "P0", "status": "TASK_PASS" },
     "M0-002": { "deps": ["M0-001"], "pri": "P0", "status": "TASK_PASS" },
     "M0-003": { "deps": ["M0-001"], "pri": "P0", "status": "TASK_PASS", "criticalPath": false },
-    "M0-004": { "deps": ["M0-001"], "pri": "P0", "status": "READY", "criticalPath": true },
+    "M0-004": { "deps": ["M0-001"], "pri": "P0", "status": "IN_PROGRESS", "criticalPath": true, "note": "SPEC_CONFLICT (run wf_881c57ca-678, ATTEMPTS=0) resolved by Max decision A+C+D; relaunching with corrected read-only-audit TASK_SPEC." },
     "M0-005": { "deps": ["M0-002", "M0-004"], "pri": "P0", "status": "BACKLOG" },
     "M0-006": { "deps": ["M0-002"], "pri": "P0", "status": "READY" },
     "M0-007": { "deps": ["M0-005"], "pri": "P0", "status": "BACKLOG" },
@@ -74,7 +74,8 @@
   "findings": {
     "F-01": { "summary": "metrics endpoint auth contract mismatch (401 vs test expecting 200)", "status": "OPEN", "disposition": "Max must judge API contract per §107; do NOT let Flash pick code-vs-test.", "severity": "P1" },
     "F-02": { "summary": "full ruff 291 findings vs CI selected-rules clean", "status": "OPEN", "disposition": "No auto mass-reformat per §108; resolve lint policy via catalog ARCH task.", "severity": "P2" },
-    "F-08": { "summary": "safe Postgres migration test env missing", "status": "IN_PROGRESS_MITIGATION", "disposition": "§32-35 authorize one-time isolated non-5432 postgres test container for M0-004/M0-005.", "severity": "P0-for-M0-004" },
+    "F-08": { "summary": "safe Postgres migration test env missing", "status": "NOT_CLOSED_ROOT_CAUSE_IDENTIFIED", "disposition": "Isolated non-5432 test env (§32-35) was successfully created for M0-004 (container aiear-m0004-pg-test @ :55432), so the env gap is mitigated; but running the migration triple there exposed F-15 (002_seed_items.py is alembic-1.13.1-incompatible). F-08 closure now depends on FIX-M0-004-001.", "severity": "P1" },
+    "F-15": { "summary": "backend/alembic/versions/002_seed_items.py:55-58 calls op.execute(sa.text(...), item) with a 2nd positional arg; alembic 1.13.1 Operations.execute signature is (self, sqltext, *, execution_options=None) -> raises TypeError: execute() takes 2 positional arguments but 3 were given. So 001->002 chain cannot reach head; item_bank seed (19 rows) is never applied via migration. Root cause was latent because there is NO repo-wide alembic execution path (zero hits in CI/compose/deploy/scripts/runbook/Dockerfile); real table creation uses Base.metadata.create_all (app/core/database.py:42, app/db/init_db.py:15, tests/conftest.py:68). Verified on isolated :55432 postgres 15.18: upgrade 001 exit 0 (8 tables + alembic_version), downgrade base exit 0 (clean), upgrade head exit 1 (TypeError at 002 line 55).", "status": "OPEN", "disposition": "Recorded by M0-004 read-only audit; NOT fixed in M0-004 (002_seed_items.py is out of the audit's forbidden-to-change scope). Requires separate FIX-M0-004-001 before M2 Knowledge Core migrations rely on the alembic chain. Candidate fix: op.get_bind().execute(sa.text(...), item) or sa.text(...).bindparams(**item); also review 002 seed idempotency + wide DELETE downgrade per 50-database rules.", "severity": "P1", "blocksMilestone": "M2 (not M0/M1); on M0 critical path only as a recorded finding" },
     "F-11": { "summary": "integration/security/performance evidence gap", "status": "OPEN", "disposition": "Addressed by M0-005/M0-006/M0-007 baseline tasks.", "severity": "P1" },
     "F-13": { "summary": "adaptive engine RNG nondeterministic in tests", "status": "OPEN", "disposition": "Per §106 resolve via catalog/Fix mechanism if a deterministic gate needs it; never treat a single green run as fixed.", "severity": "P2" },
     "COV-GAP": { "summary": "backend coverage ~61%", "status": "OPEN", "disposition": "Per §109 threshold must be defined by formal OPS/Quality task; no self-invented 80/90%.", "severity": "P2" },
@@ -83,6 +84,33 @@
     "ENV-F03": { "summary": "runbook venv drift (docs reference venv, local uses backend/.venv / venv312)", "status": "OPEN", "disposition": "Doc drift; resolve per §70/§111 if it blocks safe ops.", "severity": "P2" }
   },
   "humanDecisionsRequired": [],
+  "pendingFixTasks": {
+    "FIX-M0-004-001": {
+      "source": "M0-004 audit finding F-15",
+      "objective": "Repair backend/alembic/versions/002_seed_items.py so the 001->002 alembic chain reaches head under alembic 1.13.1 (op.execute 2-positional-arg incompatibility), and review seed idempotency + wide DELETE downgrade per 50-database rules.",
+      "severity": "P1",
+      "mustRunBefore": "M2 Knowledge Core migrations (KB-001+) that rely on the alembic chain",
+      "notOnM0CriticalPath": true,
+      "requiresUnforbid": "backend/alembic/versions/002_seed_items.py must be explicitly allowed-to-change in that task's SPEC",
+      "status": "BACKLOG",
+      "note": "Deferred; NOT executed during M0-004 read-only audit. Scheduled after M0 completes / before M2."
+    }
+  },
+  "specConflictLog": [
+    {
+      "taskId": "M0-004",
+      "runId": "wf_881c57ca-678",
+      "attempts": 0,
+      "blockReason": "SPEC_CONFLICT",
+      "failedPhase": "Implement",
+      "conflict1": "AC-05/AC-06/AC-13 asserted migration triple reaches head with item_bank=19; real 002_seed_items.py:55-58 uses alembic-1.13.1-incompatible op.execute(sql, params) 2-positional-arg -> upgrade head exit 1 (TypeError). Head unreachable without editing forbidden files.",
+      "conflict2": "AC-11 asserted full pytest exitCode=0 with 21 test files; real baseline is 1 failed/231 passed (pre-existing F-01, test_middleware.py:34 <- metrics.py:14-15, already recorded by M0-002) with 20 test files.",
+      "maxDecision": "A+C+D (autonomous Max re-decision per 00-model-policy.md SPEC_CONFLICT semantics; NOT a governance-file change; NOT lowering standards to fake a pass). A: reword migration ACs to record reality truthfully (upgrade 001 exit 0 / downgrade base exit 0 / upgrade head exit 1 with documented TypeError) + record finding F-15. C: reword pytest AC to 'must match M0-002 baseline 1 failed/231 passed, no NEW failures; 20 test files'. D: fix gate command form to 'python.exe -m alembic -c <temp-ini>' (alembic.exe shim fails on non-ASCII path) and AC-01 fingerprint method to git hash-object. M0-004 stays a READ-ONLY AUDIT: forbid editing 002_seed_items.py / alembic.ini / tests / metrics.py. The 002 code fix is deferred to FIX-M0-004-001 (pre-M2).",
+      "resolution": "RELAUNCH corrected TASK_SPEC (new SHA-suffixed spec.json per AGENTS.md §3 immutability); ATTEMPTS=0 relaunch is NOT a repair cycle per §126.",
+      "filesChangedByFlash": [],
+      "gitWritesByFlash": "none (HEAD still 7e027c7, worktree clean except pre-existing qgraphflow, fingerprint UNCHANGED)"
+    }
+  ],
   "notes": {
     "dbSafety": "backend/alembic.ini:5 default sqlalchemy.url points to postgresql://...@localhost:5432/cochlear_rehab (the UNKNOWN listener). Any migration test MUST override the URL to a Goal-created isolated non-5432 container; NEVER touch 5432.",
     "dockerAvailable": "Docker 29.5.2 / Compose v5.1.4 confirmed available for §32-35 isolated test container.",
