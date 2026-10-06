@@ -101,3 +101,6 @@ temp_script.py
 .qoder/sessions/
 .qoder/settings.local.json
 .qoder/workflow-state/reports/
+
+# Qoder per-task runtime state
+.qoder/workflow-state/*.spec.json
