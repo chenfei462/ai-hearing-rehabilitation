@@ -4,8 +4,8 @@
   "currentMilestone": "M0",
   "currentTask": "M0-004",
   "goalStatus": "IN_PROGRESS",
-  "lastSafeCommit": "7be3c50",
-  "currentHead": "7be3c50",
+  "lastSafeCommit": "2ab8ad5",
+  "currentHead": "2ab8ad5",
   "branch": "feature/m0-baseline",
   "modelPolicy": {
     "allowed": ["qmodel_38max", "qfmodel"],
@@ -37,6 +37,17 @@
       "deliverable": "deliverables/baseline/BACKEND_TEST_BASELINE.md",
       "gateHealth": "PASS",
       "projectBaselineHealth": "DEGRADED"
+    },
+    {
+      "id": "M0-003",
+      "title": "前端构建基线",
+      "status": "TASK_PASS",
+      "commit": "2ab8ad5",
+      "deliverable": "deliverables/baseline/FRONTEND_BASELINE.md",
+      "gateHealth": "PASS",
+      "projectBaselineHealth": "DEGRADED",
+      "modelUsage": { "PLAN": "qmodel_38max", "IMPLEMENT": "qfmodel", "REVIEW": "qmodel_38max" },
+      "findings": ["F-01 chunk>1000kB vendor-charts 1129.69kB echarts", "F-02 package.json vs lockfile version drift (in semver)", "F-03 40-frontend.md:36 says 5 test.tsx but 6 vitest files", "F-04 local Windows+Node24 != CI ubuntu+Node20", "F-05 thin coverage 10 tests/6 files, 1 e2e spec"]
     }
   ],
   "blockedTasks": [],
@@ -45,13 +56,14 @@
   "completedMilestones": [],
   "taskCommits": {
     "M0-001": "abc6a78",
-    "M0-002": "7be3c50"
+    "M0-002": "7be3c50",
+    "M0-003": "2ab8ad5"
   },
   "milestoneGateResults": {},
   "m0Dag": {
     "M0-001": { "deps": [], "pri": "P0", "status": "TASK_PASS" },
     "M0-002": { "deps": ["M0-001"], "pri": "P0", "status": "TASK_PASS" },
-    "M0-003": { "deps": ["M0-001"], "pri": "P0", "status": "READY", "criticalPath": false },
+    "M0-003": { "deps": ["M0-001"], "pri": "P0", "status": "TASK_PASS", "criticalPath": false },
     "M0-004": { "deps": ["M0-001"], "pri": "P0", "status": "READY", "criticalPath": true },
     "M0-005": { "deps": ["M0-002", "M0-004"], "pri": "P0", "status": "BACKLOG" },
     "M0-006": { "deps": ["M0-002"], "pri": "P0", "status": "READY" },

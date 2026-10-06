@@ -5,7 +5,7 @@
 
 - Goal 启动时间：2026-10-06T19:03Z
 - 当前分支：`feature/m0-baseline`
-- 当前 HEAD：`7be3c50`
+- 当前 HEAD：`2ab8ad5`
 - 当前 Milestone：**M0 — Repository Truth & Baseline**
 - Goal 状态：**IN_PROGRESS**
 - 模型政策：仅 `qmodel_38max`(Max) / `qfmodel`(Flash)；执行器 `.qoder/workflows/project-feature-delivery.js`；无违规。
@@ -31,13 +31,21 @@
 - 产物：`deliverables/baseline/BACKEND_TEST_BASELINE.md`（304 行 / 23890 bytes，16/16 section）
 - GATE_HEALTH=PASS；PROJECT_BASELINE_HEALTH=DEGRADED（§71 M0 合法）
 
+### M0-003 — 前端构建基线
+- 状态：TASK_PASS
+- Commit：`2ab8ad5`
+- 产物：`deliverables/baseline/FRONTEND_BASELINE.md`（~30802 bytes，16/16 section）
+- GATE_HEALTH=PASS；PROJECT_BASELINE_HEALTH=DEGRADED（§71 M0 合法）
+- Findings：F-01 chunk>1000kB vendor-charts 1129.69kB(echarts)；F-02 package.json vs lockfile 版本漂移（semver 内）；F-03 40-frontend.md:36 称"5 test.tsx"实为 6 vitest 文件；F-04 本地 Windows+Node24 ≠ CI ubuntu+Node20；F-05 覆盖薄（10 测试/6 文件，1 e2e spec）
+- 模型使用：PLAN=qmodel_38max / IMPLEMENT=qfmodel / REVIEW=qmodel_38max（无违规）
+
 ## M0 DAG（来自 docs/workflow/TASK_CATALOG.md，权威）
 
 | Task | Title | Pri | Deps | 状态 |
 |---|---|---|---|---|
 | M0-001 | 仓库清单 | P0 | — | TASK_PASS |
 | M0-002 | 后端测试基线 | P0 | M0-001 | TASK_PASS |
-| M0-003 | 前端构建基线 | P0 | M0-001 | READY |
+| M0-003 | 前端构建基线 | P0 | M0-001 | TASK_PASS |
 | M0-004 | API/DB/迁移基线 | P0 | M0-001 | READY（Critical Path） |
 | M0-005 | 集成测试基线 | P0 | M0-002,M0-004 | BACKLOG |
 | M0-006 | 安全基线 | P0 | M0-002 | READY |
@@ -76,3 +84,4 @@ Critical Path：`M0-001 → M0-004 → KB-001 → …`
 ## 进度日志
 
 - 2026-10-06T19:07Z — 初始化 GOAL_PROGRESS.md + TASK_LEDGER.json；确认 M0-001/M0-002 已提交；qgraphflow 指纹已记录；重建 M0 DAG；选定 M0-004 为下一 Task。
+- 2026-10-06T19:57Z — M0-003（前端构建基线）经 Workflow TASK_PASS；产物 `FRONTEND_BASELINE.md` 单独封存为 `2ab8ad5`；HEAD → `2ab8ad5`；ledger 标记 M0-003=TASK_PASS；本进度 seal 单独提交。下一 Task：M0-004（Critical Path，Goal 自建隔离非 5432 postgres 容器）。
