@@ -69,7 +69,9 @@ Thumbs.db
 worktrees/
 
 # Deliverables (keep reports but not build artifacts)
-deliverables/
+# 例外：deliverables/baseline/ 是 M0 正式基线产物目录，允许提交（治理决定 2026-10-07）
+deliverables/*
+!deliverables/baseline/
 
 # Build artifacts
 *.pyc
@@ -94,3 +96,8 @@ playwright-report/
 *.rdb
 nul
 temp_script.py
+
+# Qoder runtime (sessions / local settings / workflow run reports)
+.qoder/sessions/
+.qoder/settings.local.json
+.qoder/workflow-state/reports/
