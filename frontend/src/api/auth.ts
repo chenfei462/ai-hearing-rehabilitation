@@ -1,4 +1,5 @@
 import api from '../services/api';
+import type { ApiResponse, User } from '../types';
 
 export interface SmsSendRequest {
   phone: string;
@@ -10,12 +11,7 @@ export interface LoginRequest {
 }
 
 export interface LoginResponse {
-  user: {
-    id: number;
-    phone: string;
-    role: 'patient' | 'therapist';
-    nickname: string;
-  };
+  user: User;
 }
 
 export interface UserProfile {
@@ -43,13 +39,13 @@ export async function sendSmsCode(phone: string): Promise<void> {
 
 /** 手机号+验证码登录 */
 export async function loginWithPhone(data: LoginRequest): Promise<LoginResponse> {
-  const res: any = await api.post('/auth/login', data);
+  const res = await api.post<ApiResponse<LoginResponse>>('/auth/login', data);
   return res.data;
 }
 
 /** 获取当前用户信息 */
 export async function getMe(): Promise<UserProfile> {
-  const res: any = await api.get('/auth/me');
+  const res = await api.get<ApiResponse<UserProfile>>('/auth/me');
   return res.data;
 }
 

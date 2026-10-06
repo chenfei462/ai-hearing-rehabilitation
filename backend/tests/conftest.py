@@ -7,17 +7,21 @@
 """
 import pytest
 import pytest_asyncio
+import os
+from unittest.mock import AsyncMock
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.pool import StaticPool
 from sqlalchemy import select
 
 from app.core.database import Base, get_db
 from app.core.config import Settings
 from app.models.user import User
+from app.models.item_bank import ItemBank
 
 
 # 测试数据库 URL（使用 SQLite 内存数据库）
-TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+aiosqlite://")
 
 
 async def _ensure_user(engine, user_id: int, phone: str, role: str, nickname: str):
@@ -41,7 +45,7 @@ def test_settings():
     return Settings(
         DATABASE_URL=TEST_DATABASE_URL,
         REDIS_URL="redis://localhost:6379/1",
-        SECRET_KEY="your-secret-key-here-change-in-production",
+        SECRET_KEY="test-only-secret-key-with-at-least-32-characters-long",
         DEBUG=False,
     )
 
@@ -52,10 +56,41 @@ async def test_engine():
     # 导入所有模型以确保它们被注册到 Base.metadata
     import app.models  # noqa: F401
 
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    engine_kwargs = {"echo": False}
+    if TEST_DATABASE_URL.startswith("sqlite"):
+        engine_kwargs.update({
+            "connect_args": {"check_same_thread": False},
+            "poolclass": StaticPool,
+        })
+    engine = create_async_engine(TEST_DATABASE_URL, **engine_kwargs)
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with async_session() as session:
+        session.add_all([
+            ItemBank(
+                level="syllable",
+                content_type="syllable",
+                text="ma",
+                phonemes=["m", "a"],
+                difficulty_b=-1.0,
+                tags={"category": "test"},
+            ),
+            ItemBank(
+                level="word",
+                content_type="pronunciation",
+                text="你好",
+                phonemes=["n", "i", "h", "ao"],
+                difficulty_b=-0.5,
+                tags={
+                    "pronunciation_difficulty": "easy",
+                    "target_phonemes": ["ni", "hao"],
+                },
+            ),
+        ])
+        await session.commit()
 
     yield engine
 
@@ -80,6 +115,8 @@ async def client(test_engine):
     """测试 HTTP 客户端（带数据库依赖注入）"""
     from app.main import app
 
+    mock_redis_client.data.clear()
+
     async_session = async_sessionmaker(
         test_engine, class_=AsyncSession, expire_on_commit=False
     )
@@ -102,6 +139,12 @@ async def client(test_engine):
     app.dependency_overrides.clear()
 
 
+@pytest.fixture
+def test_redis():
+    """访问当前测试使用的内存 Redis，便于验证短信验证码流程。"""
+    return mock_redis_client
+
+
 @pytest_asyncio.fixture
 async def auth_token(test_engine) -> str:
     """获取普通用户的认证 token（id=1）"""
@@ -121,65 +164,94 @@ async def therapist_token(test_engine) -> str:
 
 
 import sys
-from unittest.mock import AsyncMock, MagicMock
-
-# 模拟 Redis 模块
-mock_redis_module = MagicMock()
-mock_redis_client = AsyncMock()
-mock_redis_client.ping.return_value = True
-mock_redis_client.get.return_value = None
-mock_redis_client.set.return_value = True
-mock_redis_client.delete.return_value = True
-mock_redis_client.setex.return_value = True
-mock_redis_module.from_url.return_value = mock_redis_client
-mock_redis_module.Redis = MagicMock()
-
-sys.modules['redis'] = mock_redis_module
-sys.modules['redis.asyncio'] = mock_redis_module
+import types
 
 
-import sys
-from unittest.mock import AsyncMock, MagicMock
+class _MemoryPipeline:
+    def __init__(self, client):
+        self.client = client
+        self.operations = []
 
-# 创建模拟的Redis客户端
-mock_redis_client = AsyncMock()
-mock_redis_client.ping.return_value = True
-mock_redis_client.get.return_value = None
-mock_redis_client.set.return_value = True
-mock_redis_client.delete.return_value = True
-mock_redis_client.setex.return_value = True
+    def incr(self, key):
+        self.operations.append(("incr", key))
+        return self
 
-# 创建模拟的Redis模块
-mock_redis_module = MagicMock()
-mock_redis_module.from_url.return_value = mock_redis_client
-mock_redis_module.Redis = MagicMock()
+    def expire(self, key, seconds):
+        self.operations.append(("expire", key, seconds))
+        return self
 
-# 注入到sys.modules
-sys.modules['redis'] = mock_redis_module
-sys.modules['redis.asyncio'] = mock_redis_module
+    async def execute(self):
+        for operation in self.operations:
+            if operation[0] == "incr":
+                self.client.data[operation[1]] = int(self.client.data.get(operation[1], 0)) + 1
+        return [True] * len(self.operations)
 
-# Redis 模拟（用于测试环境没有 Redis 的情况）
-import sys
-from unittest.mock import AsyncMock, MagicMock
 
-# 创建模拟的Redis客户端
-mock_redis_client = AsyncMock()
-mock_redis_client.ping.return_value = True
-mock_redis_client.get.return_value = None
-mock_redis_client.set.return_value = True
-mock_redis_client.delete.return_value = True
-mock_redis_client.setex.return_value = True
+class _MemoryRedis:
+    """有状态的异步 Redis 测试替身，覆盖应用实际使用的最小接口。"""
 
-# 创建模拟的Redis模块
-mock_redis_module = MagicMock()
-mock_redis_module.from_url.return_value = mock_redis_client
-mock_redis_module.Redis = MagicMock()
+    def __init__(self):
+        self.data = {}
 
-# 注入到sys.modules
-sys.modules['redis'] = mock_redis_module
-sys.modules['redis.asyncio'] = mock_redis_module
+    async def ping(self):
+        return True
 
-# 重写get_redis函数
+    async def get(self, key):
+        return self.data.get(key)
+
+    async def set(self, key, value, *args, **kwargs):
+        self.data[key] = value
+        return True
+
+    async def setex(self, key, _seconds, value):
+        self.data[key] = value
+        return True
+
+    async def delete(self, key):
+        self.data.pop(key, None)
+        return True
+
+    def pipeline(self):
+        return _MemoryPipeline(self)
+
+    async def close(self):
+        return None
+
+
+mock_redis_client = _MemoryRedis()
+mock_redis_module = types.ModuleType("redis")
+mock_redis_asyncio_module = types.ModuleType("redis.asyncio")
+mock_redis_asyncio_module.from_url = lambda *args, **kwargs: mock_redis_client
+mock_redis_asyncio_module.Redis = _MemoryRedis
+mock_redis_module.asyncio = mock_redis_asyncio_module
+mock_redis_module.Redis = _MemoryRedis
+
+sys.modules["redis"] = mock_redis_module
+sys.modules["redis.asyncio"] = mock_redis_asyncio_module
+
 import app.core.redis
-app.core.redis.get_redis = AsyncMock(return_value=mock_redis_client)
+
+
+@pytest.fixture(autouse=True)
+def mock_external_tts(monkeypatch):
+    """Keep integration tests offline and prevent SDK event-loop nesting."""
+    monkeypatch.setattr(
+        "app.services.dialogue_orchestrator.tts_gateway.synthesize_to_url",
+        AsyncMock(return_value=""),
+    )
+    from importlib import import_module
+
+    tts_module = import_module("app.ai.tts_gateway")
+    monkeypatch.setattr(
+        tts_module.QwenTTSGateway,
+        "synthesize_to_url",
+        AsyncMock(return_value=""),
+    )
+
+
+async def _get_test_redis():
+    return mock_redis_client
+
+
+app.core.redis.get_redis = _get_test_redis
 app.core.redis.redis_client = mock_redis_client

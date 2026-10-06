@@ -1,16 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Typography, Card, CardContent, Grid, Chip, Alert,
+  Box, Typography, Card, CardContent, Grid, Alert,
   Tabs, Tab, CircularProgress, Divider, List, ListItem,
-  ListItemText, ListItemAvatar, Avatar, Paper, ToggleButton,
+  ListItemText, Avatar, Paper, ToggleButton,
   ToggleButtonGroup,
 } from '@mui/material';
 import {
   Assessment, TrendingUp, Timer, FitnessCenter,
   Person, Warning, CheckCircle, TrendingFlat, TrendingDown,
 } from '@mui/icons-material';
-import { reportService, TrainingSummary, WeeklyReportData, PatientSummary } from '../services/reportService';
+import { reportService } from '../services/reportService';
+import type { PatientSummary, TrainingSummary, WeeklyReportData } from '../types';
 import { TrendChart, AdherenceChart, LevelProgressChart } from '../components/charts';
+import { getErrorMessage } from '../utils/errors';
 
 const LEVEL_LABELS: Record<string, string> = {
   syllable: '音节训练',
@@ -51,11 +53,7 @@ export default function ReportPage() {
   const [isTherapist, setIsTherapist] = useState(false);
 
   // 加载训练概览
-  useEffect(() => {
-    loadData();
-  }, [days]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -63,23 +61,27 @@ export default function ReportPage() {
         reportService.getSummary(days),
         reportService.getWeeklyReport(),
       ]);
-      setSummary((summaryRes as any).data);
-      setWeekly((weeklyRes as any).data);
+      setSummary(summaryRes.data);
+      setWeekly(weeklyRes.data);
 
       // 尝试加载患者列表（可能是听力师）
       try {
         const patientsRes = await reportService.getPatients();
-        setPatients((patientsRes as any).data);
+        setPatients(patientsRes.data);
         setIsTherapist(true);
       } catch {
         setIsTherapist(false);
       }
-    } catch (err: any) {
-      setError(err.message || '加载报告数据失败');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '加载报告数据失败'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [days]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const formatDuration = (minutes: number): string => {
     if (minutes < 60) return `${Math.round(minutes)} 分钟`;

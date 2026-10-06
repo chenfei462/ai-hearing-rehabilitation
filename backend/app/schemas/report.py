@@ -2,8 +2,7 @@
 报告相关 Pydantic Schema
 """
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
-from datetime import datetime
+from typing import List, Optional
 
 
 class AccuracyPoint(BaseModel):

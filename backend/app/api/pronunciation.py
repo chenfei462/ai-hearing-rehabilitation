@@ -13,15 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from app.core.database import get_db
+from app.ai import get_asr_gateway, get_tts_gateway
 from app.api.deps import get_current_user
 from app.services.pronunciation_service import PronunciationService
 from app.schemas.common import ApiResponse
-from app.schemas.pronunciation import (
-    PronunciationAttemptResponse,
-    PronunciationTaskResponse,
-    PronunciationHistoryItem,
-    PronunciationStats,
-)
 
 router = APIRouter()
 
@@ -32,7 +27,7 @@ async def get_next_task(
     current_user=Depends(get_current_user),
 ):
     """获取下一个发音练习任务"""
-    service = PronunciationService(db)
+    service = PronunciationService(db, asr=get_asr_gateway(), tts=get_tts_gateway())
     task = await service.get_next_task(current_user.id)
     return {"code": 0, "data": task, "message": "ok"}
 
@@ -64,7 +59,7 @@ async def submit_attempt(
         except (json.JSONDecodeError, TypeError):
             phonemes_list = None
 
-    service = PronunciationService(db)
+    service = PronunciationService(db, asr=get_asr_gateway(), tts=get_tts_gateway())
     result = await service.evaluate(
         user_id=current_user.id,
         audio_bytes=audio_bytes,
@@ -82,7 +77,7 @@ async def get_history(
     current_user=Depends(get_current_user),
 ):
     """获取用户发音历史记录"""
-    service = PronunciationService(db)
+    service = PronunciationService(db, asr=get_asr_gateway(), tts=get_tts_gateway())
     history = await service.get_history(current_user.id, limit=limit, offset=offset)
     return {"code": 0, "data": history, "message": "ok"}
 
@@ -93,6 +88,6 @@ async def get_stats(
     current_user=Depends(get_current_user),
 ):
     """获取用户发音统计数据"""
-    service = PronunciationService(db)
+    service = PronunciationService(db, asr=get_asr_gateway(), tts=get_tts_gateway())
     stats = await service.get_stats(current_user.id)
     return {"code": 0, "data": stats, "message": "ok"}

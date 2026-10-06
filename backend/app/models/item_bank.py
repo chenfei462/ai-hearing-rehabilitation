@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, Float, Boolean, JSON
+from sqlalchemy.orm import relationship
 from app.core.database import Base
 
 
@@ -15,3 +16,5 @@ class ItemBank(Base):
     difficulty_b = Column(Float, default=0.0)
     tags = Column(JSON, default=dict)
     is_active = Column(Boolean, default=True)
+
+    knowledge_states = relationship("KnowledgeState", back_populates="item")

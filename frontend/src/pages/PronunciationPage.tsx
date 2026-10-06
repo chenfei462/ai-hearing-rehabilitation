@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box, Typography, Button, Card, CardContent, Grid, Chip, Alert,
-  CircularProgress, Divider, IconButton, Collapse, LinearProgress,
+  CircularProgress, Divider, Collapse,
 } from '@mui/material';
 import {
   Mic, Stop, Replay, VolumeUp, ExpandMore, ExpandLess,
@@ -10,6 +10,7 @@ import {
 import ScoreRing from '../components/common/ScoreRing';
 import { useRecorder } from '../hooks/useRecorder';
 import { pronunciationService } from '../services/pronunciationService';
+import { getErrorMessage } from '../utils/errors';
 import type {
   PronunciationTask, PronunciationResult, PhonemeDetail,
   PronunciationHistoryItem, PronunciationStats,
@@ -28,6 +29,7 @@ export default function PronunciationPage() {
   const [errorMsg, setErrorMsg] = useState('');
 
   const recorder = useRecorder();
+  const { resetRecording } = recorder;
   const userWaveRef = useRef<HTMLDivElement>(null);
   const demoAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -35,17 +37,16 @@ export default function PronunciationPage() {
   const loadTask = useCallback(async () => {
     setPageState('loading');
     setResult(null);
-    recorder.resetRecording();
+    resetRecording();
     try {
       const res = await pronunciationService.getNextTask();
-      const data = (res as any).data ?? res;
-      setTask(data);
+      setTask(res.data);
       setPageState('ready');
-    } catch (err: any) {
-      setErrorMsg(err?.message || '获取任务失败');
+    } catch (err: unknown) {
+      setErrorMsg(getErrorMessage(err, '获取任务失败'));
       setPageState('error');
     }
-  }, []);
+  }, [resetRecording]);
 
   // 加载历史和统计
   const loadHistoryAndStats = useCallback(async () => {
@@ -54,8 +55,8 @@ export default function PronunciationPage() {
         pronunciationService.getHistory(10, 0),
         pronunciationService.getStats(),
       ]);
-      setHistory((histRes as any).data ?? histRes ?? []);
-      setStats((statsRes as any).data ?? statsRes ?? null);
+      setHistory(histRes.data);
+      setStats(statsRes.data);
     } catch {
       // 非阻塞
     }
@@ -64,7 +65,7 @@ export default function PronunciationPage() {
   useEffect(() => {
     loadTask();
     loadHistoryAndStats();
-  }, []);
+  }, [loadTask, loadHistoryAndStats]);
 
   // 播放示范音频
   const playDemo = () => {
@@ -92,12 +93,11 @@ export default function PronunciationPage() {
     setPageState('evaluating');
     try {
       const res = await pronunciationService.evaluate(blob, task.text, task.phonemes);
-      const data = (res as any).data ?? res;
-      setResult(data);
+      setResult(res.data);
       setPageState('result');
       loadHistoryAndStats();
-    } catch (err: any) {
-      setErrorMsg(err?.message || '评估失败，请重试');
+    } catch (err: unknown) {
+      setErrorMsg(getErrorMessage(err, '评估失败，请重试'));
       setPageState('ready');
     }
   };

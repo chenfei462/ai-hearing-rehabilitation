@@ -2,15 +2,19 @@
 监控中间件 - 自动收集 HTTP 请求指标
 """
 import time
+import asyncio
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.monitoring.metrics import metrics_collector
-from app.utils.logger import logger
 
 
 class MonitoringMiddleware(BaseHTTPMiddleware):
     """自动收集 HTTP 请求指标"""
+
+    def __init__(self, app):
+        super().__init__(app)
+        self._lock = asyncio.Lock()
 
     async def dispatch(self, request: Request, call_next) -> Response:
         # 跳过健康检查和指标端点
@@ -23,8 +27,9 @@ class MonitoringMiddleware(BaseHTTPMiddleware):
         metrics_collector.increment("http_requests")
 
         # 记录当前活跃请求数
-        active = metrics_collector.get_gauge("active_requests")
-        metrics_collector.set_gauge("active_requests", active + 1)
+        async with self._lock:
+            active = metrics_collector.get_gauge("active_requests")
+            metrics_collector.set_gauge("active_requests", active + 1)
 
         try:
             response = await call_next(request)
@@ -60,8 +65,9 @@ class MonitoringMiddleware(BaseHTTPMiddleware):
             raise
 
         finally:
-            active = metrics_collector.get_gauge("active_requests")
-            metrics_collector.set_gauge("active_requests", max(0, active - 1))
+            async with self._lock:
+                active = metrics_collector.get_gauge("active_requests")
+                metrics_collector.set_gauge("active_requests", max(0, active - 1))
 
     def _normalize_path(self, path: str) -> str:
         """规范化路径（将 ID 参数替换为占位符）"""

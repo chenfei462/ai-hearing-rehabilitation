@@ -1,4 +1,4 @@
-import { Box, Typography, Paper, TextField, IconButton, List, ListItem, ListItemText, Avatar } from "@mui/material";
+import { Box, Typography, Paper, TextField, IconButton, List, ListItem, Avatar } from "@mui/material";
 import { Send, Mic } from "@mui/icons-material";
 import { useState } from "react";
 

@@ -6,12 +6,10 @@
 - Histogram: 直方图（响应时间分布）
 - Gauge: 仪表盘（当前并发数、连接池使用率）
 """
-import time
-import asyncio
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
-from datetime import datetime, timedelta, timezone
+from typing import Dict, List
+from datetime import datetime, timezone
 
 
 @dataclass

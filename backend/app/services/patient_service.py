@@ -5,7 +5,7 @@
 """
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
-from datetime import datetime, timedelta, date
+from datetime import timedelta, date
 from typing import List
 from app.models import TrainingSession, UserAbility, User
 from app.schemas.report import PatientSummary

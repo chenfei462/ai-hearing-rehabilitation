@@ -74,13 +74,10 @@ npm run dev
 
 访问 http://localhost:3000
 
-### 1.5 测试账号
+### 1.5 本地登录测试
 
-| 手机号 | 验证码 | 角色 |
-|--------|--------|------|
-| 13800000001 | 1234 | 演示用户（有训练历史） |
-| 13800000002 | 1234 | 听力师 |
-| 任意手机号 | 1234 | 新用户（自动创建） |
+验证码由后端随机生成并写入 Redis，系统不会把验证码打印到日志，也不接受固定的万能验证码。
+测试环境应通过测试 fixture 读取内存 Redis 中的验证码；手工联调请接入短信供应商或使用隔离的测试短信通道。
 
 ## 二、Serverless 部署（阿里云 FC）
 
@@ -127,7 +124,8 @@ s config add --AccessKeyID <your-key> --AccessKeySecret <your-secret> --alias de
 # 设置环境变量
 export DATABASE_URL="postgresql+asyncpg://user:pass@rm-xxx.pg.rds.aliyuncs.com:5432/cochlear_rehab"
 export REDIS_URL="redis://:password@r-xxx.redis.rds.aliyuncs.com:6379/0"
-export SECRET_KEY="your-production-secret-key"
+# 使用密码管理器生成并注入至少 32 位随机密钥，不要使用固定示例值
+export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')"
 export DASHSCOPE_API_KEY="sk-xxx"
 
 # 部署

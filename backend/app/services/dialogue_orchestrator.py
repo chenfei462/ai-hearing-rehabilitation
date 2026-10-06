@@ -5,7 +5,14 @@
 """
 import time
 import logging
-from app.ai import asr_gateway, tts_gateway, llm_gateway
+from app.ai import (
+    asr_gateway,
+    get_asr_gateway,
+    get_llm_gateway,
+    get_tts_gateway,
+    llm_gateway,
+    tts_gateway,
+)
 from app.ai import AIServiceUnavailable, AIServiceTimeout
 
 logger = logging.getLogger(__name__)
@@ -13,6 +20,24 @@ logger = logging.getLogger(__name__)
 
 class DialogueOrchestrator:
     """AI 对话编排服务 — ASR→LLM→TTS 管线"""
+
+    def __init__(self, asr=None, llm=None, tts=None):
+        """注入 AI 网关；未提供时保留旧单例兼容性。"""
+        self._asr = asr
+        self._llm = llm
+        self._tts = tts
+
+    @property
+    def asr(self):
+        return self._asr or asr_gateway or get_asr_gateway()
+
+    @property
+    def llm(self):
+        return self._llm or llm_gateway or get_llm_gateway()
+
+    @property
+    def tts(self):
+        return self._tts or tts_gateway or get_tts_gateway()
 
     async def recognize_speech(self, audio_bytes: bytes, session_id: int) -> dict:
         """
@@ -23,7 +48,7 @@ class DialogueOrchestrator:
         """
         start = time.monotonic()
         try:
-            asr_result = await asr_gateway.recognize(audio_bytes, language="zh")
+            asr_result = await self.asr.recognize(audio_bytes, language="zh")
             text = asr_result.text if asr_result else ""
             return {
                 "text": text,
@@ -54,7 +79,7 @@ class DialogueOrchestrator:
         """
         start = time.monotonic()
         try:
-            llm_response = await llm_gateway.chat(messages, scenario=scenario)
+            llm_response = await self.llm.chat(messages, scenario=scenario)
             text = llm_response.content if llm_response else ""
             return {
                 "text": text,
@@ -78,7 +103,7 @@ class DialogueOrchestrator:
         """
         start = time.monotonic()
         try:
-            audio_url = await tts_gateway.synthesize_to_url(text, voice=voice)
+            audio_url = await self.tts.synthesize_to_url(text, voice=voice)
             return {
                 "audio_url": audio_url,
                 "latency_ms": int((time.monotonic() - start) * 1000),
@@ -120,7 +145,7 @@ class DialogueOrchestrator:
                     "content": f"场景：{scenario_name}\n用户发言：{'；'.join(user_messages)}",
                 },
             ]
-            llm_response = await llm_gateway.chat(summary_messages)
+            llm_response = await self.llm.chat(summary_messages)
             return llm_response.content if llm_response else (
                 f"您完成了「{scenario_name}」场景的对话练习，"
                 f"共进行了 {len(user_messages)} 轮对话。继续加油！"

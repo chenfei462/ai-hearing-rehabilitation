@@ -87,6 +87,8 @@ class PronunciationScore:
 class PronunciationScorer:
     """DTW 音素对齐发音评分引擎"""
 
+    MAX_SEQUENCE_LENGTH = 500
+
     def __init__(
         self,
         match_threshold: float = 0.6,
@@ -115,6 +117,10 @@ class PronunciationScorer:
         返回：[(target_phoneme, asr_phoneme, similarity_score, confidence), ...]
         """
         n, m = len(target), len(asr)
+        if max(n, m) > self.MAX_SEQUENCE_LENGTH:
+            raise ValueError(
+                f"phoneme sequences must not exceed {self.MAX_SEQUENCE_LENGTH} items"
+            )
         if n == 0:
             return []
         if m == 0:

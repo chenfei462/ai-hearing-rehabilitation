@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { User } from '../types';
 import { logout as logoutApi } from '../api/auth';
 
@@ -11,26 +10,21 @@ interface AuthState {
   updateUser: (user: Partial<User>) => void;
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set) => ({
-      user: null,
-      isAuthenticated: false,
-      login: (user) => set({ user, isAuthenticated: true }),
-      logout: async () => {
-        try {
-          await logoutApi();
-        } catch (error) {
-          console.error('Logout failed:', error);
-        } finally {
-          set({ user: null, isAuthenticated: false });
-        }
-      },
-      updateUser: (updates) =>
-        set((state) => ({
-          user: state.user ? { ...state.user, ...updates } : null,
-        })),
-    }),
-    { name: 'auth-storage' },
-  ),
-);
+export const useAuthStore = create<AuthState>((set) => ({
+  user: null,
+  isAuthenticated: false,
+  login: (user) => set({ user, isAuthenticated: true }),
+  logout: async () => {
+    try {
+      await logoutApi();
+    } catch (error) {
+      console.error('Logout failed:', error);
+    } finally {
+      set({ user: null, isAuthenticated: false });
+    }
+  },
+  updateUser: (updates) =>
+    set((state) => ({
+      user: state.user ? { ...state.user, ...updates } : null,
+    })),
+}));

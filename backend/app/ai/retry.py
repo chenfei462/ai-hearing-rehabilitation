@@ -5,7 +5,7 @@
 所有网关共享同一套指数退避策略，仅在配置参数上有所不同。
 """
 import asyncio
-from typing import Callable, TypeVar, Awaitable, Optional, Any
+from typing import Callable, TypeVar, Awaitable, Optional
 
 from loguru import logger
 

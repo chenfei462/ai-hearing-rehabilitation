@@ -1,7 +1,5 @@
-import json
 import secrets
 import logging
-from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.user import User
@@ -21,7 +19,7 @@ class AuthService:
     async def send_sms(self, phone: str) -> bool:
         """发送短信验证码
 
-        临时方案：生成 4 位随机验证码，存入 Redis（5 分钟过期）。
+        临时方案：生成 6 位随机验证码，存入 Redis（5 分钟过期）。
         生产环境需集成阿里云 SMS。
         """
         code = f"{secrets.randbelow(900000) + 100000}"

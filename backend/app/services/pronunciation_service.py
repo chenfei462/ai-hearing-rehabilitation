@@ -16,7 +16,14 @@ from sqlalchemy import select, func, desc
 
 from app.models.pronunciation import PronunciationAttempt
 from app.models.item_bank import ItemBank
-from app.ai import asr_gateway, tts_gateway, AIServiceUnavailable, AIServiceTimeout
+from app.ai import (
+    AIServiceTimeout,
+    AIServiceUnavailable,
+    asr_gateway,
+    get_asr_gateway,
+    get_tts_gateway,
+    tts_gateway,
+)
 from app.services.pronunciation_scorer import pronunciation_scorer
 
 
@@ -27,8 +34,18 @@ DIFFICULTY_LEVELS = ["easy", "medium", "hard"]
 class PronunciationService:
     """发音服务"""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, asr=None, tts=None):
         self.db = db
+        self._asr = asr
+        self._tts = tts
+
+    @property
+    def asr(self):
+        return self._asr or asr_gateway or get_asr_gateway()
+
+    @property
+    def tts(self):
+        return self._tts or tts_gateway or get_tts_gateway()
 
     async def get_next_task(self, user_id: int) -> dict:
         """
@@ -62,7 +79,7 @@ class PronunciationService:
         # 从 ItemBank 中选择匹配发音难度的任务
         result = await self.db.execute(
             select(ItemBank).where(
-                ItemBank.is_active == True,
+                ItemBank.is_active.is_(True),
                 ItemBank.tags["pronunciation_difficulty"].as_string() == target_difficulty,
             )
         )
@@ -72,8 +89,8 @@ class PronunciationService:
         if not items:
             result = await self.db.execute(
                 select(ItemBank).where(
-                    ItemBank.is_active == True,
-                    ItemBank.tags["pronunciation_difficulty"].as_string() != None,
+                    ItemBank.is_active.is_(True),
+                    ItemBank.tags["pronunciation_difficulty"].as_string().isnot(None),
                 )
             )
             items = result.scalars().all()
@@ -98,7 +115,7 @@ class PronunciationService:
         # 尝试生成标准发音示范音频
         demo_audio_url = None
         try:
-            demo_audio_url = await tts_gateway.synthesize_to_url(task["text"], "zhixiaoxuan")
+            demo_audio_url = await self.tts.synthesize_to_url(task["text"], "zhixiaoxuan")
         except Exception:
             pass  # TTS 不可用时不影响任务下发
 
@@ -134,7 +151,7 @@ class PronunciationService:
 
         # ASR 音素级识别（带时间戳）
         try:
-            asr_result = await asr_gateway.recognize_with_timestamps(audio_bytes)
+            asr_result = await self.asr.recognize_with_timestamps(audio_bytes)
         except (AIServiceUnavailable, AIServiceTimeout) as e:
             # ASR 不可用时返回零分
             return {
@@ -164,7 +181,7 @@ class PronunciationService:
         # 尝试生成 TTS 示范音频
         tts_demo_url = None
         try:
-            tts_demo_url = await tts_gateway.synthesize_to_url(target_text, "zhixiaoxuan")
+            tts_demo_url = await self.tts.synthesize_to_url(target_text, "zhixiaoxuan")
         except Exception:
             pass
 
@@ -271,7 +288,7 @@ class PronunciationService:
         result = await self.db.execute(
             select(ItemBank).where(
                 ItemBank.text == text,
-                ItemBank.is_active == True,
+                ItemBank.is_active.is_(True),
             )
         )
         item = result.scalar_one_or_none()

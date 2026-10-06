@@ -45,7 +45,7 @@
 | 数据库驱动 | **asyncpg** | ^0.29 | 异步 PostgreSQL 驱动，性能最优 |
 | 缓存/会话 | **Redis** | 7.x (redis-py ^5.0) | 对话上下文、限流、一次性验证码、训练会话状态 |
 | 任务队列 | **ARQ**（轻量） | ^0.26 | 异步任务（周报生成、数据脱敏）；基于 Redis，比 Celery 轻，Serverless 友好 |
-| 鉴权 | **python-jose**[cryptography] + **passlib**[bcrypt] | ^3.3 / ^1.7 | JWT 签发校验 + 密码哈希 |
+| 鉴权 | **PyJWT**[crypto] + **bcrypt** | ^2.10 / ^5.0 | JWT 签发校验 + 密码哈希 |
 | HTTP 客户端 | **httpx** | ^0.27 | 异步调用百炼/第三方登录 |
 | 日志/监控 | **loguru** + **OpenTelemetry** | ^0.7 / ^1.x | 结构化日志 + 链路追踪 |
 
@@ -195,42 +195,36 @@ ai_cochlear_rehab_assistant/
 ├── frontend/                          # ── 前端（Vite + React + TS）──
 │   ├── index.html
 │   ├── vite.config.ts
-│   ├── tailwind.config.ts             # 老年适配 token（字号/触控）
+│   ├── tailwind.config.js             # 老年适配 token（字号/触控）
 │   ├── tsconfig.json
 │   ├── package.json
 │   └── src/
 │       ├── main.tsx                   # 入口，挂载 ThemeProvider/QueryClient
-│       ├── App.tsx                    # 路由出口 + 全局布局（大字模式 Context）
-│       ├── router/index.tsx           # 路由表（懒加载）
-│       ├── theme/index.ts             # MUI 主题 + Tailwind 互通（字体≥18px）
-│       ├── api/                       # API 封装层
-│       │   ├── client.ts              # axios 实例 + 拦截器（token/错误码）
-│       │   ├── training.ts            # 训练接口
-│       │   ├── dialogue.ts            # 对话接口
-│       │   ├── pronunciation.ts       # 发音接口
-│       │   └── auth.ts                # 认证接口
+│       ├── App.tsx                    # 路由出口 + 全局布局
+│       ├── theme/index.ts             # MUI 主题（字体≥18px）
+│       ├── api/                       # 认证请求封装
+│       │   └── auth.ts
+│       ├── services/                  # API 客户端与业务请求封装
+│       │   ├── api.ts                 # axios 实例 + Cookie/错误码拦截器
+│       │   ├── trainingService.ts     # 训练接口
+│       │   ├── dialogueService.ts     # 对话接口
+│       │   ├── pronunciationService.ts# 发音接口
+│       │   └── reportService.ts       # 报告接口
 │       ├── hooks/
 │       │   ├── useRecorder.ts         # MediaRecorder 封装（录音/停止/转码）
 │       │   ├── useAudioPlayer.ts      # 音频播放 + 字幕同步
 │       │   └── useSpeechGuide.ts      # 语音引导播报
-│       ├── store/
-│       │   ├── sessionStore.ts        # 当前训练会话（Zustand）
+│       ├── stores/
+│       │   ├── authStore.ts           # 当前用户会话（httpOnly Cookie）
 │       │   └── a11yStore.ts           # 大字/音量/对比度偏好
 │       ├── components/
 │       │   ├── common/                # 通用组件
 │       │   │   ├── BigButton.tsx       # ≥48px 大按钮
-│       │   │   ├── RecordOrb.tsx       # 录音主按钮（呼吸动效）
+│       │   │   ├── Subtitle.tsx        # 字幕展示
 │       │   │   ├── LevelBadge.tsx      # 级别徽章
 │       │   │   └── ScoreRing.tsx       # 评分环
 │       │   └── layout/AppShell.tsx     # 底部大标签导航
-│       ├── pages/
-│       │   ├── Login/                  # 登录/注册
-│       │   ├── Home/                   # 首页（四大入口卡片）
-│       │   ├── Training/               # 分级听觉训练
-│       │   ├── Dialogue/               # 场景对话陪练
-│       │   ├── Pronunciation/          # 发音/构音反馈
-│       │   ├── Report/                 # 训练报告
-│       │   └── Settings/               # 无障碍设置
+│       ├── pages/                      # 页面组件（按页面文件组织）
 │       └── types/index.ts             # 前端共享类型
 │
 └── backend/                           # ── 后端（FastAPI）──
@@ -264,16 +258,19 @@ ai_cochlear_rehab_assistant/
         │   ├── auth_service.py
         │   ├── training_service.py
         │   ├── dialogue_service.py
+        │   ├── dialogue_orchestrator.py
+        │   ├── scenario_service.py
         │   ├── pronunciation_service.py
-        │   └── report_service.py
-        ├── ai/                        # AI 能力封装
+        │   ├── report_service.py
+        │   ├── training_stats_service.py
+        │   └── patient_service.py
+        ├── ai/                        # AI 网关与自适应算法
         │   ├── asr_gateway.py         # Fun-ASR 调用
         │   ├── tts_gateway.py         # Qwen3-TTS 调用 + 缓存
         │   ├── llm_gateway.py         # 通义千问 Agent 调用
-        │   ├── irt_engine.py          # IRT 能力估计 + 选题
-        │   └── pronunciation_scorer.py# 音素对齐与评分
-        ├── api/v1/                    # 路由层
-        │   ├── router.py              # 汇总路由
+        │   └── retry.py               # 共享重试与指数退避
+        ├── api/                       # 路由层（统一挂载于 /api）
+        │   ├── metrics.py             # 监控路由
         │   ├── auth.py
         │   ├── training.py
         │   ├── dialogue.py
@@ -282,7 +279,7 @@ ai_cochlear_rehab_assistant/
         ├── tasks/                     # ARQ 异步任务
         │   ├── worker.py
         │   └── report_weekly.py
-        └── tests/                     # pytest
+        └── tests/                     # pytest（实际目录：backend/tests）
             ├── test_irt_engine.py
             ├── test_training_api.py
             └── test_pronunciation.py
@@ -292,11 +289,11 @@ ai_cochlear_rehab_assistant/
 
 | 文件 | 职责 |
 |------|------|
-| `frontend/src/api/client.ts` | 统一 axios 实例，注入 JWT、统一解包 `{code,data,message}`、401 自动跳登录 |
+| `frontend/src/services/api.ts` | 统一 axios 实例，携带 httpOnly Cookie、统一解包 `{code,data,message}`、401 自动跳登录 |
 | `frontend/src/hooks/useRecorder.ts` | 跨浏览器录音（含微信 WebView 兼容）、静音截止、上传 FormData |
-| `frontend/src/theme/index.ts` + `tailwind.config.ts` | 老年适配核心：字号 ≥18px、触控 ≥48px、高对比度 token |
-| `backend/app/ai/irt_engine.py` | IRT 2PL 能力估计（EAP）+ 最大信息量选题 + 升降级规则 |
-| `backend/app/ai/pronunciation_scorer.py` | ASR 音素序列与标准音素 DTW 对齐，输出准确度/流利度/完整度 |
+| `frontend/src/theme/index.ts` + `tailwind.config.js` | 老年适配核心：字号 ≥18px、触控 ≥48px、高对比度 token |
+| `backend/app/services/irt_engine.py` | IRT 2PL 能力估计（EAP）+ 最大信息量选题 + 升降级规则 |
+| `backend/app/services/pronunciation_scorer.py` | ASR 音素序列与标准音素 DTW 对齐，输出准确度/流利度/完整度 |
 | `backend/app/services/dialogue_service.py` | 场景提示词、3-5 轮上下文（Redis）、安全护栏、多轮编排 |
 | `backend/app/core/errors.py` | 统一错误码与异常→响应映射 |
 
@@ -415,7 +412,7 @@ erDiagram
 
 ---
 
-## 5. API 接口列表（RESTful，前缀 `/api/v1`）
+## 5. API 接口列表（RESTful，前缀 `/api`）
 
 > 统一响应：`{ "code": 0, "data": {...}, "message": "ok" }`（错误时 code≠0，见 §10）。
 
@@ -424,20 +421,19 @@ erDiagram
 | 方法 | 路径 | 说明 | 请求/响应概要 |
 |------|------|------|--------------|
 | POST | `/auth/sms/send` | 发送短信验证码 | req: {phone} → data: {expire_in} |
-| POST | `/auth/login` | 手机号+验证码登录（或微信 code 登录） | req: {phone, code} / {wx_code} → data: {token, user} |
-| GET | `/users/me` | 获取当前用户信息 | → data: User |
-| PUT | `/users/me/preferences` | 更新无障碍偏好（字号/音量） | req: {font_scale, volume} → data: {} |
+| POST | `/auth/login` | 手机号+验证码登录并设置 httpOnly Cookie | req: {phone, code} → data: {user} |
+| GET | `/auth/me` | 获取当前用户信息 | → data: User |
+| PUT | `/auth/users/me/preferences` | 更新无障碍偏好（字号/音量） | req: {font_scale, volume} → data: {} |
 
 ### 5.2 听觉训练（P0）
 
 | 方法 | 路径 | 说明 | 请求/响应概要 |
 |------|------|------|--------------|
-| GET | `/training/levels` | 获取四级训练进度概览 | → data: [{level, theta, mastery, item_count}] |
-| POST | `/training/sessions` | 开始一次训练会话 | req: {level} → data: {session_id, first_item} |
+| POST | `/training/sessions?level=word` | 开始一次训练会话 | query: level → data: {session_id, first_item} |
 | GET | `/training/sessions/{id}/next` | 获取下一题（IRT 选题） | → data: {item_id, text, audio_url, options} |
 | POST | `/training/sessions/{id}/answer` | 提交答案并返回自适应决策 | req: {item_id, answer, response_ms} → data: {is_correct, ai_score, next_action(up/keep/down)} |
 | POST | `/training/sessions/{id}/finish` | 结束会话 | → data: {accuracy, total_duration, ability_after} |
-| GET | `/training/items/{id}/audio` | 获取题目音频（签名 URL） | → 302/OSS 签名 URL |
+| GET | `/training/adaptive/recommendation` | 获取 BKT 自适应训练推荐 | query: item_id/level → data: recommendation |
 
 ### 5.3 对话陪练（P0）
 
@@ -445,7 +441,7 @@ erDiagram
 |------|------|------|--------------|
 | GET | `/dialogue/scenarios` | 场景列表（点餐/问路/电话） | → data: [{code, name, desc, rounds}] |
 | POST | `/dialogue/sessions` | 开始对话会话 | req: {scenario} → data: {session_id, ai_greeting_text, ai_greeting_audio} |
-| POST | `/dialogue/sessions/{id}/turns` | 提交一轮语音（返回 ASR+AI 回复+TTS） | req: FormData(audio) → data: {user_text, ai_text, ai_audio_url, turn_index, latency_ms} |
+| POST | `/dialogue/sessions/{id}/turn` | 提交一轮语音（返回 ASR+AI 回复+TTS） | req: FormData(audio) → data: {user_text, ai_text, ai_audio_url, turn_index, latency_ms} |
 | POST | `/dialogue/sessions/{id}/finish` | 结束并生成小结 | → data: {summary, turn_count} |
 
 ### 5.4 发音反馈（P0）
@@ -460,7 +456,7 @@ erDiagram
 
 | 方法 | 路径 | 说明 | 请求/响应概要 |
 |------|------|------|--------------|
-| GET | `/report/summary` | 用户训练概览（周时长/正确率趋势/依从率） | query: ?range=7d → data: {duration, accuracy_curve[], adherence} |
+| GET | `/report/summary` | 用户训练概览（周时长/正确率趋势/依从率） | query: ?days=30 → data: {duration, accuracy_curve[], adherence} |
 | GET | `/report/patients` | 听力师查看患者列表（role=therapist） | → data: [PatientSummary...] |
 
 ---
@@ -479,7 +475,7 @@ sequenceDiagram
     participant OSS as OSS/CDN
 
     U->>FE: 选择级别 点击开始
-    FE->>API: POST /training/sessions {level}
+    FE->>API: POST /api/training/sessions?level=word
     API->>DB: 创建 session 读取 UserAbility(theta)
     API->>IRT: 选首题(最大信息量)
     IRT-->>API: item_id, difficulty_b
@@ -529,7 +525,7 @@ sequenceDiagram
     FE->>U: 播放AI开场白
     loop 3-5 轮
         U->>FE: 说话
-        FE->>API: POST /sessions/{id}/turns (audio)
+        FE->>API: POST /api/dialogue/sessions/{id}/turn (audio)
         API->>ASR: 识别用户语音
         ASR-->>API: user_text
         API->>RD: 读取历史上下文
@@ -586,13 +582,13 @@ sequenceDiagram
 | 任务ID | 任务名 | 描述 | 依赖 | 涉及文件 | 预估工时 |
 |--------|--------|------|------|---------|---------|
 | **T01** | 项目基础设施 & 骨架 | 前后端脚手架、配置、CI、本地 docker-compose、统一响应/错误框架、健康检查；老年主题 token 基线 | — | `docker-compose.yml`, `.github/workflows/ci.yml`, `frontend/*`(vite/tailwind/tsconfig/package.json/main.tsx/App.tsx), `backend/pyproject.toml`, `app/main.py`, `app/core/config.py`, `app/core/errors.py`, `app/schemas/common.py` | 5 人日 |
-| **T02** | 数据层与用户认证 | ORM 模型+迁移、种子题库、JWT 鉴权、短信/微信登录、`/auth/*`、`/users/me` | T01 | `app/models/*`, `alembic/versions/*`, `app/db/*`, `app/core/security.py`, `app/core/deps.py`, `app/services/auth_service.py`, `app/api/v1/auth.py`, `app/api/v1/router.py`, `frontend/src/api/auth.ts`, `frontend/src/pages/Login/*`, `frontend/src/store/sessionStore.ts` | 6 人日 |
+| **T02** | 数据层与用户认证 | ORM 模型+迁移、种子题库、JWT 鉴权、短信登录、`/auth/*` | T01 | `app/models/*`, `alembic/versions/*`, `app/db/*`, `app/core/security.py`, `app/api/deps.py`, `app/services/auth_service.py`, `app/api/auth.py`, `frontend/src/api/auth.ts`, `frontend/src/pages/LoginPage.tsx`, `frontend/src/stores/authStore.ts` | 6 人日 |
 | **T03** | AI 能力网关层 | 封装 Fun-ASR / Qwen3-TTS / Qwen Agent（含重试、超时、错误兜底、TTS 缓存），提供后端内部统一调用接口 | T01 | `app/ai/asr_gateway.py`, `app/ai/tts_gateway.py`, `app/ai/llm_gateway.py`, `app/core/config.py`(密钥) | 5 人日 |
-| **T04** | 听觉训练 + IRT 自适应引擎 | 四级训练流程、IRT 选题/能力估计、升降级规则、`/training/*` 全套接口、训练页面与录音组件 | T02,T03 | `app/ai/irt_engine.py`, `app/services/training_service.py`, `app/api/v1/training.py`, `app/models/training.py`, `app/models/ability.py`, `frontend/src/pages/Training/*`, `frontend/src/api/training.ts`, `frontend/src/hooks/useRecorder.ts`, `frontend/src/components/common/LevelBadge.tsx`, `backend/tests/test_irt_engine.py` | 10 人日 |
-| **T05** | 对话陪练 | 场景配置、3-5 轮上下文（Redis）、ASR→Agent→TTS 编排、安全护栏、`/dialogue/*`、对话页面 | T03 | `app/services/dialogue_service.py`, `app/api/v1/dialogue.py`, `app/models/dialogue.py`, `frontend/src/pages/Dialogue/*`, `frontend/src/api/dialogue.ts`, `frontend/src/hooks/useAudioPlayer.ts` | 7 人日 |
-| **T06** | 发音/构音反馈 | 音素对齐评分引擎（DTW）、`/pronunciation/*`、发音页面（评分环+波形+音素高亮+对比播放）、2s 延迟优化 | T03 | `app/ai/pronunciation_scorer.py`, `app/services/pronunciation_service.py`, `app/api/v1/pronunciation.py`, `app/models/pronunciation.py`, `frontend/src/pages/Pronunciation/*`, `frontend/src/api/pronunciation.ts`, `frontend/src/components/common/ScoreRing.tsx`, `backend/tests/test_pronunciation.py` | 9 人日 |
-| **T07** | 老年用户适配 & 无障碍体系 | 全局大字主题（≥18px）、大按钮（≥48px）、高对比、语音引导、设置页、底部大标签导航、字幕组件 | T01 | `frontend/src/theme/index.ts`, `frontend/src/store/a11yStore.ts`, `frontend/src/hooks/useSpeechGuide.ts`, `frontend/src/components/layout/AppShell.tsx`, `frontend/src/components/common/BigButton.tsx`, `frontend/src/pages/Settings/*`, `frontend/src/pages/Home/*` | 6 人日 |
-| **T08** | 训练报告 & 数据服务 | 报告聚合接口（趋势/依从率）、ARQ 周报任务、报告页图表、听力师患者列表（P1 起步） | T02,T04 | `app/services/report_service.py`, `app/api/v1/report.py`, `app/tasks/report_weekly.py`, `app/tasks/worker.py`, `frontend/src/pages/Report/*`, `frontend/src/components/charts/*` | 6 人日 |
+| **T04** | 听觉训练 + IRT 自适应引擎 | 四级训练流程、IRT 选题/能力估计、升降级规则、`/training/*` 全套接口、训练页面与录音组件 | T02,T03 | `app/services/irt_engine.py`, `app/services/training_service.py`, `app/api/training.py`, `app/models/training.py`, `app/models/ability.py`, `frontend/src/pages/TrainingPage.tsx`, `frontend/src/services/trainingService.ts`, `frontend/src/hooks/useRecorder.ts`, `frontend/src/components/common/LevelBadge.tsx`, `backend/tests/test_irt_engine.py` | 10 人日 |
+| **T05** | 对话陪练 | 场景配置、3-5 轮上下文（Redis）、ASR→Agent→TTS 编排、安全护栏、`/dialogue/*`、对话页面 | T03 | `app/services/dialogue_service.py`, `app/api/dialogue.py`, `app/models/dialogue.py`, `frontend/src/pages/DialoguePage.tsx`, `frontend/src/services/dialogueService.ts`, `frontend/src/hooks/useAudioPlayer.ts` | 7 人日 |
+| **T06** | 发音/构音反馈 | 音素对齐评分引擎（DTW）、`/pronunciation/*`、发音页面（评分环+波形+音素高亮+对比播放）、2s 延迟优化 | T03 | `app/services/pronunciation_scorer.py`, `app/services/pronunciation_service.py`, `app/api/pronunciation.py`, `app/models/pronunciation.py`, `frontend/src/pages/PronunciationPage.tsx`, `frontend/src/services/pronunciationService.ts`, `frontend/src/components/common/ScoreRing.tsx`, `backend/tests/test_pronunciation.py` | 9 人日 |
+| **T07** | 老年用户适配 & 无障碍体系 | 全局大字主题（≥18px）、大按钮（≥48px）、高对比、语音引导、设置页、底部大标签导航、字幕组件 | T01 | `frontend/src/theme/index.ts`, `frontend/src/stores/a11yStore.ts`, `frontend/src/hooks/useSpeechGuide.ts`, `frontend/src/components/layout/AppShell.tsx`, `frontend/src/components/common/BigButton.tsx`, `frontend/src/pages/SettingsPage.tsx`, `frontend/src/pages/HomePage.tsx` | 6 人日 |
+| **T08** | 训练报告 & 数据服务 | 报告聚合接口（趋势/依从率）、ARQ 周报任务、报告页图表、听力师患者列表（P1 起步） | T02,T04 | `app/services/report_service.py`, `app/api/report.py`, `app/tasks/report_weekly.py`, `app/tasks/worker.py`, `frontend/src/pages/ReportPage.tsx`, `frontend/src/components/charts/*` | 6 人日 |
 | **T09** | 集成、性能与部署 | 端到端联调、延迟压测与优化（ASR<500ms/对话<3s/评分<2s）、Serverless 部署（FC+RDS+Redis+OSS）、监控告警、Demo 数据准备 | T04,T05,T06,T07,T08 | 部署脚本/`serverless.yml`, `frontend/vite.config.ts`(prod), `backend/Dockerfile`, `backend/tests/`(集成), 监控配置 | 7 人日 |
 
 **关键路径**：T01 → T02 → T04 → T09；T03 可与 T02 并行。建议 **2 名前端 + 1 名后端 + 1 名算法/全栈** 配置，T04/T05/T06 可部分并行。
@@ -634,8 +630,8 @@ alembic==1.13.*
 asyncpg==0.29.*
 redis==5.0.*
 arq==0.26.*
-python-jose[cryptography]==3.3.*
-passlib[bcrypt]==1.7.*
+PyJWT[crypto]==2.10.*
+bcrypt==5.0.*
 httpx==0.27.*
 dashscope==1.17.*
 numpy==1.26.*          # IRT / 音素对齐
@@ -722,14 +718,14 @@ pytest==8.1.*  pytest-asyncio==0.23.*  httpx  # 测试
 | 数据库表/字段 | snake_case | `training_sessions` / `response_ms` |
 | API 路径 | 复数资源 + kebab 不使用 | `/training/sessions` |
 | Python | 模块 snake_case，类 PascalCase | `training_service.py` / `TrainingService` |
-| TS/React | 组件 PascalCase，函数/变量 camelCase | `RecordOrb.tsx` / `useRecorder` |
+| TS/React | 组件 PascalCase，函数/变量 camelCase | `ScoreRing.tsx` / `useRecorder` |
 | 训练级别枚举 | `syllable` / `word` / `sentence` / `noise` | 与前端 `LevelBadge` 对齐 |
 | 时间 | 全部 UTC，ISO 8601 | `2025-01-01T08:00:00Z` |
 | 时长 | 毫秒整数，字段后缀 `_ms` | `response_ms`, `latency_ms` |
 
 ### 10.4 其他约定
 
-- 鉴权：请求头 `Authorization: Bearer <JWT>`，token 有效期 7 天，静默刷新。
+- 鉴权：浏览器使用 httpOnly `access_token` Cookie，客户端也支持 `Authorization: Bearer <JWT>`，token 有效期 7 天。
 - 音频：上传 `multipart/form-data`，统一 `wav 16kHz 单声道`（前端转码），OSS 存 `audio/{user_id}/{date}/...`。
 - AI 调用统一走 `app/ai/*_gateway.py`，禁止业务层直连 dashscope，便于统一限流/重试/埋点。
 - 频率限制：单用户对话 10 次/分钟、发音评估 30 次/分钟。

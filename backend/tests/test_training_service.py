@@ -17,6 +17,7 @@ from app.services.training_service import TrainingService
 from app.models.training import TrainingSession, TrainingItem
 from app.models.item_bank import ItemBank
 from app.models.ability import UserAbility
+from app.models.knowledge_state import KnowledgeState
 
 
 @pytest.fixture
@@ -263,5 +264,53 @@ class TestFinishSession:
         assert result['accuracy'] == 0
         assert result['total_items'] == 0
         assert result['correct_items'] == 0
+
+
+class TestAdaptiveTraining:
+    """测试 BKT 自适应逻辑由训练服务统一编排。"""
+
+    @pytest.mark.asyncio
+    async def test_get_adaptive_recommendation_uses_item_state(self, training_service, mock_db):
+        state = KnowledgeState(
+            user_id=7,
+            item_id=3,
+            mastery=0.8,
+            confidence=0.6,
+            attempts=5,
+            correct_count=4,
+        )
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = state
+        mock_db.execute.return_value = result
+
+        recommendation = await training_service.get_adaptive_recommendation(7, item_id=3)
+
+        assert recommendation["mastery"] == 0.8
+        assert recommendation["attempts"] == 5
+        assert 0.0 <= recommendation["recommended_difficulty"] <= 1.0
+
+    @pytest.mark.asyncio
+    async def test_submit_adaptive_result_updates_state_and_recommends(
+        self, training_service, mock_db
+    ):
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = None
+        mock_db.execute.return_value = result
+
+        response = await training_service.submit_adaptive_result(
+            user_id=7,
+            item_id=3,
+            is_correct=True,
+        )
+
+        state = mock_db.add.call_args.args[0]
+        assert isinstance(state, KnowledgeState)
+        assert state.user_id == 7
+        assert state.item_id == 3
+        assert state.attempts == 1
+        assert state.correct_count == 1
+        assert response["updated_state"]["attempts"] == 1
+        assert "recommendation" in response
+        mock_db.flush.assert_awaited_once()
 
 

@@ -20,17 +20,14 @@ AI 能力网关层
 from .asr_gateway import FunASRGateway, AIServiceUnavailable, AIServiceTimeout
 from .asr_base import ASRResult, PhonemeInfo
 from .tts_gateway import QwenTTSGateway, AVAILABLE_VOICES, ELDERLY_RECOMMENDED_VOICES
-from .tts_base import TTSGatewayBase
 from .llm_gateway import QwenLLMGateway, SCENARIO_PROMPTS
-from .llm_base import LLMResponse, LLMGatewayBase
+from .llm_base import LLMResponse
 from .retry import retry_with_backoff, make_retry_wrapper
 
 # ── 工厂函数 (依赖注入) ─────────────────────────────────────
 
 def create_asr_gateway(api_key: str = None, model: str = None, **kwargs) -> FunASRGateway:
     """创建 ASR 网关实例（可自定义配置）"""
-    from app.core.config import get_settings
-    settings = get_settings()
     gateway = FunASRGateway()
     if api_key:
         gateway.api_key = api_key
@@ -41,8 +38,6 @@ def create_asr_gateway(api_key: str = None, model: str = None, **kwargs) -> FunA
 
 def create_tts_gateway(api_key: str = None, model: str = None, **kwargs) -> QwenTTSGateway:
     """创建 TTS 网关实例（可自定义配置）"""
-    from app.core.config import get_settings
-    settings = get_settings()
     gateway = QwenTTSGateway()
     if api_key:
         gateway.api_key = api_key
@@ -53,8 +48,6 @@ def create_tts_gateway(api_key: str = None, model: str = None, **kwargs) -> Qwen
 
 def create_llm_gateway(api_key: str = None, model: str = None, **kwargs) -> QwenLLMGateway:
     """创建 LLM 网关实例（可自定义配置）"""
-    from app.core.config import get_settings
-    settings = get_settings()
     gateway = QwenLLMGateway()
     if api_key:
         gateway.api_key = api_key

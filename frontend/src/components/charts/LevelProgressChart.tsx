@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactECharts from 'echarts-for-react';
-import { LevelProgress } from '../../services/reportService';
+import type { LevelProgress } from '../../types';
 
 interface LevelProgressChartProps {
   data: LevelProgress[];
@@ -14,13 +14,6 @@ const LEVEL_LABELS: Record<string, string> = {
   noise: '噪声环境',
 };
 
-const LEVEL_COLORS: Record<string, string> = {
-  syllable: '#4caf50',
-  word: '#2196f3',
-  sentence: '#ff9800',
-  noise: '#f44336',
-};
-
 /**
  * 训练级别进度图（雷达图）
  * 显示各级别的能力值(θ)和训练情况
@@ -32,7 +25,6 @@ const LevelProgressChart: React.FC<LevelProgressChartProps> = ({
   // 按固定顺序排列级别
   const orderedLevels = ['syllable', 'word', 'sentence', 'noise'];
   const indicators = orderedLevels.map((level) => {
-    const item = data.find((d) => d.level === level);
     return {
       name: LEVEL_LABELS[level] || level,
       max: 3, // theta 最大值设为 3

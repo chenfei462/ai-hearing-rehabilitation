@@ -19,3 +19,4 @@ class User(Base):
     training_sessions = relationship("TrainingSession", back_populates="user")
     dialogue_sessions = relationship("DialogueSession", back_populates="user")
     pronunciation_attempts = relationship("PronunciationAttempt", back_populates="user")
+    knowledge_states = relationship("KnowledgeState", back_populates="user")

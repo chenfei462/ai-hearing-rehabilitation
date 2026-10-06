@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -6,7 +6,6 @@ import {
   Card,
   CardContent,
   Grid,
-  Chip,
   CircularProgress,
   Alert,
   LinearProgress,
@@ -16,7 +15,6 @@ import {
 import {
   PlayArrow,
   Pause,
-  Stop,
   Mic,
   MicOff,
   CheckCircle,
@@ -29,7 +27,8 @@ import { useNavigate } from 'react-router-dom';
 import { trainingService } from '../services/trainingService';
 import { useRecorder } from '../hooks/useRecorder';
 import LevelBadge from '../components/common/LevelBadge';
-import { TrainingLevel, TrainingSession, TrainingItem, UserAbility } from '../types';
+import { TrainingLevel, TrainingSession, TrainingItem } from '../types';
+import { getErrorMessage } from '../utils/errors';
 
 // 训练级别配置
 const levels = [
@@ -73,7 +72,7 @@ export default function TrainingPage() {
       setError(null);
 
       const response = await trainingService.startSession(level);
-      const { session_id, first_item } = response.data.data;
+      const { session_id, first_item } = response.data;
 
       setSession({
         id: session_id,
@@ -91,8 +90,8 @@ export default function TrainingPage() {
       setTrainingState('playing');
       setProgress(0);
       setTotalAnswered(0);
-    } catch (err: any) {
-      setError(err.message || '开始训练失败');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '开始训练失败'));
       setTrainingState('selecting');
     }
   };
@@ -154,14 +153,14 @@ export default function TrainingPage() {
         responseMs
       );
 
-      const result = response.data.data;
+      const result = response.data;
       setFeedback(result);
       setTotalAnswered(prev => prev + 1);
       setProgress(prev => Math.min(100, prev + 100 / 20)); // 假设每级 20 题
 
       setTrainingState('feedback');
-    } catch (err: any) {
-      setError(err.message || '提交答案失败');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '提交答案失败'));
       setTrainingState('answering');
     }
   };
@@ -173,18 +172,18 @@ export default function TrainingPage() {
     try {
       setTrainingState('loading');
       const response = await trainingService.getNextItem(session.id);
-      const item = response.data.data;
+      const item = response.data;
 
       setCurrentItem(item);
       setUserAnswer('');
       setFeedback(null);
       setTrainingState('playing');
-    } catch (err: any) {
+    } catch (err: unknown) {
       // 如果没有下一题，结束训练
-      if (err.code === 40401) {
+      if (typeof err === 'object' && err !== null && 'code' in err && err.code === 40401) {
         finishTraining();
       } else {
-        setError(err.message || '获取下一题失败');
+        setError(getErrorMessage(err, '获取下一题失败'));
       }
     }
   };
@@ -196,7 +195,7 @@ export default function TrainingPage() {
     try {
       setTrainingState('loading');
       const response = await trainingService.finishSession(session.id);
-      const result = response.data.data;
+      const result = response.data;
 
       setSession(prev => prev ? {
         ...prev,
@@ -208,8 +207,8 @@ export default function TrainingPage() {
       } : null);
 
       setTrainingState('completed');
-    } catch (err: any) {
-      setError(err.message || '结束训练失败');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '结束训练失败'));
     }
   };
 

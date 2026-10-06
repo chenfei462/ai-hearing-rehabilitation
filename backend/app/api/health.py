@@ -43,6 +43,7 @@ async def detailed_health_check():
         "checks": {
             "database": "unknown",
             "redis": "unknown",
+            "hardware": "unknown",
         },
     }
 
@@ -64,6 +65,20 @@ async def detailed_health_check():
     except Exception as e:
         health_status["checks"]["redis"] = f"unhealthy: {str(e)}"
         overall_healthy = False
+
+    # 检查硬件状态
+    try:
+        from app.hardware.manager import device_manager
+        from app.hardware.config import get_hardware_config
+        hw_config = get_hardware_config()
+        if hw_config.HARDWARE_ENABLED:
+            states = device_manager.get_all_states()
+            online = sum(1 for s in states if s.status.value == "connected")
+            health_status["checks"]["hardware"] = f"enabled ({online}/{len(states)} online)"
+        else:
+            health_status["checks"]["hardware"] = "disabled"
+    except Exception as e:
+        health_status["checks"]["hardware"] = f"error: {str(e)}"
 
     health_status["status"] = "healthy" if overall_healthy else "degraded"
 

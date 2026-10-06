@@ -12,11 +12,13 @@ from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from app.core.config import get_settings
 from app.models.dialogue import DialogueSession, DialogueTurn
-from app.ai import tts_gateway
-from app.ai.llm_gateway import SCENARIO_PROMPTS
-from app.services.scenario_service import ScenarioService, SCENARIOS
+from app.services.scenario_service import SCENARIOS, ScenarioService
 from app.services.dialogue_orchestrator import DialogueOrchestrator
+from app.core.safety import contains_safety_keyword
+
+__all__ = ["DialogueService", "SCENARIOS"]
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +27,6 @@ MAX_TURNS = 5
 # 对话上下文缓存过期时间（秒）
 CONTEXT_TTL = 3600  # 1小时
 
-# 安全护栏关键词从配置中获取
-from app.core.config import get_settings
 settings = get_settings()
 SAFETY_BLOCKLIST = settings.SAFETY_KEYWORDS
 
@@ -34,11 +34,11 @@ SAFETY_BLOCKLIST = settings.SAFETY_KEYWORDS
 class DialogueService:
     """对话陪练服务（核心聚合层）"""
 
-    def __init__(self, db: AsyncSession, redis_client=None):
+    def __init__(self, db: AsyncSession, redis_client=None, orchestrator=None):
         self.db = db
         self.redis = redis_client
         self._scenario_service = ScenarioService()
-        self._orchestrator = DialogueOrchestrator()
+        self._orchestrator = orchestrator or DialogueOrchestrator()
 
     # ─── 场景管理（委托 ScenarioService）─────────────────────
 
@@ -128,8 +128,6 @@ class DialogueService:
         # 检查轮次限制
         if session.turn_count >= MAX_TURNS:
             raise ValueError(f"已达到最大对话轮次({MAX_TURNS})")
-
-        scenario_info = self._scenario_service.get_scenario(session.scenario) or {}
 
         # 1. ASR 识别用户语音
         asr_result = await self._orchestrator.recognize_speech(audio_bytes, session_id)
@@ -378,5 +376,4 @@ class DialogueService:
         检查用户输入是否包含不安全内容
         Returns: True 表示触发安全护栏
         """
-        text_lower = text.lower()
-        return any(keyword in text_lower for keyword in SAFETY_BLOCKLIST)
+        return contains_safety_keyword(text, SAFETY_BLOCKLIST)

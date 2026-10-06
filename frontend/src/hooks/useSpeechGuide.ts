@@ -27,6 +27,20 @@ export function useSpeechGuide() {
     };
   }, []);
 
+  /** 朗读文本 */
+  const speak = useCallback(
+    (text: string) => {
+      if (!voiceGuide || !synthRef.current) return;
+      synthRef.current.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'zh-CN';
+      utterance.rate = speechRate;
+      utterance.volume = volume;
+      synthRef.current.speak(utterance);
+    },
+    [voiceGuide, volume, speechRate],
+  );
+
   /** 页面切换时自动播报 */
   useEffect(() => {
     if (!voiceGuide) return;
@@ -36,21 +50,7 @@ export function useSpeechGuide() {
       const timer = setTimeout(() => speak(`已进入${pageName}页面`), 500);
       return () => clearTimeout(timer);
     }
-  }, [location.pathname, voiceGuide]);
-
-  /** 朗读文本 */
-  const speak = useCallback(
-    (text: string) => {
-      if (!voiceGuide || !synthRef.current) return;
-      synthRef.current.cancel(); // 取消之前的朗读
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'zh-CN';
-      utterance.rate = speechRate;
-      utterance.volume = volume;
-      synthRef.current.speak(utterance);
-    },
-    [voiceGuide, volume, speechRate],
-  );
+  }, [location.pathname, voiceGuide, speak]);
 
   /** 停止朗读 */
   const stop = useCallback(() => {

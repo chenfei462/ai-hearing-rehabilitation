@@ -2,19 +2,17 @@
 对话陪练 API 路由
 """
 import logging
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.redis import get_redis
+from app.ai import get_asr_gateway, get_llm_gateway, get_tts_gateway
 from app.api.deps import get_current_user
 from app.models.user import User
 from app.services.dialogue_service import DialogueService
+from app.services.dialogue_orchestrator import DialogueOrchestrator
 from app.schemas.dialogue import (
-    ScenarioInfo,
     StartSessionRequest,
-    StartSessionResponse,
-    TurnResponse,
-    FinishSessionResponse,
 )
 from app.schemas.response import ApiResponse, success_response, error_response
 
@@ -23,11 +21,23 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _service(db, redis):
+    return DialogueService(
+        db,
+        redis_client=redis,
+        orchestrator=DialogueOrchestrator(
+            asr=get_asr_gateway(),
+            llm=get_llm_gateway(),
+            tts=get_tts_gateway(),
+        ),
+    )
+
+
 @router.get("/scenarios", response_model=ApiResponse)
 async def list_scenarios(db: AsyncSession = Depends(get_db)):
     """获取可用对话场景列表"""
     redis = await get_redis()
-    service = DialogueService(db, redis_client=redis)
+    service = _service(db, redis)
     scenarios = await service.list_scenarios()
     return success_response(data=scenarios)
 
@@ -40,7 +50,7 @@ async def start_session(
 ):
     """开始对话会话"""
     redis = await get_redis()
-    service = DialogueService(db, redis_client=redis)
+    service = _service(db, redis)
     try:
         result = await service.start_session(current_user.id, request.scenario)
         return success_response(data=result)
@@ -73,7 +83,7 @@ async def handle_turn(
         return error_response(code=40001, message="音频文件过大，请控制在10MB以内")
 
     redis = await get_redis()
-    service = DialogueService(db, redis_client=redis)
+    service = _service(db, redis)
     # Add ownership check
     session = await service.get_session(session_id)
     if not session or session.user_id != current_user.id:
@@ -96,7 +106,7 @@ async def finish_session(
 ):
     """结束对话会话，获取对话小结"""
     redis = await get_redis()
-    service = DialogueService(db, redis_client=redis)
+    service = _service(db, redis)
     # Add ownership check
     session = await service.get_session(session_id)
     if not session or session.user_id != current_user.id:

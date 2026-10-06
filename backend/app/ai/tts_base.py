@@ -2,7 +2,6 @@
 TTS 网关抽象基类
 """
 from abc import ABC, abstractmethod
-from typing import Optional
 
 
 class TTSGatewayBase(ABC):

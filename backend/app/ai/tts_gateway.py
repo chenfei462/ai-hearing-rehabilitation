@@ -17,7 +17,6 @@ Qwen3-TTS 网关 — 阿里云百炼语音合成封装
   - 重试耗尽 → 返回空 bytes，前端降级使用 Web Speech API
 """
 import hashlib
-from typing import Optional
 
 from loguru import logger
 
@@ -103,6 +102,10 @@ class QwenTTSGateway(TTSGatewayBase):
         先查 Redis 缓存，未命中则调用 dashscope TTS API。
         """
         if not text or not text.strip():
+            return b""
+
+        if not self.api_key:
+            logger.warning("[TTS] 未配置 DASHSCOPE_API_KEY，使用空音频降级")
             return b""
 
         # 确保音色有效
@@ -247,7 +250,6 @@ class QwenTTSGateway(TTSGatewayBase):
 
         try:
             import oss2
-            import uuid
 
             auth = oss2.Auth(settings.OSS_ACCESS_KEY_ID, settings.OSS_ACCESS_KEY_SECRET)
             bucket = oss2.Bucket(

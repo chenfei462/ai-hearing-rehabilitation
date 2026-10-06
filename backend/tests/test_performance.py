@@ -72,13 +72,20 @@ async def test_root_performance(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_auth_login_performance(client: AsyncClient):
+async def test_auth_login_performance(client: AsyncClient, test_redis):
     """登录接口延迟 < 500ms"""
     times = []
     for _ in range(SAMPLE_COUNT):
+        await client.post(
+            "/api/auth/sms/send",
+            json={"phone": "13800138000"},
+        )
         ms = await _measure(
             client, "POST", "/api/auth/login",
-            json={"phone": "13800138000", "code": "1234"},
+            json={
+                "phone": "13800138000",
+                "code": test_redis.data["sms:13800138000"],
+            },
         )
         times.append(ms)
     median = _median_ms(times)

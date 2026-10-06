@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactECharts from 'echarts-for-react';
-import { AccuracyPoint } from '../../services/reportService';
+import type { AccuracyPoint } from '../../types';
 
 interface TrendChartProps {
   data: AccuracyPoint[];
@@ -27,7 +27,7 @@ const TrendChart: React.FC<TrendChartProps> = ({ data, title = '正确率趋势'
     },
     tooltip: {
       trigger: 'axis' as const,
-      formatter: (params: any) => {
+      formatter: (params: Array<{ axisValue: string; value: number }>) => {
         const acc = params[0];
         const count = params[1];
         return `

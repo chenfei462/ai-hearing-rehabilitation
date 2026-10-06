@@ -15,6 +15,11 @@ from app.core.errors import register_exception_handlers
 from app.api import auth, training, dialogue, pronunciation, report
 from app.api.health import router as health_router
 from app.api.metrics import router as metrics_router
+from app.api.hardware import router as hardware_router
+
+# 硬件集成
+from app.hardware.config import get_hardware_config
+from app.hardware.manager import device_manager
 
 # 中间件
 from app.middleware.performance import setup_middleware
@@ -50,6 +55,23 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Redis 连接失败（缓存功能不可用）: {e}")
 
+    # 初始化硬件集成
+    hw_config = get_hardware_config()
+    if hw_config.HARDWARE_ENABLED:
+        try:
+            # 注册 Mock 设备（开发/测试模式）
+            if hw_config.HARDWARE_MOCK_MODE:
+                from app.hardware.devices.mock_device import MockDevice
+                mock = MockDevice()
+                device_manager.register_device(mock)
+
+            await device_manager.start()
+            logger.info("硬件集成已启用")
+        except Exception as e:
+            logger.warning(f"硬件集成启动失败（硬件功能不可用）: {e}")
+    else:
+        logger.info("硬件集成已禁用")
+
     # 记录启动指标
     metrics_collector.increment("app_starts")
 
@@ -59,6 +81,11 @@ async def lifespan(app: FastAPI):
 
     # ─── 关闭 ───
     logger.info("正在关闭应用...")
+    # 停止硬件管理器
+    try:
+        await device_manager.stop()
+    except Exception:
+        pass
     try:
         await redis_client.close()
     except Exception:
@@ -101,6 +128,7 @@ app.include_router(training.router, prefix="/api/training", tags=["训练"])
 app.include_router(dialogue.router, prefix="/api/dialogue", tags=["对话"])
 app.include_router(pronunciation.router, prefix="/api/pronunciation", tags=["发音"])
 app.include_router(report.router, prefix="/api/report", tags=["报告"])
+app.include_router(hardware_router, prefix="/api/hardware", tags=["硬件"])
 
 
 # 根路径

@@ -2,6 +2,16 @@
 # 阿里云函数计算 FC Serverless 部署配置
 # ──────────────────────────────────────
 # 使用: s deploy
+#
+# 发布流程：
+# 1. 在项目根目录准备 DATABASE_URL、REDIS_URL、SECRET_KEY、DASHSCOPE_API_KEY、
+#    VPC_ID、VSWITCH_ID 和 SECURITY_GROUP_ID 环境变量。
+# 2. 在 backend/ 构建并推送与 customContainerConfig.image 相同标签的镜像。
+# 3. 执行 `s config add` 配置阿里云账号，再执行 `s deploy --use-local`。
+# 4. 发布前运行 backend 的 pytest、Ruff 和 frontend 的 build/test:e2e。
+# 5. 发布后访问 /api/health/detailed，并确认 RDS、Redis 和 AI 网关就绪。
+#
+# SECRET_KEY 必须使用随机强密钥，不能提交到仓库或写入此文件。
 
 edition: 3.0.0
 name: cochlear-rehab-assistant

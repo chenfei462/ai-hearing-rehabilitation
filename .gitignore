@@ -82,3 +82,15 @@ deliverables/
 *.exe
 *.out
 *.app
+
+# Local environments, caches and runtime data
+venv*/
+.venv/
+.codebuddy/
+.workbuddy/
+.zcode/
+test-results/
+playwright-report/
+*.rdb
+nul
+temp_script.py

@@ -83,6 +83,12 @@ class TestPhonemeSimilarity:
 # DTW 对齐
 # ======================================================================
 class TestDTWAlign:
+    def test_rejects_excessively_long_sequences(self):
+        """超长序列应在分配 DTW 矩阵前被拒绝"""
+        scorer = PronunciationScorer()
+        with pytest.raises(ValueError):
+            scorer.dtw_align(["a"] * 501, ["a"] * 501)
+
     def test_identical_sequences(self):
         scorer = PronunciationScorer()
         result = scorer.dtw_align(["a", "b", "c"], ["a", "b", "c"])

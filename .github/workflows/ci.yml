@@ -15,19 +15,6 @@ jobs:
   backend-test:
     runs-on: ubuntu-latest
     services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_DB: cochlear_rehab_test
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
       redis:
         image: redis:7-alpine
         ports:
@@ -45,8 +32,7 @@ jobs:
       - name: Install dependencies
         working-directory: backend
         run: |
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx aiosqlite
+          pip install -e ".[dev,oss]"
 
       - name: Run linting
         working-directory: backend
@@ -57,11 +43,64 @@ jobs:
       - name: Run tests
         working-directory: backend
         env:
-          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/cochlear_rehab_test
+          DATABASE_URL: sqlite+aiosqlite://
           REDIS_URL: redis://localhost:6379/1
-          SECRET_KEY: test-secret-key
+          SECRET_KEY: ci-only-secret-key-with-at-least-32-characters
+          TEST_DATABASE_URL: sqlite+aiosqlite://
         run: |
-          pytest tests/ -v --tb=short
+          pytest tests/ -v --tb=short --cov=app --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+          retention-days: 7
+
+  # ─── PostgreSQL 集成测试 ───
+  backend-postgres-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cochlear_rehab_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d cochlear_rehab_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -e ".[dev,oss]"
+
+      - name: Run PostgreSQL integration tests
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/cochlear_rehab_test
+          TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/cochlear_rehab_test
+          REDIS_URL: redis://localhost:6379/1
+          SECRET_KEY: ci-only-secret-key-with-at-least-32-characters
+        run: |
+          pytest tests/test_integration.py tests/test_training_api.py tests/test_role_permissions.py -q --tb=short
 
   # ─── 前端测试 ───
   frontend-test:
@@ -84,9 +123,25 @@ jobs:
         working-directory: frontend
         run: npx tsc --noEmit
 
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Test
+        working-directory: frontend
+        run: npm test -- --run
+
       - name: Build
         working-directory: frontend
         run: npm run build
+
+      - name: Install Playwright browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end smoke test
+        working-directory: frontend
+        run: npm run test:e2e
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

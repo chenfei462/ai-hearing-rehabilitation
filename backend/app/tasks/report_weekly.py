@@ -11,10 +11,10 @@
 - 可通过 cron 或 APScheduler 触发
 """
 import logging
-from datetime import datetime, timedelta, date, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import select, and_, func, distinct
+from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 from app.core.config import get_settings

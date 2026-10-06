@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { sendSmsCode, loginWithPhone } from '../api/auth';
 import { useAuthStore } from '../stores/authStore';
+import { getErrorMessage } from '../utils/errors';
 
 type Step = 'phone' | 'code';
 
@@ -52,8 +53,8 @@ export default function LoginPage() {
       setStep('code');
       setCountdown(60);
       setTimeout(() => codeInputRef.current?.focus(), 100);
-    } catch (err: any) {
-      setError(err?.message || '发送验证码失败，请重试');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '发送验证码失败，请重试'));
     } finally {
       setLoading(false);
     }
@@ -70,8 +71,8 @@ export default function LoginPage() {
       const result = await loginWithPhone({ phone, code });
       login(result.user);
       navigate('/', { replace: true });
-    } catch (err: any) {
-      setError(err?.message || '登录失败，请检查验证码');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '登录失败，请检查验证码'));
     } finally {
       setLoading(false);
     }

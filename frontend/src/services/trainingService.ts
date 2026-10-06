@@ -1,5 +1,5 @@
 import api from './api';
-import { ApiResponse, TrainingSession, TrainingItem, UserAbility } from '../types';
+import { ApiResponse, TrainingItem } from '../types';
 
 export const trainingService = {
   startSession: (level: string) =>

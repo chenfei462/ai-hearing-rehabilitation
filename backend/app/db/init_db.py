@@ -1,14 +1,11 @@
 """
 数据库初始化 + 种子数据
 """
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
+from sqlalchemy import select
 from app.core.database import async_session, engine, Base
 from app.models import (
-    User, UserAbility, ItemBank, TrainingSession, TrainingItem,
-    DialogueSession, DialogueTurn, PronunciationAttempt
+    User, UserAbility, ItemBank, TrainingSession
 )
-from app.core.security import create_access_token
 from app.utils.logger import logger
 
 

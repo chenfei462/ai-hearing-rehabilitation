@@ -52,6 +52,26 @@ class ErrorCode:
     REDIS_UNAVAILABLE = 50304
 
 
+class AIServiceUnavailable(Exception):
+    """AI 网关不可用，供业务层执行降级或返回 503。"""
+
+    def __init__(self, service: str = "AI", detail: str = ""):
+        self.service = service
+        self.detail = detail
+        self.code = ErrorCode.SERVICE_UNAVAILABLE
+        super().__init__(f"{service} 服务不可用: {detail}")
+
+
+class AIServiceTimeout(Exception):
+    """AI 网关超时，供业务层执行降级或返回超时错误。"""
+
+    def __init__(self, service: str = "AI", detail: str = ""):
+        self.service = service
+        self.detail = detail
+        self.code = ErrorCode.SERVICE_MAINTENANCE
+        super().__init__(f"{service} 服务超时: {detail}")
+
+
 # 错误码 -> 默认消息映射
 ERROR_MESSAGES: dict[int, str] = {
     ErrorCode.SUCCESS: "成功",

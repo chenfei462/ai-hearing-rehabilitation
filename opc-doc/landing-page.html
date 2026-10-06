@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI言语康复助手 — 让每个孩子的进步清晰可见</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; line-height: 1.6; color: #333; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+        nav { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); padding: 1rem 0; position: fixed; width: 100%; top: 0; z-index: 1000; }
+        nav .container { display: flex; justify-content: space-between; align-items: center; }
+        .logo { font-size: 1.5rem; font-weight: bold; color: white; }
+        .nav-links a { color: white; text-decoration: none; margin-left: 2rem; }
+        .hero { padding: 8rem 0 4rem; text-align: center; color: white; }
+        .hero h1 { font-size: 3rem; margin-bottom: 1.5rem; text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2); }
+        .hero p { font-size: 1.25rem; margin-bottom: 2rem; opacity: 0.9; }
+        .cta-button { display: inline-block; background: white; color: #667eea; padding: 1rem 2rem; border-radius: 50px; text-decoration: none; font-weight: bold; font-size: 1.1rem; transition: transform 0.3s; }
+        .cta-button:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2); }
+        .features { background: white; padding: 4rem 0; margin-top: 2rem; }
+        .features h2 { text-align: center; font-size: 2rem; margin-bottom: 3rem; color: #667eea; }
+        .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; padding: 0 2rem; }
+        .feature-card { background: #f8f9fa; padding: 2rem; border-radius: 15px; text-align: center; transition: transform 0.3s; }
+        .feature-card:hover { transform: translateY(-5px); }
+        .feature-icon { font-size: 3rem; margin-bottom: 1rem; }
+        .pricing { padding: 4rem 0; background: #f8f9fa; }
+        .pricing h2 { text-align: center; font-size: 2rem; margin-bottom: 3rem; color: #667eea; }
+        .pricing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 2rem; padding: 0 2rem; }
+        .pricing-card { background: white; padding: 2rem; border-radius: 15px; text-align: center; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1); }
+        .pricing-card.featured { border: 3px solid #667eea; position: relative; }
+        .pricing-card.featured::before { content: "推荐"; position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: #667eea; color: white; padding: 5px 20px; border-radius: 20px; font-size: 0.8rem; }
+        .price { font-size: 2.5rem; font-weight: bold; color: #667eea; margin: 1rem 0; }
+        .price span { font-size: 1rem; color: #666; }
+        footer { background: #333; color: white; padding: 2rem 0; text-align: center; }
+        footer a { color: #667eea; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="container">
+            <div class="logo">🧠 AI言语康复助手</div>
+            <div class="nav-links">
+                <a href="#features">功能</a>
+                <a href="#pricing">定价</a>
+                <a href="#contact">联系我们</a>
+            </div>
+        </div>
+    </nav>
+    
+    <section class="hero">
+        <div class="container">
+            <h1>让每个孩子的进步清晰可见</h1>
+            <p>AI驱动的言语康复训练系统，为听障儿童提供个性化发音评估与自适应训练</p>
+            <a href="#contact" class="cta-button">免费试用14天</a>
+        </div>
+    </section>
+    
+    <section class="features" id="features">
+        <div class="container">
+            <h2>核心功能</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3>AI发音评估</h3>
+                    <p>音素级精准评分，2秒内生成评估报告</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>自适应训练</h3>
+                    <p>IRT算法智能调整难度，个性化训练路径</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📈</div>
+                    <h3>进步可视化</h3>
+                    <p>实时查看进步曲线，每个进步都有据可查</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🏠</div>
+                    <h3>家庭训练</h3>
+                    <p>在家也能练习，录音即评</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">👩‍⚕️</div>
+                    <h3>治疗师助手</h3>
+                    <p>AI辅助评估，效率提升50%</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📱</div>
+                    <h3>多端同步</h3>
+                    <p>机构端、家长端数据实时同步</p>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <section class="pricing" id="pricing">
+        <div class="container">
+            <h2>简单透明的定价</h2>
+            <div class="pricing-grid">
+                <div class="pricing-card">
+                    <h3>家庭版</h3>
+                    <div class="price">¥50<span>/月</span></div>
+                    <p>适合单个孩子家庭</p>
+                </div>
+                <div class="pricing-card featured">
+                    <h3>专业版</h3>
+                    <div class="price">¥100<span>/月</span></div>
+                    <p>适合多个孩子家庭</p>
+                </div>
+                <div class="pricing-card">
+                    <h3>机构版</h3>
+                    <div class="price">¥200<span>/治疗师/月</span></div>
+                    <p>适合康复机构</p>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <section class="cta-section" id="contact">
+        <div class="container">
+            <h2>准备好改变了吗？</h2>
+            <p>立即开始14天免费试用，体验AI如何改变言语康复训练</p>
+            <a href="mailto:contact@ai-rehab.com" class="cta-button">联系我们</a>
+        </div>
+    </section>
+    
+    <footer>
+        <div class="container">
+            <p>© 2026 AI言语康复助手. 让每个孩子的进步清晰可见.</p>
+        </div>
+    </footer>
+</body>
+</html>

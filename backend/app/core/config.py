@@ -6,9 +6,8 @@
 
 环境变量前缀：无（直接使用字段名，如 DATABASE_URL、SECRET_KEY 等）
 """
-import sys
 import logging
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import model_validator
 from functools import lru_cache
 
@@ -17,6 +16,8 @@ logger = logging.getLogger(__name__)
 # 不安全的默认 SECRET_KEY，启动时检测并拒绝
 _INSECURE_SECRET_KEYS = frozenset({
     "your-secret-key-change-in-production",
+    "your-secret-key-here-change-in-production",
+    "your_jwt_secret_key_here",
     "secret",
     "change-me",
     "changeme",
@@ -24,6 +25,8 @@ _INSECURE_SECRET_KEYS = frozenset({
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
     # ── 基础信息 ──────────────────────────────────────────
     APP_NAME: str = "AI听觉康复助手"
     """应用名称，用于 API 文档和健康检查响应"""
@@ -50,8 +53,11 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     """JWT 签名算法，支持 HS256/HS384/HS512"""
 
-    ACCESS_TOKEN_EXPIRE_DAYS: int = 7
-    """JWT Token 有效期（天），过期后用户需重新登录"""
+    ACCESS_TOKEN_EXPIRE_HOURS: int = 2
+    """JWT Token 有效期（小时），过期后用户需重新登录"""
+
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+    """JWT Refresh Token 有效期（天），用户使用 refresh token 延长会话"""
 
     # ── AI 服务 (阿里云百炼) ──────────────────────────────
     DASHSCOPE_API_KEY: str = ""
@@ -149,20 +155,20 @@ class Settings(BaseSettings):
     COOKIE_SAMESITE: str = "lax"
     """Cookie SameSite 策略。可选值: lax, strict, none"""
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-
     @model_validator(mode="after")
     def _validate_secret_key(self) -> "Settings":
         """启动时强制校验 SECRET_KEY 不能为默认值或空值"""
-        if not self.SECRET_KEY or self.SECRET_KEY.strip() in _INSECURE_SECRET_KEYS:
+        secret_key = self.SECRET_KEY.strip()
+        if (
+            len(secret_key) < 32
+            or secret_key in _INSECURE_SECRET_KEYS
+        ):
             logger.critical(
-                "SECRET_KEY 不安全！检测到默认值或空值。"
+                "SECRET_KEY 不安全！必须设置至少 32 个字符的随机密钥，且不能使用示例值。"
                 "请在 .env 文件中设置一个强随机密钥，例如：\n"
                 "  SECRET_KEY=<运行 python -c 'import secrets; print(secrets.token_urlsafe(64))' 生成>"
             )
-            sys.exit(1)
+            raise ValueError("SECRET_KEY 必须是至少 32 个字符的随机值")
         return self
 
 
@@ -173,4 +179,3 @@ def get_settings() -> Settings:
 
 # 向后兼容：模块级 settings 实例
 settings = get_settings()
-

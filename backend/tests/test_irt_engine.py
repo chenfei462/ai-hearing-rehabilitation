@@ -46,6 +46,16 @@ class TestIRTProbability:
         # 高区分度下，theta > b 时概率应该更高
         assert prob_high_a > prob_low_a
 
+    def test_probability_rejects_nan_input(self, engine):
+        """NaN 输入不能污染自适应计算结果"""
+        with pytest.raises(ValueError):
+            engine.probability(math.nan, 0.0)
+
+    def test_select_rejects_item_without_difficulty(self, engine):
+        """题库题目缺少难度字段时应明确报错"""
+        with pytest.raises(ValueError):
+            engine.select_next_item(0.0, [{"id": 1}])
+
 
 class TestIRTInformation:
     """测试题目信息量计算"""

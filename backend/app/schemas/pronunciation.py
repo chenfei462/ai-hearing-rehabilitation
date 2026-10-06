@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional
 from datetime import datetime
 
@@ -25,8 +25,7 @@ class PronunciationAttemptResponse(BaseModel):
     audio_url: Optional[str] = Field(None, description="用户录音URL")
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PronunciationTaskResponse(BaseModel):
@@ -49,8 +48,7 @@ class PronunciationHistoryItem(BaseModel):
     suggestions: List[str]
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PronunciationStats(BaseModel):

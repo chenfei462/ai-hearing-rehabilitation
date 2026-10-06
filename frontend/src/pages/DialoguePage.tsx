@@ -16,17 +16,15 @@ import {
 } from '@mui/material';
 import {
   Mic,
-  MicOff,
   Stop,
   PlayArrow,
   Pause,
   ArrowBack,
-  Send,
-  VolumeUp,
 } from '@mui/icons-material';
 import { dialogueService } from '../services/dialogueService';
 import { useRecorder } from '../hooks/useRecorder';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
+import { getErrorMessage } from '../utils/errors';
 import type {
   DialogueScenario,
   DialogueSessionStart,
@@ -76,7 +74,7 @@ export default function DialoguePage() {
   // 消息列表自动滚动
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth' });
   }, []);
 
   // 加载场景列表
@@ -95,8 +93,8 @@ export default function DialoguePage() {
       const res = await dialogueService.listScenarios();
       setScenarios(res.data || []);
       setPageState('scenario-select');
-    } catch (err: any) {
-      setError(err.message || '加载场景失败，请重试');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '加载场景失败，请重试'));
       setPageState('scenario-select');
     }
   };
@@ -125,8 +123,8 @@ export default function DialoguePage() {
       if (data.greeting_audio_url) {
         setTimeout(() => player.play(data.greeting_audio_url!), 500);
       }
-    } catch (err: any) {
-      setError(err.message || '开始对话失败，请重试');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '开始对话失败，请重试'));
       setPageState('scenario-select');
     }
   };
@@ -146,7 +144,7 @@ export default function DialoguePage() {
       try {
         setError(null);
         await recorder.startRecording();
-      } catch (err: any) {
+      } catch (err: unknown) {
         setError('无法启动录音，请检查麦克风权限');
       }
     }
@@ -196,8 +194,8 @@ export default function DialoguePage() {
           },
         ]);
       }
-    } catch (err: any) {
-      setError(err.message || '发送失败，请重试');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '发送失败，请重试'));
     } finally {
       setIsProcessing(false);
     }
@@ -216,8 +214,8 @@ export default function DialoguePage() {
       const res = await dialogueService.finishSession(sessionData.session_id);
       setSummaryData(res.data);
       setPageState('summary');
-    } catch (err: any) {
-      setError(err.message || '结束对话失败');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '结束对话失败'));
     } finally {
       setIsProcessing(false);
     }

@@ -1,7 +1,6 @@
 """
 ARQ 异步任务 Worker 配置
 """
-import asyncio
 from arq import create_pool
 from arq.connections import RedisSettings
 from app.core.config import get_settings

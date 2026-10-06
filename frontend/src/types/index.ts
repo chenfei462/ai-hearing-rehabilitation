@@ -5,6 +5,74 @@ export interface ApiResponse<T> {
   message: string;
 }
 
+export interface AccuracyPoint {
+  date: string;
+  accuracy: number;
+  session_count: number;
+}
+
+export interface LevelProgress {
+  level: string;
+  theta: number;
+  se: number;
+  session_count: number;
+  avg_accuracy: number;
+}
+
+export interface DailyActivity {
+  date: string;
+  session_count: number;
+  total_items: number;
+  duration_minutes: number;
+}
+
+export interface TrainingSummary {
+  total_sessions: number;
+  total_items: number;
+  correct_items: number;
+  avg_accuracy: number;
+  total_duration_minutes: number;
+  accuracy_curve: AccuracyPoint[];
+  adherence_rate: number;
+  daily_activity: DailyActivity[];
+  level_progress: LevelProgress[];
+  streak_days: number;
+  last_training_date: string | null;
+}
+
+export interface LevelDistribution {
+  level: string;
+  count: number;
+}
+
+export interface WeeklyReportData {
+  user_id: number;
+  week_start: string;
+  week_end: string;
+  total_sessions: number;
+  total_duration_minutes: number;
+  avg_accuracy: number;
+  adherence_rate: number;
+  accuracy_trend: 'improving' | 'stable' | 'declining';
+  level_progress: LevelProgress[];
+  daily_breakdown: DailyActivity[];
+  highlight: string;
+  suggestion: string;
+}
+
+export interface PatientSummary {
+  user_id: number;
+  nickname: string;
+  phone: string;
+  last_training_date: string | null;
+  total_sessions: number;
+  avg_accuracy: number;
+  adherence_rate: number;
+  current_level: string;
+  streak_days: number;
+  alert: string | null;
+}
+
 // 分页响应
 export interface PaginatedResponse<T> {
   list: T[];
@@ -19,10 +87,10 @@ export interface User {
   phone: string;
   role: 'patient' | 'therapist';
   nickname: string;
-  birth_year: number;
-  cochlear_info: Record<string, unknown>;
-  consent_flags: Record<string, boolean>;
-  created_at: string;
+  birth_year?: number | null;
+  cochlear_info?: Record<string, unknown>;
+  consent_flags?: Record<string, boolean>;
+  created_at?: string;
 }
 
 // 训练级别

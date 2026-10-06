@@ -5,7 +5,7 @@
 此处为向后兼容提供 re-export。
 """
 from pydantic import BaseModel
-from typing import Any, Generic, TypeVar
+from typing import Generic, TypeVar
 
 # 从 response.py 统一导入，避免重复定义
 from app.schemas.response import ApiResponse, success_response, error_response

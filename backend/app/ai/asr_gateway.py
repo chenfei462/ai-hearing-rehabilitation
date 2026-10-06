@@ -12,36 +12,15 @@ Fun-ASR 网关 — 阿里云百炼语音识别封装
 """
 from typing import AsyncGenerator
 
+import asyncio
 from loguru import logger
 
 from app.ai.asr_base import ASRGatewayBase, ASRResult, PhonemeInfo
+from app.ai.retry import make_retry_wrapper
 from app.core.config import get_settings
-from app.core.errors import ErrorCode
+from app.core.errors import AIServiceTimeout, AIServiceUnavailable
 
 settings = get_settings()
-
-# ── 自定义异常 ──────────────────────────────────────────────
-
-class AIServiceUnavailable(Exception):
-    """AI 服务不可用异常，业务层捕获后返回错误码 50301"""
-    def __init__(self, service: str = "ASR", detail: str = ""):
-        self.service = service
-        self.detail = detail
-        self.code = ErrorCode.SERVICE_UNAVAILABLE
-        super().__init__(f"{service} 服务不可用: {detail}")
-
-
-class AIServiceTimeout(Exception):
-    """AI 服务超时异常，业务层捕获后返回错误码 50302"""
-    def __init__(self, service: str = "ASR", detail: str = ""):
-        self.service = service
-        self.detail = detail
-        self.code = ErrorCode.SERVICE_MAINTENANCE
-        super().__init__(f"{service} 服务超时: {detail}")
-
-
-# ── 重试装饰器（从公共模块导入）──────────────────────────────
-from app.ai.retry import make_retry_wrapper
 
 _retry_with_backoff = make_retry_wrapper(
     max_retries=settings.ASR_MAX_RETRIES,
@@ -102,10 +81,11 @@ class FunASRGateway(ASRGatewayBase):
                 tmp_path = tmp.name
 
             try:
-                # 调用 dashscope 录音文件识别
-                response = client.AudioRecognition.call(
-                    model=self.model,
-                    file_urls=[f"file://{tmp_path}"],
+                # 调用 dashscope 录音文件识别，使用 asyncio.to_thread 包装同步阻塞调用
+                response = await asyncio.to_thread(
+                    client.AudioRecognition.call,
+                    self.model,
+                    f"file://{tmp_path}",
                     language_hints=[language],
                 )
 
@@ -129,7 +109,7 @@ class FunASRGateway(ASRGatewayBase):
                     pass
 
         try:
-            return await _retry_with_backoff(_call, service_name="ASR")
+            return await _retry_with_backoff(_call)
         except (AIServiceUnavailable, AIServiceTimeout):
             raise
         except Exception as e:
@@ -154,11 +134,12 @@ class FunASRGateway(ASRGatewayBase):
                 tmp_path = tmp.name
 
             try:
-                response = client.AudioRecognition.call(
-                    model=self.model,
-                    file_urls=[f"file://{tmp_path}"],
+                # 调用 dashscope 录音文件识别，使用 asyncio.to_thread 包装同步阻塞调用
+                response = await asyncio.to_thread(
+                    client.AudioRecognition.call,
+                    self.model,
+                    f"file://{tmp_path}",
                     language_hints=["zh"],
-                    # 请求返回时间戳信息
                     word_timestamp=True,
                 )
 
@@ -208,7 +189,7 @@ class FunASRGateway(ASRGatewayBase):
                     pass
 
         try:
-            return await _retry_with_backoff(_call, service_name="ASR")
+            return await _retry_with_backoff(_call)
         except (AIServiceUnavailable, AIServiceTimeout):
             raise
         except Exception as e:
@@ -231,7 +212,7 @@ class FunASRGateway(ASRGatewayBase):
             # 这里用 dashscope 的 Recognition API 的实时模式
             from dashscope.audio.asr import Recognition
 
-            recognition = Recognition(
+            Recognition(
                 model=self.model + "-streaming",
                 format="wav",
                 sample_rate=16000,
@@ -247,7 +228,7 @@ class FunASRGateway(ASRGatewayBase):
             # 合并音频数据并调用
             full_audio = b"".join(audio_chunks)
 
-            async def _call():
+            async def _call() -> list[ASRResult]:
                 import tempfile
                 import os
 
@@ -256,19 +237,23 @@ class FunASRGateway(ASRGatewayBase):
                     tmp_path = tmp.name
 
                 try:
-                    response = client.AudioRecognition.call(
-                        model=self.model,
-                        file_urls=[f"file://{tmp_path}"],
+                    # 调用 dashscope 录音文件识别，使用 asyncio.to_thread 包装同步阻塞调用
+                    response = await asyncio.to_thread(
+                        client.AudioRecognition.call,
+                        self.model,
+                        f"file://{tmp_path}",
                         language_hints=[language],
                     )
 
                     if response.status_code == 200:
                         results = response.output.get("results", [])
-                        for r in results:
-                            yield ASRResult(
-                                text=r.get("text", ""),
-                                confidence=r.get("confidence", 0.0),
+                        return [
+                            ASRResult(
+                                text=result.get("text", ""),
+                                confidence=result.get("confidence", 0.0),
                             )
+                            for result in results
+                        ]
                     else:
                         error_msg = getattr(response, "message", "未知错误")
                         raise Exception(f"ASR 流式识别错误: {error_msg}")
@@ -280,9 +265,8 @@ class FunASRGateway(ASRGatewayBase):
 
             # 流式识别：先尝试实时识别，失败则降级为整段识别
             try:
-                async for result in await _retry_with_backoff(
-                    lambda: _call(), service_name="ASR-Stream"
-                ):
+                results = await _retry_with_backoff(lambda: _call())
+                for result in results or []:
                     yield result
             except (AIServiceUnavailable, AIServiceTimeout):
                 # 降级：将所有 chunk 合并做整段识别

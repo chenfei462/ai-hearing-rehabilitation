@@ -23,6 +23,7 @@ from loguru import logger
 
 from app.ai.llm_base import LLMGatewayBase, LLMResponse
 from app.core.config import get_settings
+from app.core.safety import find_safety_keyword
 
 settings = get_settings()
 
@@ -208,9 +209,9 @@ class QwenLLMGateway(LLMGatewayBase):
         :return: (is_safe, reason)
         """
         text_lower = text.lower()
-        for keyword in SAFETY_KEYWORDS:
-            if keyword in text_lower:
-                return False, f"检测到敏感内容: {keyword}"
+        keyword = find_safety_keyword(text_lower, SAFETY_KEYWORDS)
+        if keyword is not None:
+            return False, f"检测到敏感内容: {keyword}"
         return True, ""
 
     def _check_safety_output(self, text: str) -> tuple[bool, str]:
@@ -334,16 +335,18 @@ class QwenLLMGateway(LLMGatewayBase):
                 incremental_output=True,
             )
 
-            full_content = ""
+            buffer = ""
             for response in responses:
                 if response.status_code == 200:
                     choices = response.output.get("choices", [])
                     if choices:
                         delta = choices[0].get("message", {}).get("content", "")
                         if delta:
-                            full_content += delta
-                            # 流式输出安全检查 - 在发送前检查
-                            is_safe, reason = self._check_safety_output(full_content)
+                            buffer += delta
+                            # 检查缓冲区最后 N 个字符（如最后 200 字符）
+                            N = 200
+                            check_content = buffer[-N:] if len(buffer) > N else buffer
+                            is_safe, reason = self._check_safety_output(check_content)
                             if not is_safe:
                                 logger.warning(f"[LLM] 流式输出安全检查未通过: {reason}")
                                 yield {"error": "内容安全检查未通过"}

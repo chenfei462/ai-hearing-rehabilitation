@@ -45,7 +45,7 @@ export function useRecorder(): UseRecorderReturn {
       }
       if (audioUrl) URL.revokeObjectURL(audioUrl);
     };
-  }, []);
+  }, [audioUrl]);
 
   const startRecording = useCallback(async () => {
     setError(null);
@@ -90,8 +90,8 @@ export function useRecorder(): UseRecorderReturn {
         streamRef.current = null;
       };
 
-      recorder.onerror = (e: any) => {
-        setError(`录音出错: ${e.error?.message || '未知错误'}`);
+      recorder.onerror = () => {
+        setError('录音出错: 未知错误');
         setStatus('idle');
       };
 
@@ -103,13 +103,15 @@ export function useRecorder(): UseRecorderReturn {
       timerRef.current = setInterval(() => {
         setDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
       }, 200);
-    } catch (err: any) {
-      if (err.name === 'NotAllowedError') {
+    } catch (err: unknown) {
+      const errorName = err instanceof DOMException ? err.name : '';
+      const errorMessage = err instanceof Error ? err.message : '未知错误';
+      if (errorName === 'NotAllowedError') {
         setError('请允许麦克风权限后重试');
-      } else if (err.name === 'NotFoundError') {
+      } else if (errorName === 'NotFoundError') {
         setError('未检测到麦克风设备');
       } else {
-        setError(`无法启动录音: ${err.message}`);
+        setError(`无法启动录音: ${errorMessage}`);
       }
     }
   }, []);
@@ -123,8 +125,7 @@ export function useRecorder(): UseRecorderReturn {
       }
 
       // 在 onstop 中会设置 audioBlob
-      const originalOnStop = recorder.ondataavailable;
-      recorder.onstop = (e) => {
+      recorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType });
         setAudioBlob(blob);
         setAudioUrl(URL.createObjectURL(blob));

@@ -35,34 +35,30 @@ npm run preview
 
 ```
 src/
-├── api/            # API 请求封装（Axios 实例、请求/响应拦截器）
-├── assets/         # 静态资源（图片、音频）
-├── components/     # 通用 UI 组件
-│   ├── AccessibilityToolbar.tsx   # 无障碍工具栏（字体/语速调节）
-│   ├── AudioPlayer.tsx           # 音频播放器组件
-│   ├── FeedbackCard.tsx          # 反馈卡片
-│   ├── Layout.tsx                # 页面布局骨架
-│   ├── Navbar.tsx                # 导航栏
-│   └── WaveformVisualizer.tsx    # 波形可视化
+├── api/            # 认证 API 封装
+├── components/     # 页面布局、图表、通用和硬件组件
+│   ├── charts/      # 训练趋势与级别图表
+│   ├── common/      # 大按钮、评分环、级别标签等
+│   └── layout/      # AppShell 与底部导航
 ├── hooks/          # 自定义 React Hooks
 ├── pages/          # 页面组件
 │   ├── DialoguePage.tsx      # 对话陪练页
-│   ├── HomePage.tsx          # 首页/训练选择
+│   ├── HomePage.tsx          # 首页/训练模块选择
 │   ├── LoginPage.tsx         # 登录页
-│   ├── ProfilePage.tsx       # 个人中心
 │   ├── PronunciationPage.tsx # 发音反馈页
 │   ├── ReportPage.tsx        # 训练报告页
 │   ├── SettingsPage.tsx      # 设置页
 │   ├── TrainingPage.tsx      # 听觉训练页
-│   └── TrainingResult.tsx    # 训练结果页
+│   └── NotFoundPage.tsx      # 未找到页面
 ├── services/       # 业务 API 服务层
 ├── stores/         # Zustand 状态仓库
-├── theme/          # MUI 主题配置（含无障碍适配）
-├── types/          # TypeScript 类型定义
+├── types/          # 共享 TypeScript 类型
 ├── utils/          # 工具函数
 ├── App.tsx         # 根组件（路由配置）
 └── main.tsx        # 应用入口
 ```
+
+端到端 smoke 测试位于 `e2e/`，运行 `npm run test:e2e` 前需安装 Chromium。
 
 ## 开发命令
 

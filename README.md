@@ -42,7 +42,7 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 # 安装依赖
 pip install -r requirements.txt
 
-# 配置环境变量
+# 配置环境变量（项目根目录执行）
 cp .env.example .env
 # 编辑 .env 填入 SECRET_KEY 和 DASHSCOPE_API_KEY
 
@@ -74,7 +74,7 @@ npm run dev
 | 报告 | `/api/report` | 训练概览、周报、患者列表 |
 | 监控 | `/api/metrics` | Prometheus 格式指标 |
 
-完整 API 文档请访问 http://localhost:8000/docs（需 DEBUG=true）
+完整 API 文档请访问 http://localhost:8000/docs（生产环境应限制访问）。接口清单见 `docs/api-reference.md`。
 
 ## 项目结构
 
@@ -151,6 +151,8 @@ docker-compose up -d
 - `system_design.md` - 系统设计文档
 - `class-diagram.mermaid` - 类图
 - `sequence-diagram.mermaid` - 时序图
+- `docs/api-reference.md` - 实际 API 路径与响应约定
+- `docs/runbook.md` - 发布、故障处理和回滚手册
 
 ## 贡献指南
 

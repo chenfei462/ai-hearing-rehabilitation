@@ -1,4 +1,3 @@
-import React from 'react';
 import { Box, Typography, SxProps, Theme } from '@mui/material';
 
 interface ScoreRingProps {

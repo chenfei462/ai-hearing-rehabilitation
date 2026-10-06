@@ -8,7 +8,7 @@
 import time
 import hashlib
 import json
-from typing import Callable, Optional
+from typing import Callable
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -16,6 +16,7 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from app.core.redis import redis_client
 from app.utils.logger import logger
+from app.core.security import verify_token
 
 
 class RequestTimingMiddleware(BaseHTTPMiddleware):
@@ -113,10 +114,18 @@ class ResponseCacheMiddleware(BaseHTTPMiddleware):
             request.url.path,
             str(request.query_params),
         ]
-        # 包含用户 token（不同用户缓存不同）
+        # 从 Authorization token 解码获取 user_id，不同用户缓存不同
         auth = request.headers.get("Authorization", "")
-        if auth:
-            key_parts.append(auth[:20])
+        if auth.lower().startswith("bearer "):
+            token = auth[7:].strip()
+            try:
+                payload = verify_token(token)
+                if payload:
+                    user_id = payload.get("sub")
+                    if user_id:
+                        key_parts.append(str(user_id))
+            except Exception:
+                pass
 
         raw = "|".join(key_parts)
         return f"cache:{hashlib.md5(raw.encode()).hexdigest()}"

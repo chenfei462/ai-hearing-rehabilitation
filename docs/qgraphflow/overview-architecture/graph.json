@@ -1,0 +1,1167 @@
+{
+  "meta": {
+    "title": "AI 听觉康复助手 · 系统架构总览",
+    "subtitle": "React SPA → FastAPI 五层业务 → 阿里云百炼 AI 网关 → PostgreSQL / Redis",
+    "sourceRef": "听觉康复@65d9076 (master)",
+    "diagramType": "architecture",
+    "locale": "zh-CN"
+  },
+  "groups": [
+    {
+      "id": "g-web",
+      "label": "前端容器（Vite 构建 → nginx :3000）",
+      "kind": "runtime",
+      "position": {
+        "x": 1636.5,
+        "y": 32
+      },
+      "size": {
+        "width": 544,
+        "height": 358
+      }
+    },
+    {
+      "id": "g-api",
+      "label": "后端进程（Uvicorn + FastAPI :8000）",
+      "kind": "runtime",
+      "position": {
+        "x": 56,
+        "y": 628
+      },
+      "size": {
+        "width": 3083,
+        "height": 1135
+      }
+    },
+    {
+      "id": "g-cloud",
+      "label": "外部 AI 能力（阿里云百炼）",
+      "kind": "external",
+      "position": {
+        "x": 32,
+        "y": 2137
+      },
+      "size": {
+        "width": 544,
+        "height": 272
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "spa",
+      "label": "frontend · React 18 SPA",
+      "kind": "component",
+      "groupId": "g-web",
+      "module": "web",
+      "subtitle": "登录 / 训练 / 对话 / 发音 / 报告 / 设置 六类页面",
+      "tags": [],
+      "facts": [
+        "react-router 路由 + MUI 主题 + TanStack Query + Zustand（main.tsx:11-30）",
+        "axios 封装 baseURL 默认 /api，可由 VITE_API_BASE_URL 覆盖（services/api.ts:11-12）",
+        "无障碍与老年模式：a11yStore + AccessibilityPanel + useRecorder/useAudioPlayer 音频链路"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "frontend/src/App.tsx",
+        "lineStart": 16,
+        "lineEnd": 27,
+        "symbol": "App"
+      },
+      "layout": {
+        "order": 0
+      },
+      "position": {
+        "x": 1668.5,
+        "y": 90
+      },
+      "size": {
+        "width": 480,
+        "height": 115
+      }
+    },
+    {
+      "id": "fastapi",
+      "label": "app.main · FastAPI 应用",
+      "kind": "service",
+      "groupId": "g-api",
+      "module": "平台",
+      "subtitle": "路由注册 · 生命周期 · 中间件链 · 全局异常处理",
+      "facts": [
+        "注册 8 个路由：/health、/api/metrics、/api/auth、/api/training、/api/dialogue、/api/pronunciation、/api/report、/api/hardware",
+        "中间件链：GZip → 限流 → 响应缓存 → 请求计时 → 监控（middleware/performance.py:187-205）",
+        "lifespan 启动时 init_database + seed_data + Redis ping + 硬件管理器 start，失败仅告警降级（main.py:39-94）"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/main.py",
+        "lineStart": 98,
+        "lineEnd": 131,
+        "symbol": "app"
+      },
+      "layout": {
+        "order": 1
+      },
+      "position": {
+        "x": 1668.5,
+        "y": 686
+      },
+      "size": {
+        "width": 480,
+        "height": 115
+      }
+    },
+    {
+      "id": "auth",
+      "label": "/api/auth · 短信验证码登录",
+      "kind": "security",
+      "groupId": "g-api",
+      "module": "认证",
+      "subtitle": "sms/send · login · logout · me · preferences",
+      "facts": [
+        "AuthService 校验验证码后由 core/security.create_access_token 签发 JWT（auth_service.py:74）",
+        "Redis 承担登录失败计数与账号锁定（api/auth.py:26-46、发送频控 :64-69）",
+        "api/deps.py 提供 get_current_user(:9) 与 get_current_therapist(:55) 角色校验依赖"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/api/auth.py",
+        "lineStart": 76,
+        "lineEnd": 147,
+        "symbol": "router"
+      },
+      "layout": {
+        "order": 2
+      },
+      "position": {
+        "x": 1994.5,
+        "y": 1460
+      },
+      "size": {
+        "width": 480,
+        "height": 115
+      }
+    },
+    {
+      "id": "training",
+      "label": "分级自适应训练（业务核心）",
+      "kind": "business",
+      "groupId": "g-api",
+      "module": "训练",
+      "subtitle": "音素 → 词语 → 句子三级，IRT 选题 + BKT 掌握度",
+      "facts": [
+        "会话流程：POST /sessions → /sessions/{id}/answer → /sessions/{id}/finish（api/training.py:32,83,106）",
+        "IRT 引擎用极大似然估计能力值 θ，按信息量最大选择下一题（irt_engine.py:65,119）",
+        "BKT 自适应引擎维护知识状态并推荐难度、计算奖励（ai/adaptive_engine.py:87,169,250）",
+        "纯本地算法，不访问外部 AI 服务；另有 /api/training/adaptive/submit(:166) 提交 BKT 结果"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/services/training_service.py",
+        "lineStart": 13,
+        "lineEnd": 165,
+        "symbol": "TrainingService"
+      },
+      "layout": {
+        "order": 4
+      },
+      "position": {
+        "x": 88,
+        "y": 1079
+      },
+      "size": {
+        "width": 480,
+        "height": 115
+      }
+    },
+    {
+      "id": "dialogue",
+      "label": "AI 场景对话陪练（业务核心）",
+      "kind": "business",
+      "groupId": "g-api",
+      "module": "对话",
+      "subtitle": "handle_turn：语音识别 → 大模型回复 → 语音合成",
+      "facts": [
+        "场景提示词表 SCENARIO_PROMPTS 定义餐厅/医院/超市等（ai/llm_gateway.py:33，scenario_service.py:6 引用）",
+        "DialogueOrchestrator 依次调用 asr.recognize、llm.chat、tts.synthesize_to_url（dialogue_orchestrator.py:51,82,106）",
+        "每轮写入 dialogue_turns，会话上下文缓存在 Redis（dialogue_service.py:165,201；:296,314）",
+        "输入输出双向安全关键词过滤，命中则使用兜底话术（core/safety.py:6,15；llm_gateway.py:212,230）"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/services/dialogue_service.py",
+        "lineStart": 34,
+        "lineEnd": 230,
+        "symbol": "DialogueService"
+      },
+      "layout": {
+        "order": 5
+      },
+      "position": {
+        "x": 1176,
+        "y": 1079
+      },
+      "size": {
+        "width": 480,
+        "height": 115
+      }
+    },
+    {
+      "id": "pronunciation",
+      "label": "音素级发音评分（业务核心）",
+      "kind": "business",
+      "groupId": "g-api",
+      "module": "发音",
+      "subtitle": "DTW 音素对齐 → 准确率/流畅度评分 → 纠正建议",
+      "facts": [
+        "dtw_align 将目标音序列与 ASR 音序列对齐并计算相似度（pronunciation_scorer.py:108,186）",
+        "score 汇总准确度，_compute_fluency 与 _generate_suggestions 产出反馈（pronunciation_scorer.py:218,287,329）",
+        "服务层取带时间戳识别结果并生成示范音频供回放对比（pronunciation_service.py:154,118,184）",
+        "评测记录写入 pronunciation_attempts（models/pronunciation.py:6）"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/services/pronunciation_scorer.py",
+        "lineStart": 87,
+        "lineEnd": 287,
+        "symbol": "PronunciationScorer"
+      },
+      "layout": {
+        "order": 6
+      },
+      "position": {
+        "x": 632,
+        "y": 1079
+      },
+      "size": {
+        "width": 480,
+        "height": 115
+      }
+    },
+    {
+      "id": "report",
+      "label": "/api/report · 训练报告与听力师后台",
+      "kind": "service",
+      "groupId": "g-api",
+      "module": "报告",
+      "subtitle": "summary · levels · weekly · patients",
+      "facts": [
+        "TrainingStatsService 计算正确率趋势、连续打卡与依从率（training_stats_service.py:24,357,318）",
+        "PatientService 面向 therapist 角色汇总患者进展（patient_service.py:15,21）",
+        "ReportService 只做编排，聚合统计与患者服务（report_service.py:18-45）"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/services/report_service.py",
+        "lineStart": 18,
+        "lineEnd": 45,
+        "symbol": "ReportService"
+      },
+      "layout": {
+        "order": 3
+      },
+      "position": {
+        "x": 1720,
+        "y": 1079
+      },
+      "size": {
+        "width": 473,
+        "height": 115
+      }
+    },
+    {
+      "id": "hardware",
+      "label": "/api/hardware · 康复训练站接入",
+      "kind": "service",
+      "groupId": "g-api",
+      "module": "硬件",
+      "subtitle": "设备注册 · 连接重试 · 按键/LED/蜂鸣 · 训练事件",
+      "facts": [
+        "DeviceManager 管理 HardwareDevice 集合，支持传感器/按键/音频回调订阅（hardware/manager.py:90-135）",
+        "ESP32RehabStation 通过 WebSocketDeviceConnection 协议接入（hardware/protocols/websocket_protocol.py）",
+        "由 HARDWARE_ENABLED / HARDWARE_MOCK_MODE 配置开关控制，可注册 MockDevice（main.py:59-71）",
+        "前端调用面：GET /devices、POST /training-event、GET /ws-info（hardwareService.ts:72,107,112）"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/hardware/manager.py",
+        "lineStart": 35,
+        "lineEnd": 147,
+        "symbol": "DeviceManager"
+      },
+      "layout": {
+        "order": 8
+      },
+      "position": {
+        "x": 2627,
+        "y": 1079
+      },
+      "size": {
+        "width": 480,
+        "height": 115
+      }
+    },
+    {
+      "id": "ai-gateway",
+      "label": "app.ai · ASR / TTS / LLM 网关",
+      "kind": "component",
+      "groupId": "g-api",
+      "module": "AI 网关",
+      "subtitle": "FunASRGateway · QwenTTSGateway · QwenLLMGateway",
+      "facts": [
+        "get_asr_gateway/get_tts_gateway/get_llm_gateway 提供进程内单例容器（ai/__init__.py:63-83）",
+        "三个网关均读取 DASHSCOPE_API_KEY 并惰性初始化 dashscope 客户端（asr_gateway.py:47,55；tts_gateway.py:64,74；llm_gateway.py:155,163）",
+        "retry_with_backoff / make_retry_wrapper 统一超时退避，失败返回降级结果（ai/retry.py:81）",
+        "未配置 API Key 时 TTS 返回空音频降级，LLM 走兜底话术（tts_gateway.py:108；llm_gateway.py:230）",
+        "TTS 合成结果以 base64 缓存进 Redis，命中直接解码返回（tts_gateway.py:130-132）"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/ai/__init__.py",
+        "lineStart": 63,
+        "lineEnd": 92,
+        "symbol": "get_asr_gateway"
+      },
+      "layout": {
+        "order": 7
+      },
+      "position": {
+        "x": 1212,
+        "y": 1448
+      },
+      "size": {
+        "width": 480,
+        "height": 139
+      }
+    },
+    {
+      "id": "postgres",
+      "label": "PostgreSQL 15",
+      "kind": "database",
+      "module": "存储",
+      "subtitle": "asyncpg + SQLAlchemy AsyncSession",
+      "facts": [
+        "engine 由 DATABASE_URL 创建，get_db 依赖注入会话（core/database.py:8-33）",
+        "7 类实体表：users、user_abilities、item_bank、training_sessions/items、dialogue_sessions/turns、pronunciation_attempts、knowledge_states",
+        "compose 服务名 db，数据卷 postgres_data，pg_isready 健康检查，口令来自环境变量（docker-compose.yml:47-63）",
+        "启动时 init_database 建表 + seed_data 填充题库与示例用户（db/init_db.py:12,19）"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/core/database.py",
+        "lineStart": 8,
+        "lineEnd": 16,
+        "symbol": "engine"
+      },
+      "layout": {
+        "order": 9
+      },
+      "position": {
+        "x": 1069,
+        "y": 2137
+      },
+      "size": {
+        "width": 439,
+        "height": 115
+      }
+    },
+    {
+      "id": "redis",
+      "label": "Redis 7",
+      "kind": "data",
+      "module": "存储",
+      "subtitle": "响应缓存 · 限流计数 · 对话上下文 · TTS 音频缓存",
+      "facts": [
+        "redis.from_url(REDIS_URL) 全局客户端，get_redis 依赖（core/redis.py:9-16）",
+        "ResponseCacheMiddleware 与 RateLimitMiddleware 读写缓存和计数（middleware/performance.py:54,144）",
+        "连接失败时应用继续启动，仅记录「缓存功能不可用」（main.py:52-56）"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/core/redis.py",
+        "lineStart": 9,
+        "lineEnd": 16,
+        "symbol": "redis_client"
+      },
+      "layout": {
+        "order": 10
+      },
+      "position": {
+        "x": 2029.5,
+        "y": 2137
+      },
+      "size": {
+        "width": 480,
+        "height": 115
+      }
+    },
+    {
+      "id": "bailian",
+      "label": "阿里云百炼 DashScope",
+      "kind": "external",
+      "groupId": "g-cloud",
+      "subtitle": "FUN-ASR 语音识别 · Qwen3-TTS 合成 · 通义千问对话",
+      "layout": {
+        "order": 11
+      },
+      "position": {
+        "x": 64,
+        "y": 2195
+      },
+      "size": {
+        "width": 480,
+        "height": 139
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "spa",
+      "target": "fastapi",
+      "kind": "request",
+      "label": "HTTP /api/*（JWT 承载于 Authorization 头）",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 1908.5,
+            "y": 217
+          },
+          {
+            "x": 1908.5,
+            "y": 674
+          }
+        ],
+        "labelAt": {
+          "x": 1908.5,
+          "y": 509
+        }
+      }
+    },
+    {
+      "id": "e2",
+      "source": "fastapi",
+      "target": "auth",
+      "kind": "call",
+      "label": "include_router(prefix='/api/auth')",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 1836.5,
+            "y": 813
+          },
+          {
+            "x": 1836.5,
+            "y": 921
+          },
+          {
+            "x": 2417.5,
+            "y": 921
+          },
+          {
+            "x": 2417.5,
+            "y": 1392
+          },
+          {
+            "x": 2246.5,
+            "y": 1392
+          },
+          {
+            "x": 2246.5,
+            "y": 1448
+          }
+        ],
+        "labelAt": {
+          "x": 2417.5,
+          "y": 1136.5
+        }
+      }
+    },
+    {
+      "id": "e3",
+      "source": "fastapi",
+      "target": "training",
+      "kind": "call",
+      "label": "include_router(prefix='/api/training')",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 1884.5,
+            "y": 813
+          },
+          {
+            "x": 1884.5,
+            "y": 825
+          },
+          {
+            "x": 328,
+            "y": 825
+          },
+          {
+            "x": 328,
+            "y": 1067
+          }
+        ],
+        "labelAt": {
+          "x": 328,
+          "y": 972
+        }
+      }
+    },
+    {
+      "id": "e4",
+      "source": "fastapi",
+      "target": "dialogue",
+      "kind": "call",
+      "label": "include_router(prefix='/api/dialogue')",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 1908.5,
+            "y": 813
+          },
+          {
+            "x": 1908.5,
+            "y": 897
+          },
+          {
+            "x": 1416,
+            "y": 897
+          },
+          {
+            "x": 1416,
+            "y": 1067
+          }
+        ],
+        "labelAt": {
+          "x": 1416,
+          "y": 972
+        }
+      }
+    },
+    {
+      "id": "e5",
+      "source": "fastapi",
+      "target": "pronunciation",
+      "kind": "call",
+      "label": "include_router(prefix='/api/pronunciation')",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 1932.5,
+            "y": 813
+          },
+          {
+            "x": 1932.5,
+            "y": 873
+          },
+          {
+            "x": 872,
+            "y": 873
+          },
+          {
+            "x": 872,
+            "y": 1067
+          }
+        ],
+        "labelAt": {
+          "x": 872,
+          "y": 972
+        }
+      }
+    },
+    {
+      "id": "e6",
+      "source": "fastapi",
+      "target": "report",
+      "kind": "call",
+      "label": "include_router(prefix='/api/report')",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 1956.5,
+            "y": 813
+          },
+          {
+            "x": 1956.5,
+            "y": 1067
+          }
+        ],
+        "labelAt": {
+          "x": 1956.5,
+          "y": 972
+        }
+      }
+    },
+    {
+      "id": "e7",
+      "source": "fastapi",
+      "target": "hardware",
+      "kind": "call",
+      "label": "include_router(prefix='/api/hardware')",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 1980.5,
+            "y": 813
+          },
+          {
+            "x": 1980.5,
+            "y": 825
+          },
+          {
+            "x": 2867,
+            "y": 825
+          },
+          {
+            "x": 2867,
+            "y": 1067
+          }
+        ],
+        "labelAt": {
+          "x": 2867,
+          "y": 972
+        }
+      }
+    },
+    {
+      "id": "e8",
+      "source": "auth",
+      "target": "postgres",
+      "kind": "data",
+      "label": "users / user_abilities 读写",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 2222.5,
+            "y": 1587
+          },
+          {
+            "x": 2222.5,
+            "y": 1659
+          },
+          {
+            "x": 932,
+            "y": 1659
+          },
+          {
+            "x": 932,
+            "y": 1895
+          },
+          {
+            "x": 1784,
+            "y": 1895
+          },
+          {
+            "x": 1784,
+            "y": 2093
+          },
+          {
+            "x": 1336.5,
+            "y": 2093
+          },
+          {
+            "x": 1336.5,
+            "y": 2125
+          }
+        ],
+        "labelAt": {
+          "x": 1784,
+          "y": 2018
+        }
+      }
+    },
+    {
+      "id": "e9",
+      "source": "auth",
+      "target": "redis",
+      "kind": "data",
+      "label": "验证码、登录失败计数与锁定 TTL",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 2246.5,
+            "y": 1587
+          },
+          {
+            "x": 2246.5,
+            "y": 1799
+          },
+          {
+            "x": 2741.5,
+            "y": 1799
+          },
+          {
+            "x": 2741.5,
+            "y": 2093
+          },
+          {
+            "x": 2305.5,
+            "y": 2093
+          },
+          {
+            "x": 2305.5,
+            "y": 2125
+          }
+        ],
+        "labelAt": {
+          "x": 2741.5,
+          "y": 2018
+        }
+      }
+    },
+    {
+      "id": "e10",
+      "source": "training",
+      "target": "postgres",
+      "kind": "data",
+      "label": "training_sessions / item_bank / knowledge_states",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 328,
+            "y": 1206
+          },
+          {
+            "x": 328,
+            "y": 1799
+          },
+          {
+            "x": 634.5,
+            "y": 1799
+          },
+          {
+            "x": 634.5,
+            "y": 2093
+          },
+          {
+            "x": 1240.5,
+            "y": 2093
+          },
+          {
+            "x": 1240.5,
+            "y": 2125
+          }
+        ],
+        "labelAt": {
+          "x": 634.5,
+          "y": 2018
+        }
+      }
+    },
+    {
+      "id": "e11",
+      "source": "dialogue",
+      "target": "postgres",
+      "kind": "data",
+      "label": "dialogue_sessions / dialogue_turns",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 1392,
+            "y": 1206
+          },
+          {
+            "x": 1392,
+            "y": 1290
+          },
+          {
+            "x": 859,
+            "y": 1290
+          },
+          {
+            "x": 859,
+            "y": 1967
+          },
+          {
+            "x": 974,
+            "y": 1967
+          },
+          {
+            "x": 974,
+            "y": 2069
+          },
+          {
+            "x": 1264.5,
+            "y": 2069
+          },
+          {
+            "x": 1264.5,
+            "y": 2125
+          }
+        ],
+        "labelAt": {
+          "x": 974,
+          "y": 2018
+        }
+      }
+    },
+    {
+      "id": "e12",
+      "source": "dialogue",
+      "target": "redis",
+      "kind": "data",
+      "label": "会话上下文 setex / get",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 1416,
+            "y": 1206
+          },
+          {
+            "x": 1416,
+            "y": 1242
+          },
+          {
+            "x": 1969.5,
+            "y": 1242
+          },
+          {
+            "x": 1969.5,
+            "y": 1683
+          },
+          {
+            "x": 956,
+            "y": 1683
+          },
+          {
+            "x": 956,
+            "y": 1871
+          },
+          {
+            "x": 2035,
+            "y": 1871
+          },
+          {
+            "x": 2035,
+            "y": 2069
+          },
+          {
+            "x": 2233.5,
+            "y": 2069
+          },
+          {
+            "x": 2233.5,
+            "y": 2125
+          }
+        ],
+        "labelAt": {
+          "x": 2035,
+          "y": 2018
+        }
+      }
+    },
+    {
+      "id": "e13",
+      "source": "dialogue",
+      "target": "ai-gateway",
+      "kind": "call",
+      "label": "recognize_speech → generate_reply → synthesize_speech",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 1440,
+            "y": 1206
+          },
+          {
+            "x": 1440,
+            "y": 1436
+          }
+        ],
+        "labelAt": {
+          "x": 1440,
+          "y": 1341
+        }
+      }
+    },
+    {
+      "id": "e14",
+      "source": "pronunciation",
+      "target": "ai-gateway",
+      "kind": "call",
+      "label": "recognize_with_timestamps + synthesize_to_url 示范音",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 860,
+            "y": 1206
+          },
+          {
+            "x": 860,
+            "y": 1266
+          },
+          {
+            "x": 1771.5,
+            "y": 1266
+          },
+          {
+            "x": 1771.5,
+            "y": 1392
+          },
+          {
+            "x": 1464,
+            "y": 1392
+          },
+          {
+            "x": 1464,
+            "y": 1436
+          }
+        ],
+        "labelAt": {
+          "x": 1771.5,
+          "y": 1341
+        }
+      }
+    },
+    {
+      "id": "e15",
+      "source": "pronunciation",
+      "target": "postgres",
+      "kind": "data",
+      "label": "pronunciation_attempts 写入",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 884,
+            "y": 1206
+          },
+          {
+            "x": 884,
+            "y": 1943
+          },
+          {
+            "x": 1288.5,
+            "y": 1943
+          },
+          {
+            "x": 1288.5,
+            "y": 2125
+          }
+        ],
+        "labelAt": {
+          "x": 1288.5,
+          "y": 2018
+        }
+      }
+    },
+    {
+      "id": "e16",
+      "source": "report",
+      "target": "postgres",
+      "kind": "data",
+      "label": "训练/发音/能力聚合查询",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 1944.5,
+            "y": 1206
+          },
+          {
+            "x": 1944.5,
+            "y": 1635
+          },
+          {
+            "x": 908,
+            "y": 1635
+          },
+          {
+            "x": 908,
+            "y": 1919
+          },
+          {
+            "x": 1538,
+            "y": 1919
+          },
+          {
+            "x": 1538,
+            "y": 2069
+          },
+          {
+            "x": 1312.5,
+            "y": 2069
+          },
+          {
+            "x": 1312.5,
+            "y": 2125
+          }
+        ],
+        "labelAt": {
+          "x": 1538,
+          "y": 2018
+        }
+      }
+    },
+    {
+      "id": "e17",
+      "source": "report",
+      "target": "auth",
+      "kind": "call",
+      "label": "get_current_therapist 角色校验",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 1968.5,
+            "y": 1206
+          },
+          {
+            "x": 1968.5,
+            "y": 1218
+          },
+          {
+            "x": 2222.5,
+            "y": 1218
+          },
+          {
+            "x": 2222.5,
+            "y": 1448
+          }
+        ],
+        "labelAt": {
+          "x": 2222.5,
+          "y": 1341
+        }
+      }
+    },
+    {
+      "id": "e18",
+      "source": "ai-gateway",
+      "target": "bailian",
+      "kind": "request",
+      "label": "FUN-ASR / qwen3-tts / qwen3 调用（DASHSCOPE_API_KEY）",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 1440,
+            "y": 1599
+          },
+          {
+            "x": 1440,
+            "y": 1611
+          },
+          {
+            "x": 304,
+            "y": 1611
+          },
+          {
+            "x": 304,
+            "y": 2183
+          }
+        ],
+        "labelAt": {
+          "x": 304,
+          "y": 2018
+        }
+      }
+    },
+    {
+      "id": "e19",
+      "source": "ai-gateway",
+      "target": "redis",
+      "kind": "data",
+      "label": "TTS 音频 base64 缓存",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 1464,
+            "y": 1599
+          },
+          {
+            "x": 1464,
+            "y": 1847
+          },
+          {
+            "x": 2257.5,
+            "y": 1847
+          },
+          {
+            "x": 2257.5,
+            "y": 2125
+          }
+        ],
+        "labelAt": {
+          "x": 2257.5,
+          "y": 2018
+        }
+      }
+    },
+    {
+      "id": "e20",
+      "source": "fastapi",
+      "target": "redis",
+      "kind": "data",
+      "label": "响应缓存与限流计数中间件",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 1860.5,
+            "y": 813
+          },
+          {
+            "x": 1860.5,
+            "y": 849
+          },
+          {
+            "x": 2602,
+            "y": 849
+          },
+          {
+            "x": 2602,
+            "y": 1707
+          },
+          {
+            "x": 1488,
+            "y": 1707
+          },
+          {
+            "x": 1488,
+            "y": 1823
+          },
+          {
+            "x": 2481.5,
+            "y": 1823
+          },
+          {
+            "x": 2481.5,
+            "y": 2069
+          },
+          {
+            "x": 2281.5,
+            "y": 2069
+          },
+          {
+            "x": 2281.5,
+            "y": 2125
+          }
+        ],
+        "labelAt": {
+          "x": 2481.5,
+          "y": 2018
+        }
+      }
+    }
+  ],
+  "layout": {
+    "version": "adaptive-v2-elkjs-0.11.0",
+    "strategy": "layered-0"
+  }
+}
