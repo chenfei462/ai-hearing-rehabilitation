@@ -2,13 +2,16 @@
   "goalStartedAt": "2026-10-06T19:03:00Z",
   "goalObjective": "Autonomous Delivery Orchestrator: M0 -> M0 Gate -> ... -> M10 -> M10 Gate -> Release Gate -> PROJECT_READY (no fake completion; stop at PAUSED_FOR_HUMAN or BLOCKED if unsafe).",
   "currentMilestone": "M0",
-  "currentTask": "M0-005",
-  "goalStatus": "IN_PROGRESS",
-  "lastSafeCommit": "a78b10f",
-  "currentHead": "a78b10f",
+  "currentTask": "M0-005 (BLOCKED — governance defect, not committed)",
+  "goalStatus": "PAUSED_FOR_HUMAN",
+  "lastSafeCommit": "f73cb01",
+  "currentHead": "f73cb01",
   "branch": "feature/m0-baseline",
   "modelPolicy": {
-    "allowed": ["qmodel_38max", "qfmodel"],
+    "allowed": [
+      "qmodel_38max",
+      "qfmodel"
+    ],
     "executor": ".qoder/workflows/project-feature-delivery.js",
     "violations": []
   },
@@ -16,9 +19,16 @@
     "path": "docs/qgraphflow/dialogue-turn-sequence/",
     "status": "PRE_EXISTING_UNCHANGED",
     "fingerprint": {
-      "graph.json": "e88c0295861951c58b55028eae611218e1f15089",
-      "index.html": "cde38f82a5404a2dab46dbda86aa5e070545a676",
-      "fileCount": 2
+      "graph.json": "5f12d3d4503d2305f352b21b8d275bb5e2ea544a32f3d539ea6909951373f138",
+      "index.html": "2bd127b7c22c25b20e04804cc5c745f686f7f462cae96649aa9b47612d4bf600",
+      "fileCount": 2,
+      "bytes": { "graph.json": 34972, "index.html": 794348 },
+      "md5Corroboration": {
+        "graph.json": "2fe742d810f7cd0ce2f5eb401f0050a0",
+        "index.html": "c1bb9c9b90d92db933577e4056e3ba91"
+      },
+      "identityAuthority": "D4-DETERMINISTIC_BYTE_HASH: sha256 only; md5/size are corroboration; mtime structurally excluded",
+      "historicalCorrection": "Prior entries recorded 40-hex values (e88c0295..., cde38f82...) which are git blob SHA-1, not admissible content identity under D4. Re-collected read-only at the M0-005 inter-task gap; content unchanged (md5/size match prior corroboration)."
     }
   },
   "completedTasks": [
@@ -42,12 +52,24 @@
       "id": "M0-003",
       "title": "前端构建基线",
       "status": "TASK_PASS",
-      "commit": "2ab8ad5",
+      "commit": "f73cb01",
+      "supersededCommit": "2ab8ad5",
+      "commitNote": "f73cb01 is the FULL-mode re-run artifact (child of c61bfd3 governance D5, which restored EXECUTION_MODE='FULL'); it supersedes 2ab8ad5, whose FRONTEND_BASELINE.md was produced before the FULL restore (542 insertions / 262 deletions diff between the two artifact versions). modelUsage below describes the FULL re-run.",
       "deliverable": "deliverables/baseline/FRONTEND_BASELINE.md",
       "gateHealth": "PASS",
       "projectBaselineHealth": "DEGRADED",
-      "modelUsage": { "PLAN": "qmodel_38max", "IMPLEMENT": "qfmodel", "REVIEW": "qmodel_38max" },
-      "findings": ["F-01 chunk>1000kB vendor-charts 1129.69kB echarts", "F-02 package.json vs lockfile version drift (in semver)", "F-03 40-frontend.md:36 says 5 test.tsx but 6 vitest files", "F-04 local Windows+Node24 != CI ubuntu+Node20", "F-05 thin coverage 10 tests/6 files, 1 e2e spec"]
+      "modelUsage": {
+        "PLAN": "qmodel_38max",
+        "IMPLEMENT": "qfmodel",
+        "REVIEW": "qmodel_38max"
+      },
+      "findings": [
+        "F-01 chunk>1000kB vendor-charts 1129.69kB echarts",
+        "F-02 package.json vs lockfile version drift (in semver)",
+        "F-03 40-frontend.md:36 says 5 test.tsx but 6 vitest files",
+        "F-04 local Windows+Node24 != CI ubuntu+Node20",
+        "F-05 thin coverage 10 tests/6 files, 1 e2e spec"
+      ]
     },
     {
       "id": "M0-004",
@@ -57,53 +79,256 @@
       "deliverable": "deliverables/baseline/DB_API_BASELINE.md",
       "gateHealth": "PASS",
       "projectBaselineHealth": "DEGRADED",
-      "modelUsage": { "PLAN": "qmodel_38max", "IMPLEMENT": "qfmodel", "REVIEW": "qmodel_38max" },
+      "modelUsage": {
+        "PLAN": "qmodel_38max",
+        "IMPLEMENT": "qfmodel",
+        "REVIEW": "qmodel_38max"
+      },
       "repairCyclesUsed": 0,
       "specConflictRelaunches": 2,
       "acTotal": 9,
       "acMet": 9,
       "apiRoutesInventoried": 37,
       "migrationTruthRecorded": "upgrade 001 exit 0 / downgrade base exit 0 / upgrade head exit 1 (TypeError@002_seed_items.py:55, F-15); post-fail current=base not 001 (F-16)",
-      "findings": ["F-15 002_seed_items.py:55 op.execute 2-positional-arg incompatible with alembic 1.13.1 -> upgrade head exit 1 (TypeError), head unreachable; deferred to FIX-M0-004-001", "F-16 env.py:26-29 single begin_transaction (no transaction_per_migration) -> failed upgrade head rolls whole chain back to base (current=base, not 001)", "F-01 pytest baseline 1 failed/231 passed/33 warnings, no NEW failures (test_middleware.py:34 assert 401==200)", "F-13 adaptive RNG intermittent, NOT reproduced this round (not-reproduced != fixed)", "ENV-DRIFT local Py3.12.10/alembic1.13.1/pytest9.1.1 vs CI Py3.11/pytest8.x"],
+      "findings": [
+        "F-15 002_seed_items.py:55 op.execute 2-positional-arg incompatible with alembic 1.13.1 -> upgrade head exit 1 (TypeError), head unreachable; deferred to FIX-M0-004-001",
+        "F-16 env.py:26-29 single begin_transaction (no transaction_per_migration) -> failed upgrade head rolls whole chain back to base (current=base, not 001)",
+        "F-01 pytest baseline 1 failed/231 passed/33 warnings, no NEW failures (test_middleware.py:34 assert 401==200)",
+        "F-13 adaptive RNG intermittent, NOT reproduced this round (not-reproduced != fixed)",
+        "ENV-DRIFT local Py3.12.10/alembic1.13.1/pytest9.1.1 vs CI Py3.11/pytest8.x"
+      ],
       "note": "Read-only audit; zero code/schema/API/frontend change. TASK_PASS verified by Goal Orchestrator (Max Verify): independent spot-check re-ran 'alembic current' on isolated :55432 -> exit 0 / base, confirming F-16 and no false report; qgraphflow fingerprints unchanged. Two SPEC_CONFLICT relaunches (ATTEMPTS=0 each, NOT repair cycles per §126) + one transient BLOCKED_MODEL_UNAVAILABLE (flash probe) all resolved without model switch."
     }
   ],
-  "blockedTasks": [],
+  "blockedTasks": [
+    {
+      "taskId": "M0-005",
+      "runId": "wf_bd5d9d4f-2c7",
+      "workflowTaskId": "wf-2f194400-ed3",
+      "executionMode": "FULL",
+      "attempts": 0,
+      "workflowStatus": "BLOCKED",
+      "blockReason": "GOVERNANCE_POLICY_VIOLATION",
+      "gitTier": "REQUIRED_DOWNGRADE",
+      "failedPhase": "Machine Gate",
+      "misattribution": "detail blames 执行手, but the record tier was authored by the Max Task Spec itself (.qoder/workflow-state/m0-005-integration-test-baseline.spec.json MANDATORY_TESTS[2] literal contains \"| record |\")",
+      "rootCause": "detectRequiredDowngrade (.qoder/workflows/project-feature-delivery.js:727-743) treats any kind=record command matching a MANDATORY/REGRESSION spec substring as a downgrade; Gate Schema (:1798-1799) simultaneously REQUIRES baseline-measurement commands to be kind=record. Mutually unsatisfiable for audit-type tasks.",
+      "machineProof": "guard replicated verbatim from source and run against 4 spec shapes: M0-005 pull / M0-006 ruff / M0-007 perf / M0-008 docker-build all -> BLOCKED REQUIRED_DOWNGRADE; all-required control -> PASS",
+      "artifactSha256": "56ad863926343581084faf487f7b8b600c57bde800375e2977e66d0cd0e68def",
+      "artifactBytes": 29672,
+      "committed": false,
+      "commitReason": "TASK_PASS_FORMULA not satisfied (no MACHINE_GATE_PASS / no Max Review / no Max Verify verdict for this run); deliverable retained untracked as evidence, NOT staged",
+      "independentReproduction": "Max Verify re-ran the full chain: postgres CI-parity trio CMD6_EXIT=1 with 4 failed, 8 passed, 20 errors in 16.78s (worker 17.04s) — bit-exact; sqlite control 31 passed exit 0; cleanup exit 0; residue 0; :5432 grep 0 matches; protected md5 unchanged"
+    }
+  ],
   "skippedTasks": [],
   "inProgressTasks": [],
   "completedMilestones": [],
   "taskCommits": {
     "M0-001": "abc6a78",
     "M0-002": "7be3c50",
-    "M0-003": "2ab8ad5",
+    "M0-003": "f73cb01",
     "M0-004": "a78b10f"
   },
   "milestoneGateResults": {},
   "m0Dag": {
-    "M0-001": { "deps": [], "pri": "P0", "status": "TASK_PASS" },
-    "M0-002": { "deps": ["M0-001"], "pri": "P0", "status": "TASK_PASS" },
-    "M0-003": { "deps": ["M0-001"], "pri": "P0", "status": "TASK_PASS", "criticalPath": false },
-    "M0-004": { "deps": ["M0-001"], "pri": "P0", "status": "TASK_PASS", "criticalPath": true, "commit": "a78b10f", "note": "TASK_PASS via relaunch #3 (run wf_bcb74f36-ae9). Two SPEC_CONFLICT relaunches (false-premise; then revision-token 001_init_tables->001) + one transient BLOCKED_MODEL_UNAVAILABLE, all resolved by Max re-decision without model switch; ATTEMPTS=0, REPAIR_CYCLES_USED=0. Deliverable DB_API_BASELINE.md (388 lines, 9/9 AC met). Findings F-15/F-16 recorded, not fixed (read-only audit)." },
-    "M0-005": { "deps": ["M0-002", "M0-004"], "pri": "P0", "status": "READY", "note": "deps satisfied (M0-002 + M0-004 both TASK_PASS); unblocks M0-007" },
-    "M0-006": { "deps": ["M0-002"], "pri": "P0", "status": "READY" },
-    "M0-007": { "deps": ["M0-005"], "pri": "P0", "status": "BACKLOG" },
-    "M0-008": { "deps": ["M0-003", "M0-004"], "pri": "P0", "status": "READY", "note": "deps satisfied (M0-003 + M0-004 both TASK_PASS)" }
+    "M0-001": {
+      "deps": [],
+      "pri": "P0",
+      "status": "TASK_PASS"
+    },
+    "M0-002": {
+      "deps": [
+        "M0-001"
+      ],
+      "pri": "P0",
+      "status": "TASK_PASS"
+    },
+    "M0-003": {
+      "deps": [
+        "M0-001"
+      ],
+      "pri": "P0",
+      "status": "TASK_PASS",
+      "criticalPath": false
+    },
+    "M0-004": {
+      "deps": [
+        "M0-001"
+      ],
+      "pri": "P0",
+      "status": "TASK_PASS",
+      "criticalPath": true,
+      "commit": "a78b10f",
+      "note": "TASK_PASS via relaunch #3 (run wf_bcb74f36-ae9). Two SPEC_CONFLICT relaunches (false-premise; then revision-token 001_init_tables->001) + one transient BLOCKED_MODEL_UNAVAILABLE, all resolved by Max re-decision without model switch; ATTEMPTS=0, REPAIR_CYCLES_USED=0. Deliverable DB_API_BASELINE.md (388 lines, 9/9 AC met). Findings F-15/F-16 recorded, not fixed (read-only audit)."
+    },
+    "M0-005": {
+      "deps": [
+        "M0-002",
+        "M0-004"
+      ],
+      "pri": "P0",
+      "status": "READY",
+      "note": "deps satisfied (M0-002 + M0-004 both TASK_PASS); unblocks M0-007"
+    },
+    "M0-006": {
+      "deps": [
+        "M0-002"
+      ],
+      "pri": "P0",
+      "status": "READY"
+    },
+    "M0-007": {
+      "deps": [
+        "M0-005"
+      ],
+      "pri": "P0",
+      "status": "BACKLOG"
+    },
+    "M0-008": {
+      "deps": [
+        "M0-003",
+        "M0-004"
+      ],
+      "pri": "P0",
+      "status": "READY",
+      "note": "deps satisfied (M0-003 + M0-004 both TASK_PASS)"
+    }
   },
   "criticalPath": "M0-001 -> M0-004 -> KB-001 -> KB-002 -> KB-003 -> KB-004 -> ING-001 -> ING-005 -> ING-007 -> ING-008 -> ING-009 -> RAG-001 -> RAG-003 -> RAG-006 -> RAG-007 -> RAG-008 -> RAG-010 -> UI-001 -> EVAL-005 -> OPS-004",
   "findings": {
-    "F-01": { "summary": "metrics endpoint auth contract mismatch (401 vs test expecting 200)", "status": "OPEN", "disposition": "Max must judge API contract per §107; do NOT let Flash pick code-vs-test.", "severity": "P1" },
-    "F-02": { "summary": "full ruff 291 findings vs CI selected-rules clean", "status": "OPEN", "disposition": "No auto mass-reformat per §108; resolve lint policy via catalog ARCH task.", "severity": "P2" },
-    "F-08": { "summary": "safe Postgres migration test env missing", "status": "NOT_CLOSED_ROOT_CAUSE_IDENTIFIED", "disposition": "Isolated non-5432 test env (§32-35) was successfully created for M0-004 (container aiear-m0004-pg-test @ :55432), so the env gap is mitigated; but running the migration triple there exposed F-15 (002_seed_items.py is alembic-1.13.1-incompatible). F-08 closure now depends on FIX-M0-004-001.", "severity": "P1" },
-    "F-15": { "summary": "backend/alembic/versions/002_seed_items.py:55-58 calls op.execute(sa.text(...), item) with a 2nd positional arg; alembic 1.13.1 Operations.execute signature is (self, sqltext, *, execution_options=None) -> raises TypeError: execute() takes 2 positional arguments but 3 were given. So 001->002 chain cannot reach head; item_bank seed (19 rows) is never applied via migration. Root cause was latent because there is NO repo-wide alembic execution path (zero hits in CI/compose/deploy/scripts/runbook/Dockerfile); real table creation uses Base.metadata.create_all (app/core/database.py:42, app/db/init_db.py:15, tests/conftest.py:68). Verified on isolated :55432 postgres 15.18: upgrade 001 exit 0 (8 tables + alembic_version), downgrade base exit 0 (clean), upgrade head exit 1 (TypeError at 002 line 55).", "status": "OPEN", "disposition": "Recorded by M0-004 read-only audit; NOT fixed in M0-004 (002_seed_items.py is out of the audit's forbidden-to-change scope). Requires separate FIX-M0-004-001 before M2 Knowledge Core migrations rely on the alembic chain. Candidate fix: op.get_bind().execute(sa.text(...), item) or sa.text(...).bindparams(**item); also review 002 seed idempotency + wide DELETE downgrade per 50-database rules.", "severity": "P1", "blocksMilestone": "M2 (not M0/M1); on M0 critical path only as a recorded finding" },
-    "F-16": { "summary": "backend/alembic/env.py:26-29 wraps the whole online run_migrations() in a SINGLE context.begin_transaction() and does NOT set transaction_per_migration=True. Consequence: when 'upgrade head' fails at 002 (F-15 TypeError), the rollback spans the entire transaction, so the already-applied 001 DDL + alembic_version write are rolled back too -> DB ends at base (current=base), NOT at 001. Verified on isolated :55432 (Goal Orchestrator independent Max-Verify spot-check: alembic current exit 0, no revision line = base).", "status": "OPEN", "disposition": "Recorded by M0-004 read-only audit (DB_API_BASELINE.md §1.6); NOT fixed (env.py out of audit scope). Severity P2 (Flash suggested P2; Max confirms P2: no product-runtime impact, but determines how the Release Gate 'migration up/down/up' evidence chain is read and how FIX-M0-004-001 acceptance is designed). Evaluate together with F-15 in FIX-M0-004-001: after fixing the 002 signature, decide whether to introduce transaction_per_migration=True so a failing step does not roll back prior committed steps.", "severity": "P2", "discoveredBy": "M0-004 relaunch #3", "relatedFinding": "F-15", "followUp": "FIX-M0-004-001" },
-    "F-11": { "summary": "integration/security/performance evidence gap", "status": "OPEN", "disposition": "Addressed by M0-005/M0-006/M0-007 baseline tasks.", "severity": "P1" },
-    "F-13": { "summary": "adaptive engine RNG nondeterministic in tests", "status": "OPEN", "disposition": "Per §106 resolve via catalog/Fix mechanism if a deterministic gate needs it; never treat a single green run as fixed.", "severity": "P2" },
-    "COV-GAP": { "summary": "backend coverage ~61%", "status": "OPEN", "disposition": "Per §109 threshold must be defined by formal OPS/Quality task; no self-invented 80/90%.", "severity": "P2" },
-    "NB-01": { "summary": "unknown PostgreSQL listener on localhost:5432 (PID 6892)", "status": "OPEN", "disposition": "§31 treat as UNKNOWN_DATABASE_INSTANCE; never connect/mutate.", "severity": "P0-safety" },
-    "NB-03": { "summary": "httpx deprecation warning", "status": "OPEN", "disposition": "Per §110 classify P1/P2; no auto major upgrade.", "severity": "P2" },
-    "ENV-F03": { "summary": "runbook venv drift (docs reference venv, local uses backend/.venv / venv312)", "status": "OPEN", "disposition": "Doc drift; resolve per §70/§111 if it blocks safe ops.", "severity": "P2" }
+    "F-01": {
+      "summary": "metrics endpoint auth contract mismatch (401 vs test expecting 200)",
+      "status": "OPEN",
+      "disposition": "Max must judge API contract per §107; do NOT let Flash pick code-vs-test.",
+      "severity": "P1"
+    },
+    "F-02": {
+      "summary": "full ruff 291 findings vs CI selected-rules clean",
+      "status": "OPEN",
+      "disposition": "No auto mass-reformat per §108; resolve lint policy via catalog ARCH task.",
+      "severity": "P2"
+    },
+    "F-08": {
+      "summary": "safe Postgres migration test env missing",
+      "status": "NOT_CLOSED_ROOT_CAUSE_IDENTIFIED",
+      "disposition": "Isolated non-5432 test env (§32-35) was successfully created for M0-004 (container aiear-m0004-pg-test @ :55432), so the env gap is mitigated; but running the migration triple there exposed F-15 (002_seed_items.py is alembic-1.13.1-incompatible). F-08 closure now depends on FIX-M0-004-001.",
+      "severity": "P1"
+    },
+    "F-15": {
+      "summary": "backend/alembic/versions/002_seed_items.py:55-58 calls op.execute(sa.text(...), item) with a 2nd positional arg; alembic 1.13.1 Operations.execute signature is (self, sqltext, *, execution_options=None) -> raises TypeError: execute() takes 2 positional arguments but 3 were given. So 001->002 chain cannot reach head; item_bank seed (19 rows) is never applied via migration. Root cause was latent because there is NO repo-wide alembic execution path (zero hits in CI/compose/deploy/scripts/runbook/Dockerfile); real table creation uses Base.metadata.create_all (app/core/database.py:42, app/db/init_db.py:15, tests/conftest.py:68). Verified on isolated :55432 postgres 15.18: upgrade 001 exit 0 (8 tables + alembic_version), downgrade base exit 0 (clean), upgrade head exit 1 (TypeError at 002 line 55).",
+      "status": "OPEN",
+      "disposition": "Recorded by M0-004 read-only audit; NOT fixed in M0-004 (002_seed_items.py is out of the audit's forbidden-to-change scope). Requires separate FIX-M0-004-001 before M2 Knowledge Core migrations rely on the alembic chain. Candidate fix: op.get_bind().execute(sa.text(...), item) or sa.text(...).bindparams(**item); also review 002 seed idempotency + wide DELETE downgrade per 50-database rules.",
+      "severity": "P1",
+      "blocksMilestone": "M2 (not M0/M1); on M0 critical path only as a recorded finding"
+    },
+    "F-16": {
+      "summary": "backend/alembic/env.py:26-29 wraps the whole online run_migrations() in a SINGLE context.begin_transaction() and does NOT set transaction_per_migration=True. Consequence: when 'upgrade head' fails at 002 (F-15 TypeError), the rollback spans the entire transaction, so the already-applied 001 DDL + alembic_version write are rolled back too -> DB ends at base (current=base), NOT at 001. Verified on isolated :55432 (Goal Orchestrator independent Max-Verify spot-check: alembic current exit 0, no revision line = base).",
+      "status": "OPEN",
+      "disposition": "Recorded by M0-004 read-only audit (DB_API_BASELINE.md §1.6); NOT fixed (env.py out of audit scope). Severity P2 (Flash suggested P2; Max confirms P2: no product-runtime impact, but determines how the Release Gate 'migration up/down/up' evidence chain is read and how FIX-M0-004-001 acceptance is designed). Evaluate together with F-15 in FIX-M0-004-001: after fixing the 002 signature, decide whether to introduce transaction_per_migration=True so a failing step does not roll back prior committed steps.",
+      "severity": "P2",
+      "discoveredBy": "M0-004 relaunch #3",
+      "relatedFinding": "F-15",
+      "followUp": "FIX-M0-004-001"
+    },
+    "F-11": {
+      "summary": "integration/security/performance evidence gap",
+      "status": "OPEN",
+      "disposition": "Addressed by M0-005/M0-006/M0-007 baseline tasks.",
+      "severity": "P1"
+    },
+    "F-13": {
+      "summary": "adaptive engine RNG nondeterministic in tests",
+      "status": "OPEN",
+      "disposition": "Per §106 resolve via catalog/Fix mechanism if a deterministic gate needs it; never treat a single green run as fixed.",
+      "severity": "P2"
+    },
+    "COV-GAP": {
+      "summary": "backend coverage ~61%",
+      "status": "OPEN",
+      "disposition": "Per §109 threshold must be defined by formal OPS/Quality task; no self-invented 80/90%.",
+      "severity": "P2"
+    },
+    "NB-01": {
+      "summary": "unknown PostgreSQL listener on localhost:5432 (PID 6892)",
+      "status": "OPEN",
+      "disposition": "§31 treat as UNKNOWN_DATABASE_INSTANCE; never connect/mutate.",
+      "severity": "P0-safety"
+    },
+    "NB-03": {
+      "summary": "httpx deprecation warning",
+      "status": "OPEN",
+      "disposition": "Per §110 classify P1/P2; no auto major upgrade.",
+      "severity": "P2"
+    },
+    "ENV-F03": {
+      "summary": "runbook venv drift (docs reference venv, local uses backend/.venv / venv312)",
+      "status": "OPEN",
+      "disposition": "Doc drift; resolve per §70/§111 if it blocks safe ops.",
+      "severity": "P2"
+    },
+    "F-17": {
+      "summary": "M0 Exit says 8 baseline docs; MILESTONES.md deliverables list names 7",
+      "status": "OPEN",
+      "severity": "P2",
+      "disposition": "Governance-count defect — docs/workflow/** edit, human decision"
+    },
+    "F-18": {
+      "summary": "WITHDRAWN — duplicate of F-03 (stale venv / interpreter drift)",
+      "status": "WITHDRAWN",
+      "severity": "n/a",
+      "disposition": "Kept as numbering placeholder for auditability; never re-reported"
+    },
+    "F-19": {
+      "summary": "Integration trio is RED under CI-parity postgres: 4 failed / 8 passed / 20 errors, exitCode=1; all 24 failing sections share one root cause (asyncpg InterfaceError \"another operation is in progress\" + \"Future attached to a different loop\") from session-scoped test_engine at backend/tests/conftest.py:65 vs pytest-asyncio function-scoped loops; sqlite branch sets StaticPool (:60-64), postgres branch does not",
+      "status": "OPEN",
+      "severity": "P0",
+      "evidence": [
+        "run wf_bd5d9d4f-2c7 worker CMD + independent Max Verify re-run, bit-exact counts",
+        "driver pins verified identical to pyproject (fastapi 0.110.0 / SQLAlchemy 2.0.29 / asyncpg 0.29.0) on venv312 Py3.12.10 -> env drift eliminated as explanation",
+        "13 DB-dependent RBAC/IDOR cases never reach assertion layer under CI口径 => security regression verification does not HOLD"
+      ],
+      "disposition": "FIX-INT-01 (engine/loop lifecycle alignment) + FIX-INT-02 (pin dev deps) proposed in INTEGRATION_BASELINE.md §7; requires Max SPEC authoring; M1 clearance"
+    },
+    "F-20": {
+      "summary": "Workflow governance defect: anti-downgrade guard and Gate Schema are mutually unsatisfiable for baseline/audit tasks, and the guard message misattributes planner-authored tiers to executor tampering",
+      "status": "OPEN",
+      "severity": "P1-BLOCKING",
+      "disposition": "REQUIRES HUMAN/Max GOVERNANCE PHASE — .qoder/workflows/** is Flash-forbidden and the Night Chain forbids auto-fixing governance defects at night. Two candidate repairs offered, neither applied: (A) guard reads the tier annotation from the spec string instead of assuming mandatory==required; (B) add a distinct EVIDENCE_ONLY/RECORD_ONLY command list in the SPEC contract so record items are not listed in MANDATORY_TESTS."
+    }
   },
-  "humanDecisionsRequired": [],
+  "humanDecisionsRequired": [
+    {
+      "id": "HD-N-01",
+      "decision": "Fix the guard/Gate-Schema conflict (F-20) in .qoder/workflows/project-feature-delivery.js, and choose repair A or B",
+      "blocks": "ALL remaining M0 baseline tasks (M0-005/006/007/008) and therefore M0 MILESTONE_PASS"
+    },
+    {
+      "id": "HD-N-02",
+      "decision": "Ratify or reject keeping deliverables/baseline/INTEGRATION_BASELINE.md (untracked, 56ad8639…, not TASK_PASS) as the M0-005 record",
+      "blocks": "M0-005 closure"
+    },
+    {
+      "id": "HD-N-03",
+      "decision": "Authorise FIX-INT-01/02 scope (test-harness engine/loop lifecycle + dev-dependency pinning) to restore CI-parity integration green",
+      "blocks": "TODO.md:40 集成测试通过; CI postgres job credibility"
+    },
+    {
+      "id": "HD-N-04",
+      "decision": "Insert FIX-* rows into docs/workflow/TASK_CATALOG.md (governance write, out of bounds unattended)",
+      "blocks": "M0 Exit clause \"P0 存量缺陷清单产出并插入 FIX-* 任务\""
+    },
+    {
+      "id": "HD-N-05",
+      "decision": "Confirm 8-vs-7 M0 baseline doc count (F-17)",
+      "blocks": "M0 Exit deliverable checklist"
+    },
+    {
+      "id": "HD-N-06",
+      "decision": "M2 Entry needs approved KB ADR + pgvector-capable image; M3 Entry needs human-confirmed licensing; any real production deploy/publish/SMS/secrets remains HUMAN_REQUIRED",
+      "blocks": "anything beyond M0"
+    }
+  ],
   "pendingFixTasks": {
     "FIX-M0-004-001": {
       "source": "M0-004 audit findings F-15 (002 op.execute signature) + F-16 (env.py transaction granularity)",
@@ -114,6 +339,14 @@
       "requiresUnforbid": "backend/alembic/versions/002_seed_items.py must be explicitly allowed-to-change in that task's SPEC",
       "status": "BACKLOG",
       "note": "Deferred; NOT executed during M0-004 read-only audit. Scheduled after M0 completes / before M2."
+    },
+    "FIX-GOV-001": {
+      "source": "F-20 (this Night Chain, M0-005 run wf_bd5d9d4f-2c7)",
+      "objective": "Reconcile detectRequiredDowngrade (:727-743) with the Gate Schema kind semantics (:1798-1799) so baseline-type tasks can declare record-tiered measurement commands without self-tripping; correct the message so planner-authored tiers are not blamed on the executor",
+      "owner": "Max governance phase / human",
+      "status": "NOT_STARTED",
+      "forbiddenTonight": true,
+      "regression": "extend .qoder/workflow-state/dryrun-harness.mjs beyond 106/106 with baseline-spec shapes for M0-006/007/008"
     }
   },
   "specConflictLog": [
@@ -161,12 +394,23 @@
       "failedPhase": null,
       "detail": "Full chain: Preflight(cached probes) -> Classify(backend/migration/documentation, risk medium, security true, medical false, privacy false) -> Explore(24 files, parallelSafe false) -> Scope(~1 dev-day) -> TASK_SPEC(9 ACs) -> Implement(1 new file) -> Task Delta clean -> MACHINE_PASS(required 7/7, record 6/6, blockedMissingSafeTestEnv false) -> MAX REVIEW PASS(round 1) -> Max Verify(Goal Orchestrator independent spot-check). AC-01..AC-09 all met. REPAIR_CYCLES_USED=0, ATTEMPT_HISTORY=[]. PROJECT_BASELINE_HEALTH=DEGRADED (§71 M0 legal).",
       "deliverableCommit": "a78b10f",
-      "newFindings": ["F-16 (env.py single-transaction rollback -> current=base)"]
+      "newFindings": [
+        "F-16 (env.py single-transaction rollback -> current=base)"
+      ]
+    },
+    {
+      "taskId": "M0-005",
+      "runId": "wf_bd5d9d4f-2c7",
+      "attempts": 0,
+      "blockReason": "GOVERNANCE_POLICY_VIOLATION",
+      "failedPhase": "Machine Gate",
+      "kind": "SPEC-INTERNAL CONTRADICTION vs GUARD (not executor downgrade)"
     }
   ],
   "notes": {
     "dbSafety": "backend/alembic.ini:5 default sqlalchemy.url points to postgresql://...@localhost:5432/cochlear_rehab (the UNKNOWN listener). Any migration test MUST override the URL to a Goal-created isolated non-5432 container; NEVER touch 5432.",
     "dockerAvailable": "Docker 29.5.2 / Compose v5.1.4 confirmed available for §32-35 isolated test container.",
     "serialPolicy": "Overnight default serial (§18); progress files committed before Workflow launch and updated only after TASK_PASS (§116/§117)."
-  }
+  },
+  "pausedAt": "2026-10-07T19:35Z"
 }
