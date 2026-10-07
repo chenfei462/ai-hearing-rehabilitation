@@ -82,6 +82,28 @@ function modeSummary() {
     ROLE_SEPARATION: EXECUTION_MODE === 'FLASH_ONLY'
       ? 'FLASH_ONLY：所有角色模型=qfmodel，独立性由【独立 agent() invocation】保证（Planner/Explorer/Worker/Reviewer/Verifier/RCA 各为不同 label 的独立调用）；HIGH Risk 追加 FLASH_REVIEWER_A+B 双独立审查。'
       : 'FULL：规划/探索/审查/验收/RCA=qmodel_38max（只读决策），实施/门禁/取证=qfmodel，天然模型级角色分离。',
+    // D4：内容身份证据链（供审计 —— 谁取证、证据是否确定性、是否发生过误报与仲裁）。
+    FINGERPRINT_BACKEND,
+    CONTENT_IDENTITY_AUTHORITY,
+    SCRIPT_SIDE_HASH_AVAILABLE,
+    FINGERPRINT_EVIDENCE: {
+      repoRootForEvidence: FP_REPO_ROOT || '.',
+      pinnedCommandProtocol: FP_PROTOCOL,
+      evidenceRuns: FP_EVIDENCE_RUNS.length,
+      evidenceRunsByLabel: FP_EVIDENCE_RUNS.reduce((m, r) => { m[r.label] = (m[r.label] || 0) + 1; return m }, {}),
+      invalidEvidenceDetected: FP_INVALID_DETECTED.slice(0, 10),
+      falsePositivesRecovered: FP_FALSE_POSITIVES_RECOVERED.slice(),
+      adjudications: ADJUDICATION_LOG.slice(),
+      limitation: '脚本沙箱无 fs/crypto（已实测），字节读取只能由只读执行手代为执行【脚本逐字下发的同一条命令】；残余风险 = 执行手改写/伪造 stdout，由"命令逐字一致校验 + 格式与自洽校验 + 两个独立 invocation 收敛签名"三层拦阻，无法做到零信任本地哈希。',
+    },
+    RETRY_OWNERSHIP: {
+      status: RETRY_OWNERSHIP.status,
+      retryOf: RETRY_OWNERSHIP.retryOf,
+      currentTaskIdentity: RETRY_OWNERSHIP.currentTaskIdentity,
+      artifacts: RETRY_OWNERSHIP.artifacts.slice(),
+      accepted: RETRY_OWNERSHIP.accepted.slice(),
+      rejected: RETRY_OWNERSHIP.rejected.slice(),
+    },
   }
 }
 
@@ -173,6 +195,294 @@ function isGovernancePath(p) {
   return false
 }
 
+// ============================================================
+// 治理修复 D4（Governance Fix D4）— 确定性字节指纹 + 同任务重试产物归属
+//
+// 根因（M0-003 事件，人工取证 + 本轮复算）：D2-C 的 fingerprint 由 LLM agent 自行执行命令生成
+//   （prompt 写的是 `git hash-object` → 40-hex 的 git blob SHA-1）。本轮实测：
+//     git hash-object --no-filters graph.json  = e88c0295861951c58b55028eae611218e1f15089  ← baseline 自报值
+//     git hash-object --no-filters index.html  = cde38f82a5404a2dab46dbda86aa5e070545a676  ← baseline 自报值
+//   即 baseline 快照是【真实执行了 git hash-object】；而 post-Implement 快照返回 6c4d0d0e…/e4b3f8e9…，
+//   既不等于 git blob SHA-1，也不等于字节的 sha1（f9660d0f…）或 md5（2fe742d8…）→ 两次快照的
+//   【摘要算法/来源不一致】（一次真跑 git hash-object，一次换成别的/臆造），脚本却对字符串直接 != 比较，
+//   于是字节完全未变的 pre-existing 文件被判为 EXTERNAL_CHANGED_DURING_TASK → 假阳性 BLOCK。
+//   结论：LLM 生成的 fingerprint 不是确定性证据；且"40-hex 当 hash 用"从未被格式校验拦下。
+//   D4 把内容身份的权威从 LLM_SNAPSHOT_REPORT 换成 DETERMINISTIC_BYTE_HASH。
+//
+// 运行时能力实测（2026-10-07，零 agent 探针 gov-d4-runtime-probe / run wf_bd7e692e-109）：
+//   脚本沙箱 globalsList 内【没有】require / process / Buffer / crypto / TextEncoder / fs，
+//   dynamic-import 被工具层直接拒绝（工具原文报错 "dynamic import is unavailable in workflow scripts"）
+//   → 脚本无法自己读文件字节做哈希，SCRIPT_SIDE 方案不可用。
+//   因此进入正式 DETERMINISTIC_EXECUTOR_FALLBACK（§11–§22），确定性由以下机制保证：
+//     ① 命令【由脚本生成并逐字下发】，执行手无权选择哈希工具（git hash-object 被禁）；
+//     ② 执行手只负责"跑命令 + 原样回传 rawStdout"，不得总结/改写/推断任何 hash；
+//     ③ 脚本自己解析并校验 rawStdout：sha256 必须 64 位小写 hex、md5 32 hex、size 非负整数、
+//        路径必须 canonical、命令必须逐字一致、执行手必须零写入；
+//     ④ 内容身份【只认 sha256】；size/md5 仅佐证，mtime 完全不采集（结构性排除）；
+//     ⑤ 首次 hash 不一致不再立即 BLOCK，先 FINGERPRINT_ADJUDICATION（两个独立 rehash invocation）；
+//     ⑥ 未通过校验的证据一律不得参与 Task Delta。
+//   实测可用的确定性命令：/usr/bin/sha256sum（Git Bash coreutils，输出恰为 64 位小写 hex）。
+// ============================================================
+const FP_PROTOCOL = 'D4-1'
+const FP_SHA256_RE = /^[0-9a-f]{64}$/
+const FP_MD5_RE = /^[0-9a-f]{32}$/
+const FP_HEX40_RE = /^[0-9a-f]{40}$/
+const CONTENT_IDENTITY_AUTHORITY = 'DETERMINISTIC_BYTE_HASH'
+const FINGERPRINT_BACKEND = 'AGENT_EXECUTOR_FALLBACK'
+const FINGERPRINT_BACKEND_EVIDENCE = 'workflow sandbox probe (wf_bd7e692e-109): typeof require/process/Buffer/crypto/TextEncoder/fs 全为 undefined，globalsList 无 fs 相关 API，dynamic-import 被工具层拒绝 → 脚本无法读文件字节；故 byte identity 由"脚本生成固定命令 + 执行手原样回传 rawStdout + 脚本侧解析校验"获得。'
+const SCRIPT_SIDE_HASH_AVAILABLE = false
+let FP_REPO_ROOT = ''
+let FP_EVIDENCE_RUNS = []
+let FP_INVALID_DETECTED = []
+let FP_FALSE_POSITIVES_RECOVERED = []
+let ADJUDICATION_LOG = []
+let adjudicationCount = 0
+let RETRY_OF_TASK_ID = ''
+let RETRY_ARTIFACTS = []
+
+// 统一路径规范（§8）：消除 Windows 分隔符/相对前缀/重复分隔符造成的假 Delta；仓库 root-relative 唯一 key。
+function canonicalPath(p) {
+  let s = String(p == null ? '' : p).trim().replace(/\\/g, '/').replace(/^\.\//, '')
+  s = s.replace(/\/{2,}/g, '/')
+  while (s.charAt(0) === '/') s = s.slice(1)
+  if (s.length > 1 && s.charAt(s.length - 1) === '/') s = s.slice(0, -1)
+  return s
+}
+// 任务身份（§27 A/B）：spec 落盘名可能带 git 短 SHA 后缀（m0-003-...-00599c1），归属比较用 catalog 身份。
+function taskIdentityOf(id) {
+  return String(id == null ? '' : id).trim().toLowerCase().replace(/\\/g, '/').replace(/^[./]+/, '').replace(/-[0-9a-f]{7,8}$/, '')
+}
+// 确定性指纹命令：脚本生成、逐字下发；git 只读 + sha256sum/md5sum/wc/find/LC_ALL=C sort。
+// 协议行：V 协议版本 / H HEAD / B 分支 / F 文件 / E 目录树单元 / t 树成员 / X 路径已消失 / '#' 注释（解析器忽略，mtime 等诊断信息只能走注释，绝不参与内容身份）。
+function buildFingerprintCommand(root) {
+  const q = String(root == null ? '.' : root).replace(/'/g, "'\\''")
+  return [
+    "cd '" + q + "'",
+    "printf 'V|" + FP_PROTOCOL + "\\n'",
+    "printf 'H|%s\\n' \"$(git rev-parse HEAD)\"",
+    "printf 'B|%s\\n' \"$(git branch --show-current)\"",
+    "git -c core.quotepath=false status --porcelain=v1 --untracked-files=normal | while IFS= read -r L",
+    'do',
+    '  XY=${L:0:2}',
+    '  P=${L:3}',
+    "  case \"$P\" in *' -> ') P=${P##* -> };; esac",
+    '  if [ -d \"$P\" ]',
+    '  then',
+    "    M=$(find \"$P\" -type f -print | LC_ALL=C sort | while IFS= read -r f; do printf '%s\\t%s\\t%s\\t%s\\n' \"$f\" \"$(wc -c <\"$f\" | tr -d ' ')\" \"$(sha256sum <\"$f\" | cut -d' ' -f1)\" \"$(md5sum <\"$f\" | cut -d' ' -f1)\"; done)",
+    "    printf 'E|%s|%s|%s\\n' \"$P\" \"$(printf '%s' \"$M\" | grep -c '')\" \"$(printf '%s' \"$M\" | sha256sum | cut -d' ' -f1)\"",
+    "    printf '%s\\n' \"$M\" | while IFS=$(printf '\\t') read -r a b c d; do printf 't|%s|%s|%s|%s\\n' \"$a\" \"$b\" \"$c\" \"$d\"; done",
+    '  elif [ -f \"$P\" ]',
+    '  then',
+    "    printf 'F|%s|%s|%s|%s|%s\\n' \"$XY\" \"$P\" \"$(wc -c <\"$P\" | tr -d ' ')\" \"$(sha256sum <\"$P\" | cut -d' ' -f1)\" \"$(md5sum <\"$P\" | cut -d' ' -f1)\"",
+    '  else',
+    "    printf 'X|%s|%s\\n' \"$XY\" \"$P\"",
+    '  fi',
+    'done',
+  ].join('\n')
+}
+
+// 脚本侧确定性证据解析 + 校验（§15/§22）。任何未通过校验的证据都不得参与 Task Delta。
+function parseFingerprintEvidence(ex, pinnedCommand) {
+  const problems = []
+  const out = {
+    evidenceKind: CONTENT_IDENTITY_AUTHORITY, backend: FINGERPRINT_BACKEND, evidenceValid: false,
+    protocol: '', head: '', branch: '', files: {}, trees: {}, missing: [],
+    staged: [], trackedModified: [], trackedDeleted: [], untracked: [], fingerprints: [],
+    problems, rawLineCount: 0, commandVerbatim: false,
+  }
+  if (!ex || typeof ex !== 'object') { problems.push('FINGERPRINT_EVIDENCE_INVALID:NO_EXECUTOR_EVIDENCE'); return out }
+  const norm = (s) => String(s == null ? '' : s).replace(/\r/g, '').replace(/[ \t]+$/gm, '').trim()
+  out.commandVerbatim = norm(ex.command) === norm(pinnedCommand)
+  if (!out.commandVerbatim) problems.push('FINGERPRINT_EVIDENCE_INVALID:COMMAND_NOT_VERBATIM（执行手改写了脚本下发的命令，摘要来源不可信）')
+  if (ex.exitCode !== 0) problems.push('FINGERPRINT_EVIDENCE_INVALID:EXECUTOR_EXIT_NONZERO:' + String(ex.exitCode))
+  if (Array.isArray(ex.filesWritten) && ex.filesWritten.length) problems.push('GOVERNANCE_POLICY_VIOLATION:FINGERPRINT_EXECUTOR_WROTE_FILES:' + ex.filesWritten.map(canonicalPath).join(','))
+  // 执行手必须只跑脚本下发的那一条命令：任何自报的额外 git 命令按 denylist 判定（D2 保护不降级）。
+  for (const c of (Array.isArray(ex.gitCommandsRun) ? ex.gitCommandsRun : [])) {
+    const d = detectForbiddenGit(c)
+    if (d) problems.push('GOVERNANCE_POLICY_VIOLATION:FINGERPRINT_EXECUTOR_FORBIDDEN_GIT:' + d.tier + ':' + String(c).slice(0, 80))
+    const u = scanUnsafeDbCommand(c)
+    if (u) problems.push(u.code + ':' + String(c).slice(0, 80))
+  }
+  const lines = norm(ex.rawStdout).split('\n').map((l) => l.trim()).filter((l) => l.length && l.charAt(0) !== '#')
+  out.rawLineCount = lines.length
+  if (!lines.length) problems.push('FINGERPRINT_EVIDENCE_INVALID:EMPTY_STDOUT')
+  if (lines.length && lines[0] !== 'V|' + FP_PROTOCOL) problems.push('FINGERPRINT_EVIDENCE_INVALID:PROTOCOL_MISMATCH:' + String(lines[0]).slice(0, 24))
+  if (lines.length) out.protocol = String(lines[0]).slice(2)
+  const seen = {}
+  const members = []
+  for (const l of lines) {
+    const f = l.split('|')
+    const tag = f[0]
+    if (tag === 'V') continue // 协议头已在上面逐字校验（V|D4-1），不参与逐行语义解析
+    if (tag === 'H') {
+      out.head = String(f[1] || '')
+      if (!FP_HEX40_RE.test(out.head)) problems.push('FINGERPRINT_EVIDENCE_INVALID:HEAD_NOT_40HEX:' + out.head.slice(0, 12))
+    } else if (tag === 'B') {
+      out.branch = String(f[1] || '')
+      if (!out.branch) problems.push('FINGERPRINT_EVIDENCE_INVALID:MISSING_BRANCH')
+    } else if (tag === 'F' || tag === 'X') {
+      const xy = String(f[1] || '')
+      const raw = String(f[2] == null ? '' : f[2])
+      const p = canonicalPath(raw)
+      if (!p) { problems.push('FINGERPRINT_EVIDENCE_INVALID:EMPTY_PATH'); continue }
+      if (/[\\%]|\.\.\/|^\//.test(raw) || raw !== p) problems.push('PATH_NOT_CANONICAL:' + raw)
+      if (seen[p]) problems.push('DUPLICATE_PATH_IN_EVIDENCE:' + p)
+      seen[p] = 1
+      if (xy.length !== 2) problems.push('PORCELAIN_XY_INVALID:' + p + ':' + xy)
+      const worktree = xy.charAt(1)
+      if (xy === '??') out.untracked.push(p)
+      else {
+        if (xy.charAt(0) !== ' ') out.staged.push(p)
+        if (worktree === 'D') out.trackedDeleted.push(p)
+        else if (worktree === 'M' || worktree === 'A' || worktree === 'R' || worktree === 'T' || worktree === 'U') out.trackedModified.push(p)
+      }
+      if (tag === 'X') { out.missing.push(p); continue }
+      const size = Number(f[3])
+      const sha = String(f[4] == null ? '' : f[4]).toLowerCase()
+      const md5 = String(f[5] == null ? '' : f[5]).toLowerCase()
+      if (!FP_SHA256_RE.test(sha)) {
+        if (FP_HEX40_RE.test(sha)) problems.push('FINGERPRINT_EVIDENCE_INVALID:DIGEST_IS_40HEX_GIT_BLOB_SHA1（M0-003 根因形态，必须 64 位 SHA-256）:' + p)
+        else if (!sha) problems.push('FINGERPRINT_EVIDENCE_INVALID:EMPTY_SHA256:' + p)
+        else problems.push('FINGERPRINT_EVIDENCE_INVALID:SHA256_NOT_64_LOWERCASE_HEX:' + p + ':' + sha.slice(0, 12))
+      }
+      if (!FP_MD5_RE.test(md5)) problems.push('FINGERPRINT_EVIDENCE_INVALID:MD5_NOT_32HEX:' + p + ':' + md5.slice(0, 12))
+      if (!Number.isInteger(size) || size < 0) problems.push('FINGERPRINT_EVIDENCE_INVALID:SIZE_NOT_NONNEGATIVE_INT:' + p + ':' + String(f[3]))
+      out.files[p] = { path: p, kind: xy, size, sha256: sha, md5 }
+      out.fingerprints.push({ path: p, size, sha256: sha })
+    } else if (tag === 'E') {
+      const p = canonicalPath(f[1])
+      const n = Number(f[2])
+      const sha = String(f[3] == null ? '' : f[3]).toLowerCase()
+      if (!p) { problems.push('FINGERPRINT_EVIDENCE_INVALID:EMPTY_DIR_PATH'); continue }
+      if (seen[p]) problems.push('DUPLICATE_PATH_IN_EVIDENCE:' + p)
+      seen[p] = 1
+      if (!FP_SHA256_RE.test(sha)) problems.push('FINGERPRINT_EVIDENCE_INVALID:TREE_SHA256_NOT_64HEX:' + p + ':' + sha.slice(0, 12))
+      if (!Number.isInteger(n) || n < 0) problems.push('FINGERPRINT_EVIDENCE_INVALID:TREE_FILECOUNT_NOT_INT:' + p + ':' + String(f[2]))
+      out.trees[p] = { path: p, dir: true, fileCount: n, treeSha256: sha, files: {} }
+      out.untracked.push(p)
+    } else if (tag === 't') {
+      const p = canonicalPath(f[1])
+      const size = Number(f[2])
+      const sha = String(f[3] == null ? '' : f[3]).toLowerCase()
+      const md5 = String(f[4] == null ? '' : f[4]).toLowerCase()
+      if (!p) { problems.push('FINGERPRINT_EVIDENCE_INVALID:EMPTY_MEMBER_PATH'); continue }
+      if (!FP_SHA256_RE.test(sha)) problems.push('FINGERPRINT_EVIDENCE_INVALID:MEMBER_SHA256_NOT_64HEX:' + p + ':' + sha.slice(0, 12))
+      if (!FP_MD5_RE.test(md5)) problems.push('FINGERPRINT_EVIDENCE_INVALID:MEMBER_MD5_NOT_32HEX:' + p)
+      if (!Number.isInteger(size) || size < 0) problems.push('FINGERPRINT_EVIDENCE_INVALID:MEMBER_SIZE_INVALID:' + p)
+      members.push({ path: p, size, sha256: sha, md5 })
+    } else {
+      problems.push('FINGERPRINT_EVIDENCE_INVALID:UNRECOGNISED_LINE:' + l.slice(0, 32))
+    }
+  }
+  // 目录单元自洽性（§7/§25）：tree 成员归属 + fileCount 必须与 manifest 行数一致，否则证据不可信。
+  for (const m of members) {
+    let owner = ''
+    for (const d of Object.keys(out.trees)) if (m.path === d || m.path.indexOf(d + '/') === 0) { if (d.length > owner.length) owner = d }
+    if (!owner) { problems.push('TREE_MEMBER_WITHOUT_UNIT:' + m.path); continue }
+    out.trees[owner].files[m.path] = m
+    out.fingerprints.push({ path: m.path, size: m.size, sha256: m.sha256, tree: owner })
+  }
+  for (const d of Object.keys(out.trees)) {
+    const t = out.trees[d]
+    if (Object.keys(t.files).length !== t.fileCount) problems.push('TREE_FILECOUNT_MISMATCH:' + d + ':declared=' + t.fileCount + ',observed=' + Object.keys(t.files).length)
+    if (!Object.keys(t.files).length) problems.push('TREE_EMPTY:' + d)
+  }
+  out.evidenceValid = problems.length === 0
+  if (!out.evidenceValid) FP_INVALID_DETECTED = FP_INVALID_DETECTED.concat(problems.slice(0, 12))
+  return out
+}
+
+function isVerifiedEvidence(s) { return !!(s && s.evidenceKind === CONTENT_IDENTITY_AUTHORITY && s.evidenceValid === true) }
+function evidenceStatusOf(s) {
+  if (!s) return 'MODEL_UNAVAILABLE'
+  return isVerifiedEvidence(s) ? 'VALID_DETERMINISTIC' : ('INVALID:' + ((s.problems || []).slice(0, 2).join('/') || 'UNVERIFIED'))
+}
+// 内容身份映射（§6/§22）：文件=sha256；目录单元='tree:'+treeSha256；消失='ABSENT'。不含 mtime。
+function identityMap(s) {
+  const m = {}
+  if (!s) return m
+  for (const p of Object.keys(s.files || {})) m[p] = s.files[p].sha256
+  for (const p of Object.keys(s.trees || {})) m[p] = 'tree:' + s.trees[p].treeSha256
+  for (const p of (s.missing || [])) m[p] = 'ABSENT'
+  return m
+}
+function dirtyPaths(snap) {
+  const s = new Set()
+  if (!snap) return s
+  for (const k of ['trackedModified', 'trackedDeleted', 'untracked', 'staged']) for (const p of (snap[k] || [])) s.add(canonicalPath(p))
+  for (const p of Object.keys(snap.files || {})) s.add(p)
+  for (const p of Object.keys(snap.trees || {})) s.add(p)
+  for (const p of (snap.missing || [])) s.add(p)
+  return s
+}
+// §25：pre-existing 目录单元内新增/删除的文件，不得被误算成"本任务新增"，须由目录树单元判定归属。
+function preExistingTreeOwning(baseline, p) {
+  let owner = ''
+  for (const d of Object.keys((baseline && baseline.trees) || {})) if (p.indexOf(d + '/') === 0 && d.length > owner.length) owner = d
+  return owner
+}
+
+// ---------- 同任务重试产物归属（§26–§30）----------
+// RETRY_OWNED[path] = { priorRunSha256, evidence } —— 只有全部满足 §27 A–F 且通过 §28 外部改动校验才登记。
+let RETRY_OWNED = {}
+let RETRY_OWNERSHIP = { retryOf: null, currentTaskIdentity: null, artifacts: [], accepted: [], rejected: [], status: 'NOT_A_RETRY' }
+let TASK_WRITE_PREFIXES = []
+
+function writePathAuthorized(p) {
+  for (const w of TASK_WRITE_PREFIXES) { if (!w) continue; if (p === w || p.indexOf(w.replace(/\/$/, '') + '/') === 0 || (w.indexOf('*') >= 0 && p.indexOf(w.split('*')[0].replace(/\/$/, '')) === 0)) return true }
+  return false
+}
+
+function applyRetryOwnership(specObj, baselineSnap) {
+  const retryOf = taskIdentityOf(RETRY_OF_TASK_ID)
+  const current = taskIdentityOf(specObj && specObj.TASK_ID)
+  RETRY_OWNERSHIP.currentTaskIdentity = current
+  RETRY_OWNERSHIP.retryOf = RETRY_OF_TASK_ID || null
+  // §25：本任务授权写路径前缀在普通任务里也要生效（决定 pre-existing 目录单元内的新增文件归属任务还是归属外部）。
+  const expected0 = canonicalPathList((specObj && specObj.EXPECTED_FILES) || [])
+  TASK_WRITE_PREFIXES = canonicalPathList((specObj && specObj.ALLOWED_WRITE_PATHS) || expected0)
+  RETRY_OWNERSHIP.status = 'NOT_A_RETRY'
+  RETRY_OWNERSHIP.artifacts = []
+  RETRY_OWNERSHIP.accepted = []
+  RETRY_OWNERSHIP.rejected = []
+  if (!retryOf) { RETRY_OWNED = {}; return RETRY_OWNERSHIP }
+  RETRY_OWNERSHIP.status = 'RETRY_CONTEXT_PROVIDED'
+  const expected = expected0
+  RETRY_OWNED = {}
+  const idB = identityMap(baselineSnap)
+  for (const a of (RETRY_ARTIFACTS || [])) {
+    const p = canonicalPath(a && a.path)
+    const rec = { path: p, retryOf, currentTaskId: current }
+    if (!p) { rec.reject = 'EMPTY_PATH'; RETRY_OWNERSHIP.rejected.push(rec); continue }
+    if (retryOf !== current) { rec.reject = 'TASK_ID_MISMATCH（上一 run 任务与当前任务不同，不得继承归属）'; RETRY_OWNERSHIP.rejected.push(rec); continue }
+    if (isGovernancePath(p)) { rec.reject = 'GOVERNANCE_PROTECTED（治理文件即使任务号相同也不得 retry-owned）'; RETRY_OWNERSHIP.rejected.push(rec); continue }
+    const inCur = expected.indexOf(p) >= 0 || writePathAuthorized(p)
+    if (!inCur) { rec.reject = 'NOT_IN_CURRENT_TASK_SPEC_ALLOWLIST'; RETRY_OWNERSHIP.rejected.push(rec); continue }
+    if (a.priorSpecExpected !== true) { rec.reject = 'NO_PRIOR_SPEC_MEMBERSHIP_EVIDENCE（C 条：上一 run TASK_SPEC 归属证据缺失）'; RETRY_OWNERSHIP.rejected.push(rec); continue }
+    if (!FP_SHA256_RE.test(String(a.priorRunSha256 || '').toLowerCase())) { rec.reject = 'PRIOR_RUN_SHA256_NOT_64HEX（spec.json/runtime 记录只能佐证，不能替代字节证据）'; RETRY_OWNERSHIP.rejected.push(rec); continue }
+    const prov = String(a.priorRunWorkerEvidence || '').trim()
+    if (prov.length < 8) { rec.reject = 'NO_PRIOR_RUN_MANIFEST_OR_JOURNAL_EVIDENCE（F 条：无该路径由上一 run Worker 创建/修改的证据）'; RETRY_OWNERSHIP.rejected.push(rec); continue }
+    const now = idB[p]
+    const prior = String(a.priorRunSha256).toLowerCase()
+    if (!isVerifiedEvidence(baselineSnap)) { rec.reject = 'BASELINE_EVIDENCE_UNVERIFIED（无法用确定性字节证据核对上一 run 产物）'; RETRY_OWNERSHIP.rejected.push(rec); continue }
+    if (now === undefined) { rec.reject = 'ARTIFACT_ABSENT_AT_RETRY_START'; RETRY_OWNERSHIP.rejected.push(rec); continue }
+    if (now !== prior) { rec.reject = 'BLOCKED_RETRY_ARTIFACT_CHANGED_EXTERNALLY'; rec.detail = '上一 run 产物在两次 run 之间被外部修改：LAST_TASK_OUTPUT_HASH=' + prior + '，CURRENT_RETRY_START_HASH=' + String(now) + '（§28：retry 不得吞用户改动）'; RETRY_OWNERSHIP.rejected.push(rec); RETRY_OWNERSHIP.status = 'BLOCKED_RETRY_ARTIFACT_CHANGED_EXTERNALLY'; continue }
+    rec.accepted = true
+    rec.baselineSha256 = now
+    RETRY_OWNED[p] = { priorRunSha256: prior, evidence: prov }
+    RETRY_OWNERSHIP.accepted.push(rec)
+  }
+  for (const a of RETRY_OWNERSHIP.accepted) RETRY_OWNERSHIP.artifacts.push(a.path)
+  if (RETRY_OWNERSHIP.accepted.length) RETRY_OWNERSHIP.status = RETRY_OWNERSHIP.status === 'BLOCKED_RETRY_ARTIFACT_CHANGED_EXTERNALLY' ? RETRY_OWNERSHIP.status : 'RETRY_OWNED_APPLIED'
+  return RETRY_OWNERSHIP
+}
+
+function canonicalPathList(arr) {
+  const s = []
+  for (const x of (Array.isArray(arr) ? arr : [])) { const p = canonicalPath(x); if (p && s.indexOf(p) < 0) s.push(p) }
+  return s
+}
+
 // 解析命令串中每个 git 调用的“子命令”，含 bypass 防御（§9）：
 // 处理 git -C <path> / -c <kv> / --git-dir / --work-tree / --no-pager 等全局选项，
 // 以及 cmd /c、powershell、bash -c、sh -c 包装与 && ; | 链接（按段拆分后逐段解析）。
@@ -221,39 +531,78 @@ const FLASH_REPAIR_RULES = `
 - 如实把修复过程中运行过的所有 git 命令（含只读的 git status/git diff）列入 gitCommandsRun[]；编排器会对其做 denylist 扫描，并在修复后做工作区指纹校验。禁止遗漏、禁止改写命令原文。
 `
 
-// ---------- Worktree 快照 / Task Delta 语义（D2-C）----------
-function fpMap(snap) { const m = {}; for (const f of ((snap && snap.fingerprints) || [])) m[normPath(f.path)] = f.hash; return m }
-function dirtyPaths(snap) {
-  const s = new Set()
-  if (!snap) return s
-  for (const k of ['trackedModified', 'trackedDeleted', 'untracked', 'staged']) for (const p of (snap[k] || [])) s.add(normPath(p))
-  return s
+// ---------- Worktree Task Delta 语义（D2-C；D4 起内容由确定性字节证据驱动，不再由 LLM 自报 hash 决定）----------
+// 关键语义（§23–§25）：
+//   · 内容身份 = sha256（文件）/ treeSha256（目录单元）；size 与 md5 只作佐证；mtime 从未被采集，结构性排除。
+//   · 同 size 但 sha256 不同 → CONTENT_CHANGED（§10）；mtime 变但 sha256 不变 → UNCHANGED（§9）。
+//   · 未通过确定性校验的快照【不参与】Delta（§22），由调用方进入 FINGERPRINT_ADJUDICATION（§16）。
+function treeUnitDiff(baseline, current, dir) {
+  const tb = (baseline.trees && baseline.trees[dir]) || null
+  const tc = (current.trees && current.trees[dir]) || null
+  if (!tb || !tc) return null
+  const diff = []
+  for (const m of Object.keys(tc.files)) { if (!tb.files[m] || tb.files[m].sha256 !== tc.files[m].sha256) diff.push(m) }
+  for (const m of Object.keys(tb.files)) { if (!tc.files[m]) diff.push(m + ' (DELETED)') }
+  return diff
 }
-// 把 WORKTREE_BASELINE 与当前快照对比，分类为 Task Delta（§5）。
+// 目录单元内的变化是否全部落在本任务授权写路径内（若是则属 taskChanged，不得误判为外部改动）。
+function treeUnitChangeExplainableByTask(baseline, current, dir) {
+  const diff = treeUnitDiff(baseline, current, dir)
+  if (!diff || !diff.length) return false
+  return diff.every((m) => {
+    const p = canonicalPath(String(m).replace(/ \(DELETED\)$/, ''))
+    return !isGovernancePath(p) && writePathAuthorized(p)
+  })
+}
 function classifyDelta(baseline, current, authorizedGovernanceWrites) {
-  const auth = new Set((authorizedGovernanceWrites || []).map(normPath).filter(Boolean))
-  const bFp = fpMap(baseline), cFp = fpMap(current)
-  const bP = dirtyPaths(baseline), cP = dirtyPaths(current)
+  const auth = new Set((authorizedGovernanceWrites || []).map(canonicalPath).filter(Boolean))
   const res = {
     preExistingUnchanged: [], taskChanged: [], taskGovernance: [],
-    externalChangedDuringTask: [], preExistingReverted: [],
-    headChanged: false, stagedAppeared: [],
+    externalChangedDuringTask: [], preExistingReverted: [], retryOwnedArtifacts: [],
+    treeUnitChanges: [], headChanged: false, stagedAppeared: [],
+    evidenceRejected: false, evidenceStatus: null,
   }
-  res.headChanged = !!(baseline && baseline.head && current && current.head && baseline.head !== current.head)
-  const bStaged = new Set(((baseline && baseline.staged) || []).map(normPath))
-  for (const p of (((current && current.staged) || []).map(normPath))) if (!bStaged.has(p)) res.stagedAppeared.push(p)
-  const union = new Set([...bP, ...cP])
+  res.evidenceStatus = { backend: FINGERPRINT_BACKEND, authority: CONTENT_IDENTITY_AUTHORITY, baseline: evidenceStatusOf(baseline), current: evidenceStatusOf(current) }
+  if (!isVerifiedEvidence(baseline) || !isVerifiedEvidence(current)) { res.evidenceRejected = true; return res }
+  res.headChanged = !!(baseline.head && current.head && baseline.head !== current.head)
+  const bStaged = new Set(((baseline.staged || []).map(canonicalPath)))
+  for (const p of ((current.staged || []).map(canonicalPath))) if (!bStaged.has(p)) res.stagedAppeared.push(p)
+  const idB = identityMap(baseline), idC = identityMap(current)
+  const bP = dirtyPaths(baseline), cP = dirtyPaths(current)
+  const union = [...new Set([...bP, ...cP])].sort()
   for (const p of union) {
     const inB = bP.has(p), inC = cP.has(p)
     const gov = isGovernancePath(p) && !auth.has(p)
     if (inB && inC) {
-      const bH = bFp[p], cH = cFp[p]
-      if (bH && cH && bH !== cH) { if (gov) res.taskGovernance.push(p); else res.externalChangedDuringTask.push(p) }
+      const bH = idB[p], cH = idC[p]
+      if (bH && cH && bH !== cH) {
+        if (RETRY_OWNED[p]) { res.retryOwnedArtifacts.push(p); if (res.taskChanged.indexOf(p) < 0) res.taskChanged.push(p) }
+        else if (baseline.trees && baseline.trees[p] && treeUnitChangeExplainableByTask(baseline, current, p)) {
+          for (const m of (treeUnitDiff(baseline, current, p) || [])) { const mp = canonicalPath(String(m).replace(/ \(DELETED\)$/, '')); if (res.taskChanged.indexOf(mp) < 0) res.taskChanged.push(mp) }
+        } else if (gov) res.taskGovernance.push(p)
+        else {
+          res.externalChangedDuringTask.push(p)
+          // §25：目录单元身份变化时补齐成员级明细，BLOCK 证据能指到具体新增/删除/改动的文件
+          if (baseline.trees && baseline.trees[p] && current.trees && current.trees[p]) {
+            for (const m of (treeUnitDiff(baseline, current, p) || [])) {
+              if (!res.treeUnitChanges.some((t) => t.dir === p && t.addedOrChanged === String(m))) res.treeUnitChanges.push({ dir: p, addedOrChanged: String(m) })
+            }
+          }
+        }
+      } else if (RETRY_OWNED[p]) res.retryOwnedArtifacts.push(p)
       else res.preExistingUnchanged.push(p)
     } else if (inB && !inC) {
       res.preExistingReverted.push(p)
     } else if (!inB && inC) {
-      if (gov) res.taskGovernance.push(p); else res.taskChanged.push(p)
+      const owner = preExistingTreeOwning(baseline, p)
+      if (owner && !writePathAuthorized(p)) {
+        if (isGovernancePath(p)) res.taskGovernance.push(p)
+        else {
+          res.treeUnitChanges.push({ dir: owner, addedOrChanged: p })
+          if (res.externalChangedDuringTask.indexOf(owner) < 0) res.externalChangedDuringTask.push(owner)
+        }
+      } else if (gov) res.taskGovernance.push(p)
+      else res.taskChanged.push(p)
     }
   }
   return res
@@ -261,38 +610,45 @@ function classifyDelta(baseline, current, authorizedGovernanceWrites) {
 function deltaViolations(delta) {
   const v = []
   if (!delta) return v
+  if (delta.evidenceRejected) v.push({ code: 'FINGERPRINT_EVIDENCE_INVALID', adjudicable: true, detail: '指纹证据未通过 D4 确定性校验（命令须逐字一致、sha256 须 64 位小写 hex、md5 须 32 hex、size 须非负整数、路径须 canonical、执行手须零写入），不得参与 Task Delta：' + j(delta.evidenceStatus, 800) })
   if (delta.headChanged) v.push({ code: 'BLOCKED_GIT_HISTORY_MUTATED', detail: '任务期间 HEAD 发生变化（疑似 commit/reset/rebase/checkout 等历史改写）' })
   if (delta.stagedAppeared && delta.stagedAppeared.length) v.push({ code: 'BLOCKED_GIT_INDEX_MUTATED', detail: '任务期间出现新的 staged 改动（git add）：' + delta.stagedAppeared.join(', ') })
   if (delta.taskGovernance && delta.taskGovernance.length) v.push({ code: 'BLOCKED_GOVERNANCE_CONFLICT', detail: '治理保护文件被本任务改动：' + delta.taskGovernance.join(', ') })
-  if (delta.preExistingReverted && delta.preExistingReverted.length) v.push({ code: 'BLOCKED_EXTERNAL_WORKTREE_CHANGE', detail: '任务前已存在的未提交改动被丢弃/还原（疑似 checkout/restore/reset/clean/stash）：' + delta.preExistingReverted.join(', ') })
-  if (delta.externalChangedDuringTask && delta.externalChangedDuringTask.length) v.push({ code: 'BLOCKED_EXTERNAL_WORKTREE_CHANGE', detail: '任务前已存在的文件在任务期间内容被改动：' + delta.externalChangedDuringTask.join(', ') })
+  if (delta.preExistingReverted && delta.preExistingReverted.length) v.push({ code: 'BLOCKED_EXTERNAL_WORKTREE_CHANGE', adjudicable: true, detail: '任务前已存在的未提交改动被丢弃/还原（疑似 checkout/restore/reset/clean/stash）：' + delta.preExistingReverted.join(', ') })
+  if (delta.externalChangedDuringTask && delta.externalChangedDuringTask.length) v.push({ code: 'BLOCKED_EXTERNAL_WORKTREE_CHANGE', adjudicable: true, detail: '任务前已存在的文件在任务期间内容被改动（sha256/treeSha256 不一致）：' + delta.externalChangedDuringTask.join(', ') })
   return v
 }
-// allowedRepairFiles = 本任务实际改动 ∩ EXPECTED_FILES，剔除治理/forbidden（§11/§12）。
+// allowedRepairFiles = 本任务实际改动 ∩ EXPECTED_FILES（或 retry-owned 产物），剔除治理/forbidden（§11/§12/§26）。
 function computeAllowedRepairFiles(delta, specObj) {
-  const taskChanged = [...new Set((delta && delta.taskChanged || []).map(normPath))]
-  const forbidden = new Set((((specObj && specObj.FILES_FORBIDDEN_TO_CHANGE) || []).map(normPath)))
-  const expected = ((specObj && specObj.EXPECTED_FILES) || []).map(normPath)
-  let allowed = expected.length ? taskChanged.filter(p => expected.indexOf(p) >= 0) : taskChanged
-  allowed = allowed.filter(p => !isGovernancePath(p) && !forbidden.has(p))
+  const taskChanged = [...new Set((delta && delta.taskChanged || []).map(canonicalPath))]
+  const retryOwned = [...new Set((delta && delta.retryOwnedArtifacts || []).map(canonicalPath))]
+  const forbidden = new Set((((specObj && specObj.FILES_FORBIDDEN_TO_CHANGE) || []).map(canonicalPath)))
+  const expected = canonicalPathList((specObj && specObj.EXPECTED_FILES) || [])
+  const allowedWrites = canonicalPathList((specObj && specObj.ALLOWED_WRITE_PATHS) || expected)
+  const inSpec = (p) => expected.length ? (expected.indexOf(p) >= 0 || writePathAuthorized(p)) : true
+  let allowed = taskChanged.filter(inSpec).concat(retryOwned.filter((p) => RETRY_OWNED[p]))
+  allowed = allowed.filter((p) => !isGovernancePath(p) && !forbidden.has(p))
   return [...new Set(allowed)]
 }
 // 修复后指纹校验（§19）：全局不得引入 governance/external/head/index 违规；
-// 且 pre→post 新改动必须 ⊆ allowedRepairFiles（授权治理写 specPath 例外）。
+// 且 pre→post 新改动必须 ⊆ allowedRepairFiles（授权治理写 specPath 与 retry-owned 例外）。
 function verifyRepairFingerprints(baseline, preSnap, postSnap, allowedRepairFiles, auth) {
+  if (!isVerifiedEvidence(preSnap) || !isVerifiedEvidence(postSnap)) {
+    return { ok: false, violation: { code: 'BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN', detail: '修复前/后快照未通过确定性字节校验，无法核实修复动作的影响面：pre=' + evidenceStatusOf(preSnap) + '，post=' + evidenceStatusOf(postSnap) } }
+  }
   const delta = classifyDelta(baseline, postSnap, auth)
   const viols = deltaViolations(delta)
   if (viols.length) return { ok: false, violation: viols[0] }
-  const preFp = fpMap(preSnap), postFp = fpMap(postSnap)
+  const preId = identityMap(preSnap), postId = identityMap(postSnap)
   const preD = dirtyPaths(preSnap), postD = dirtyPaths(postSnap)
-  const authSet = new Set((auth || []).map(normPath).filter(Boolean))
-  const allowed = new Set((allowedRepairFiles || []).map(normPath))
+  const authSet = new Set((auth || []).map(canonicalPath).filter(Boolean))
+  const allowed = new Set((allowedRepairFiles || []).map(canonicalPath))
   const newly = []
   for (const p of postD) {
     if (!preD.has(p)) { newly.push(p); continue }
-    if (preFp[p] && postFp[p] && preFp[p] !== postFp[p]) newly.push(p)
+    if (preId[p] && postId[p] && preId[p] !== postId[p]) newly.push(p)
   }
-  const outside = newly.filter(p => !allowed.has(p) && !authSet.has(p))
+  const outside = newly.filter((p) => !allowed.has(p) && !authSet.has(p) && !RETRY_OWNED[p])
   if (outside.length) return { ok: false, violation: { code: 'BLOCKED_REPAIR_OUT_OF_SCOPE', detail: 'Self-Repair/Fix 改动了非授权文件：' + outside.join(', ') + '（allowedRepairFiles=' + (allowed.size ? [...allowed].join(', ') : '∅') + '）' } }
   return { ok: true, delta }
 }
@@ -482,6 +838,7 @@ const SPEC_SCHEMA = {
     IN_SCOPE: { type: 'array', items: { type: 'string' } },
     OUT_OF_SCOPE: { type: 'array', items: { type: 'string' } },
     EXPECTED_FILES: { type: 'array', items: { type: 'string' } },
+    ALLOWED_WRITE_PATHS: { type: 'array', items: { type: 'string' }, description: '可选：本任务被授权写入的目录前缀（如 "docs/qgraphflow/dialogue-turn-sequence/"）。缺省时等于 EXPECTED_FILES。用于判定 pre-existing 未跟踪目录单元内的新增文件归属本任务还是归属外部改动。' },
     FILES_FORBIDDEN_TO_CHANGE: { type: 'array', items: { type: 'string' } },
     DATABASE_IMPACT: { type: 'string' },
     API_IMPACT: { type: 'string' },
@@ -579,23 +936,21 @@ const FIXREPORT_SCHEMA = {
   required: ['status', 'summary'],
 }
 
-// D2：只读工作区快照（Max 执行），用于 WORKTREE_BASELINE 与修复前后指纹对比。
-const WORKTREE_SCHEMA = {
+// D4：工作区内容身份的取证契约（替换 D2 的"LLM 自报 hash"结构）。
+// 执行手（qfmodel，只读）无权生成/总结/推断任何 hash：它只逐字执行脚本下发的确定性命令并原样回传 rawStdout。
+// 内容身份的判定全部发生在脚本侧（parseFingerprintEvidence 的格式/自洽校验 + Task Delta 比较）。
+const FP_EXECUTOR_SCHEMA = {
   type: 'object',
   properties: {
-    head: { type: 'string', description: 'git rev-parse HEAD 的完整 SHA' },
-    branch: { type: 'string', description: 'git branch --show-current' },
-    staged: { type: 'array', items: { type: 'string' }, description: 'git diff --cached --name-only' },
-    trackedModified: { type: 'array', items: { type: 'string' }, description: 'git diff --name-only --diff-filter=M' },
-    trackedDeleted: { type: 'array', items: { type: 'string' }, description: 'git diff --name-only --diff-filter=D' },
-    untracked: { type: 'array', items: { type: 'string' }, description: 'git ls-files --others --exclude-standard' },
-    fingerprints: {
-      type: 'array',
-      items: { type: 'object', properties: { path: { type: 'string' }, hash: { type: 'string' } }, required: ['path', 'hash'] },
-      description: '对 staged/trackedModified/trackedDeleted/untracked 中每个仍存在的文件用 git hash-object 计算的指纹；已删除文件 hash 记 "DELETED"。必须真实，禁止臆造。',
-    },
+    purpose: { type: 'string', description: '本次取证用途（编排器注入，原样回传）' },
+    command: { type: 'string', description: '逐字回传脚本下发的命令原文（禁止改写、禁止美化、禁止拆成多条）' },
+    exitCode: { type: 'integer', description: '该命令的真实退出码' },
+    rawStdout: { type: 'string', description: '命令 stdout 原文（逐字节，禁止总结/截断/重排/自行计算 hash）' },
+    rawStderr: { type: 'string' },
+    filesWritten: { type: 'array', items: { type: 'string' }, description: '必须为空数组：本取证命令不得写任何文件；非空即 GOVERNANCE_POLICY_VIOLATION' },
+    gitCommandsRun: { type: 'array', items: { type: 'string' }, description: '本次实际运行过的 git 命令原文（含只读）；编排器做 denylist 扫描' },
   },
-  required: ['head', 'branch', 'staged', 'trackedModified', 'trackedDeleted', 'untracked', 'fingerprints'],
+  required: ['purpose', 'command', 'exitCode', 'rawStdout', 'filesWritten', 'gitCommandsRun'],
 }
 
 const RCA_SCHEMA = {
@@ -721,6 +1076,10 @@ if (typeof args === 'string') {
   if (args.executionMode === 'FULL' || args.executionMode === 'FLASH_ONLY') EXECUTION_MODE = args.executionMode
   // D3 测试专用 trip-wire（生产恒不传）：验证 FLASH_ONLY 下把角色路由到 qmodel_38max 会被 Preflight 路由守卫拦截。
   if (args.__d3_force_max_route === true) D3_TEST_FORCE_MAX_ROUTE = true
+  // D4 §26–§30：同任务重试产物归属。只有调用方（人工授权的重跑指令）显式声明上一 run 的身份与产物证据时才生效；
+  // 缺省即普通任务，RETRY_OWNED 恒空，任何 pre-existing 改动都按用户改动保护，绝不因"看起来像上次产物"而放行。
+  RETRY_OF_TASK_ID = String(args.retryOfTaskId || '').trim()
+  RETRY_ARTIFACTS = Array.isArray(args.retryArtifacts) ? args.retryArtifacts : []
 }
 if (['task', 'milestone_gate', 'release_gate'].indexOf(mode) === -1) {
   return blocked('INVALID_MODE', 'Input', { SAFE_NEXT_ACTION: "mode 只允许 'task' | 'milestone_gate' | 'release_gate'。" })
@@ -802,10 +1161,24 @@ if (onProtectedBranch && pre.dirty) {
 const baseline = { branch: pre.branch, dirty: pre.dirty, dirtyFiles: pre.dirtyFiles || [], onProtectedBranch }
 log(`Preflight 通过：branch=${baseline.branch}, dirty=${baseline.dirty}（已记录基线，Workflow 不会覆盖用户已有修改）`)
 
-// D2 §4：捕获 WORKTREE_BASELINE（含指纹），作为 Task Delta 判定的基准。
-// feature 分支上的 pre-existing 授权改动会被记录指纹；本任务结束前须保证其内容不被改动。
-let WORKTREE_BASELINE = await snapshotWorktree('Preflight baseline（Task Delta 基准）', 'Preflight')
-if (!WORKTREE_BASELINE) return modelBlocked('Preflight', mname(modelFor('snapshot')))
+// D2 §4 / D4 §5–§15：捕获 WORKTREE_BASELINE（确定性字节证据），作为 Task Delta 判定的基准。
+// §8：取证命令在仓库根执行，路径统一 canonical，避免 Windows 分隔符造成假 Delta。
+FP_REPO_ROOT = (function () {
+  const r = String(pre.repoRoot || '').trim().replace(/\\/g, '/').replace(/\/+$/, '')
+  if (/^[A-Za-z]:\//.test(r) || r.charAt(0) === '/') return r
+  return '.'
+})()
+let _baselineRes = await establishWorktreeBaseline('Preflight')
+if (!_baselineRes) return modelBlocked('Preflight', mname(modelFor('snapshot')))
+if (_baselineRes.blocked) return blocked(_baselineRes.blocked.code, 'Preflight', {
+  DETAIL: _baselineRes.blocked.detail,
+  FINGERPRINT_BACKEND, CONTENT_IDENTITY_AUTHORITY, SCRIPT_SIDE_HASH_AVAILABLE,
+  EVIDENCE_PROBLEMS: FP_INVALID_DETECTED.slice(0, 8),
+  ADJUDICATION: _baselineRes.adjudications || [],
+  SAFE_NEXT_ACTION: '任务前基线无法用确定性字节证据建立。Workflow 未修改任何文件，请人工核查取证链路（shell 可用性、sha256sum/md5sum/find 是否存在）后重跑。',
+})
+let WORKTREE_BASELINE = _baselineRes.baseline
+if (_baselineRes.adjudications && _baselineRes.adjudications.length) log(`WORKTREE_BASELINE 由两个独立收敛 invocation 重建（首次取证证据非法：${FP_INVALID_DETECTED.slice(0, 2).join(' / ')}）`)
 baseline.head = WORKTREE_BASELINE.head
 const _bPre = (WORKTREE_BASELINE.trackedModified || []).length + (WORKTREE_BASELINE.untracked || []).length + (WORKTREE_BASELINE.trackedDeleted || []).length + (WORKTREE_BASELINE.staged || []).length
 log(`WORKTREE_BASELINE 已建立：HEAD=${(WORKTREE_BASELINE.head || '').slice(0, 12)}，pre-existing 改动 ${_bPre} 项（含指纹）。Scope/forbidden 判定将基于 Task Delta（baseline↔当前），不再基于裸 git status。`)
@@ -1032,9 +1405,10 @@ ${task}
 分类：${j(cls, 2000)}
 探索结果：
 ${j({ CURRENT_STATE: exp.CURRENT_STATE, RELATED_FILES: exp.RELATED_FILES, DEPENDENCIES: exp.DEPENDENCIES, RISKS: exp.RISKS, EXISTING_TESTS: exp.EXISTING_TESTS, POTENTIAL_REGRESSIONS: exp.POTENTIAL_REGRESSIONS, TEST_COMMANDS: exp.TEST_COMMANDS }, 14000)}
-生成不可变任务合同 TASK_SPEC，包含全部字段：TASK_ID（短横线小写 slug，如 kb-pdf-parser）、TITLE、OBJECTIVE、CONTEXT、DEPENDENCIES、IN_SCOPE、OUT_OF_SCOPE、EXPECTED_FILES、FILES_FORBIDDEN_TO_CHANGE、DATABASE_IMPACT、API_IMPACT、FRONTEND_IMPACT、SECURITY_IMPACT、PRIVACY_IMPACT、MEDICAL_IMPACT、KNOWLEDGE_IMPACT、MIGRATION_REQUIREMENTS、ACCEPTANCE_CRITERIA、MANDATORY_TESTS、REGRESSION_TESTS、ROLLBACK_PLAN、KNOWN_RISKS、DELIVERABLES。
+生成不可变任务合同 TASK_SPEC，包含全部字段：TASK_ID（短横线小写 slug，如 kb-pdf-parser）、TITLE、OBJECTIVE、CONTEXT、DEPENDENCIES、IN_SCOPE、OUT_OF_SCOPE、EXPECTED_FILES、FILES_FORBIDDEN_TO_CHANGE、DATABASE_IMPACT、API_IMPACT、FRONTEND_IMPACT、SECURITY_IMPACT、PRIVACY_IMPACT、MEDICAL_IMPACT、KNOWLEDGE_IMPACT、MIGRATION_REQUIREMENTS、ACCEPTANCE_CRITERIA、MANDATORY_TESTS、REGRESSION_TESTS、ROLLBACK_PLAN、KNOWN_RISKS、DELIVERABLES（可选 ALLOWED_WRITE_PATHS：授权写入的目录前缀）。
 要求：
-- ACCEPTANCE_CRITERIA 必须可验证、可观察、尽量可通过测试判断（示例：AC-01 未认证请求必须返回 401）。禁止"功能正常"这类模糊描述。每条含 id/criterion/verification。
+- ACCEPTANCE_CRITERIA 必须可验证、可观察，尽量可通过测试判断（示例：AC-01 未认证请求必须返回 401）。禁止"功能正常"这类模糊描述。每条含 id/criterion/verification。
+- EXPECTED_FILES 必须逐条列出本任务允许创建/修改的确切路径（含写入 pre-existing 未跟踪目录内的文件）；如任务确需在整个目录内写入，另填 ALLOWED_WRITE_PATHS 目录前缀。二者都不含治理文件。
 - MANDATORY_TESTS 必须使用 TEST_COMMANDS 中真实存在的命令体系；medicalSensitive=true 时必须包含医疗安全回归测试（若项目暂无对应测试，则把"补齐该测试"写入 IN_SCOPE 与 MANDATORY_TESTS）。
 - privacySensitive=true 时 PRIVACY_IMPACT 必须覆盖：数据最小化、授权、访问控制、日志脱敏、数据隔离、删除路径、导出路径、审计。
 - 数据库结构变更必须通过 MIGRATION_REQUIREMENTS 描述（含 downgrade 要求）。
@@ -1044,8 +1418,31 @@ TASK_SPEC 一旦进入 IMPLEMENT，实施者禁止修改。`,
 if (!spec) return modelBlocked('Task Spec', mname(modelFor('planner')))
 log(`TASK_SPEC 生成：${spec.TASK_ID} — ${spec.TITLE}（AC ${spec.ACCEPTANCE_CRITERIA.length} 条，落盘 ${spec.specPath}）`)
 
+// ---------- D4 §26–§30：同任务重试产物归属（在任何写动作之前判定）----------
+// 只有 retryOfTaskId == 本任务 且路径在两版 TASK_SPEC 允许写集合内 且非治理 且
+// 上一 run manifest/journal 证据齐全 且 字节证据显示"上一 run 产物自上次结束以来未被外部改动"，
+// 才把该 pre-existing 产物标为 RETRY_OWNED（属本任务延续，不算用户改动）。
+// §28：一旦 LAST_TASK_OUTPUT_HASH ≠ CURRENT_RETRY_START_HASH → 立即 BLOCK，retry 绝不吞用户改动。
+applyRetryOwnership(spec, WORKTREE_BASELINE)
+if (RETRY_OWNERSHIP.status === 'BLOCKED_RETRY_ARTIFACT_CHANGED_EXTERNALLY') {
+  const r = RETRY_OWNERSHIP.rejected.find((x) => x.reject === 'BLOCKED_RETRY_ARTIFACT_CHANGED_EXTERNALLY') || {}
+  return blocked('BLOCKED_RETRY_ARTIFACT_CHANGED_EXTERNALLY', 'Task Spec', {
+    TASK_ID: spec.TASK_ID,
+    RETRY_OF: RETRY_OWNERSHIP.retryOf,
+    PATH: r.path,
+    LAST_TASK_OUTPUT_HASH: (r.detail || '').match(/LAST_TASK_OUTPUT_HASH=(\S+)/) ? RegExp.$1 : '',
+    DETAIL: r.detail,
+    RETRY_OWNERSHIP: { status: RETRY_OWNERSHIP.status, accepted: RETRY_OWNERSHIP.accepted.slice(), rejected: RETRY_OWNERSHIP.rejected.slice() },
+    SAFE_NEXT_ACTION: '上一 run 的任务产物在两次 run 之间被外部（人工或其他进程）修改。Workflow 未修改任何文件。请人工确认该修改是否应保留：保留则把本任务改为"基于当前内容的新任务"（去掉 retryOfTaskId），否则由人工决定如何处置。',
+  })
+}
+if (RETRY_OWNED && Object.keys(RETRY_OWNED).length) log(`RETRY_OWNED 生效：${Object.keys(RETRY_OWNED).join(', ')}（同一 Task 的上一 run 合法未提交产物，不当作用户 pre-existing 改动）`)
+
 // ---------- PHASE 5 — IMPLEMENT ----------
 phase('Implement')
+const _retryNote = Object.keys(RETRY_OWNED).length
+  ? `\n- 同任务重试产物（RETRY_OWNED，允许你在 TASK_SPEC 范围内继续完善）：${Object.keys(RETRY_OWNED).join(', ')}。除此之外，任何任务前已存在的未提交内容都是用户改动，禁止触碰。`
+  : ''
 const impl = await agent(`${PROJECT_RULES}
 ${FLASH_RULES}
 [实施 TASK_SPEC] 第一步：读取 ${spec.specPath}（TASK_SPEC 全文），然后严格实施。
@@ -1053,7 +1450,7 @@ TASK_SPEC 摘要（以文件为准）：
 ${j(spec, 14000)}
 探索线索（相关文件）：${j(exp.RELATED_FILES, 2000)}
 要求：
-- 只改 EXPECTED_FILES 范围内的文件；FILES_FORBIDDEN_TO_CHANGE 绝对不动；不得触碰用户在 Preflight 时已有的未提交修改。
+- 只改 EXPECTED_FILES 范围内的文件；FILES_FORBIDDEN_TO_CHANGE 绝对不动；不得触碰用户在 Preflight 时已有的未提交修改。${_retryNote}
 - 按 MANDATORY_TESTS 补齐/更新测试并本地运行；如实报告 TESTS_RUN 与 TEST_RESULTS。
 - 完成后返回 IMPLEMENTATION_REPORT：status=IMPLEMENTED + FILES_CREATED/FILES_MODIFIED/FILES_DELETED/DATABASE_CHANGES/API_CHANGES/FRONTEND_CHANGES/TESTS_ADDED/TESTS_MODIFIED/TESTS_RUN/TEST_RESULTS/DEVIATIONS_FROM_SPEC/KNOWN_LIMITATIONS/BLOCKERS。
 - 发现 TASK_SPEC 与真实代码冲突时：停止并返回 status=SPEC_CONFLICT（conflict/evidence/affectedFiles/recommendedDecision）。
@@ -1081,27 +1478,33 @@ if (impl.status !== 'IMPLEMENTED') {
 }
 log(`实施完成（IMPLEMENTED ≠ PASS）：修改 ${(impl.FILES_MODIFIED || []).length} 个、新建 ${(impl.FILES_CREATED || []).length} 个文件`)
 
-// ---------- D2-C：实施后工作区 Delta 校验（脚本是权威裁判，先于 Machine Gate）----------
-// 基于 Task Delta 判定：治理文件被改 / pre-existing 被改或被还原 / HEAD 变 / index 变 → 立即 BLOCK，绝不启动 Flash 修复。
+// ---------- D2-C / D4：实施后工作区 Delta 校验（脚本是权威裁判，先于 Machine Gate）----------
+// 内容差异只在【确定性字节证据收敛】后才下结论：首次 hash 不一致 → FINGERPRINT_ADJUDICATION（§16–§20），
+// 不误报 BLOCK，也绝不放走真实外部改动。治理/HEAD/index 违规不仲裁、不降级，立即 BLOCK。
 let currentSnap = await snapshotWorktree('Implement 后 Task Delta 校验', 'Implement')
 if (!currentSnap) return modelBlocked('Implement', mname(modelFor('snapshot')))
-let currentDelta = classifyDelta(WORKTREE_BASELINE, currentSnap, [spec.specPath])
+let _postEval = await evaluateTaskDelta(WORKTREE_BASELINE, currentSnap, [spec.specPath], 'Implement', 'post_implement')
+if (_postEval.baseline && _postEval.baseline !== WORKTREE_BASELINE) WORKTREE_BASELINE = _postEval.baseline
+let currentDelta = _postEval.delta
+let currentEvidence = _postEval.current || currentSnap
 let allowedRepairFiles = computeAllowedRepairFiles(currentDelta, spec)
 {
-  const viols = deltaViolations(currentDelta)
-  if (viols.length) {
-    const v = viols[0]
+  const v = _postEval.blocked || _postEval.viols[0]
+  if (v) {
     return blocked(v.code, 'Implement', {
       TASK_ID: spec.TASK_ID,
       DETAIL: v.detail,
-      TASK_DELTA: { taskChanged: currentDelta.taskChanged, taskGovernance: currentDelta.taskGovernance, preExistingUnchanged: currentDelta.preExistingUnchanged, externalChangedDuringTask: currentDelta.externalChangedDuringTask, preExistingReverted: currentDelta.preExistingReverted, headChanged: currentDelta.headChanged, stagedAppeared: currentDelta.stagedAppeared },
+      FINGERPRINT: { backend: FINGERPRINT_BACKEND, authority: CONTENT_IDENTITY_AUTHORITY, scriptSideHash: SCRIPT_SIDE_HASH_AVAILABLE, baselineEvidence: evidenceStatusOf(WORKTREE_BASELINE), currentEvidence: evidenceStatusOf(currentEvidence), invalidDetected: FP_INVALID_DETECTED.slice(0, 8), falsePositivesRecovered: FP_FALSE_POSITIVES_RECOVERED.slice() },
+      ADJUDICATION: (_postEval.adjudications || []).slice(),
+      RETRY_OWNERSHIP: { status: RETRY_OWNERSHIP.status, retryOf: RETRY_OWNERSHIP.retryOf, artifacts: RETRY_OWNERSHIP.artifacts.slice(), accepted: RETRY_OWNERSHIP.accepted.slice(), rejected: RETRY_OWNERSHIP.rejected.slice() },
+      TASK_DELTA: { taskChanged: currentDelta.taskChanged, taskGovernance: currentDelta.taskGovernance, preExistingUnchanged: currentDelta.preExistingUnchanged, externalChangedDuringTask: currentDelta.externalChangedDuringTask, preExistingReverted: currentDelta.preExistingReverted, treeUnitChanges: currentDelta.treeUnitChanges, headChanged: currentDelta.headChanged, stagedAppeared: currentDelta.stagedAppeared },
       GOVERNANCE_PROTECTED_PATHS: GOVERNANCE_PROTECTED_PATHS.concat([SELF_WORKFLOW_PATH]),
       FILES_CURRENTLY_CHANGED: currentDelta.taskChanged,
       SAFE_NEXT_ACTION: '本任务触碰了治理/pre-existing/HEAD/index 保护边界，编排器已停止且未启动任何 Flash 修复（不会 checkout/restore/reset/clean/stash）。请人工核查工作区：治理变更须走 Max 治理模式或人工授权治理流程；pre-existing 改动被误动须人工恢复。',
     })
   }
 }
-log(`Task Delta 校验通过：本任务改动 ${currentDelta.taskChanged.length} 项；pre-existing 未变 ${currentDelta.preExistingUnchanged.length} 项（不计入本任务）；治理/HEAD/index 无违规。allowedRepairFiles=[${allowedRepairFiles.join(', ')}]`)
+log(`Task Delta 校验通过（证据=${evidenceStatusOf(currentEvidence)}）：本任务改动 ${currentDelta.taskChanged.length} 项；pre-existing 未变 ${currentDelta.preExistingUnchanged.length} 项（不计入本任务）；retry-owned ${currentDelta.retryOwnedArtifacts.length} 项；目录单元变化 ${currentDelta.treeUnitChanges.length} 项；治理/HEAD/index 无违规。allowedRepairFiles=[${allowedRepairFiles.join(', ')}]`)
 
 // ---------- PHASE 6/7 — MACHINE GATE + REPAIR LOOP ----------
 function gateRequirements() {
@@ -1119,33 +1522,193 @@ function gateRequirements() {
   return req
 }
 
-// D2：Max 只读工作区快照（指纹采集）。用于 baseline 与修复前后对比。
-async function snapshotWorktree(purpose, phaseName) {
-  return await agent(`${PROJECT_RULES}
+// D4：确定性字节取证执行器（替换 D2 的"LLM 自报 hash"快照）。
+// 命令由脚本生成并逐字下发；执行手（modelFor('snapshot')）只负责"跑这一条命令、原样回传 stdout"，
+// 对内容的任何判定都在脚本侧完成（parseFingerprintEvidence + classifyDelta）。
+function fingerprintExecutorPrompt(purpose, cmd, extraConstraint) {
+  return `${PROJECT_RULES}
 ${decisionRules()}
-[只读工作区快照 · ${purpose}] 你处于只读模式：禁止 Write/Edit/创建/删除任何文件，禁止任何写操作或破坏性 git 命令。
-只运行只读命令并如实报告：
-1. git rev-parse HEAD → head（完整 SHA）
-2. git branch --show-current → branch
-3. git diff --cached --name-only → staged
-4. git diff --name-only --diff-filter=M → trackedModified
-5. git diff --name-only --diff-filter=D → trackedDeleted
-6. git ls-files --others --exclude-standard → untracked
-7. 对 staged/trackedModified/trackedDeleted/untracked 中每个仍存在的文件运行 git hash-object <file> → fingerprints[{path,hash}]；已删除文件 hash 记 "DELETED"。
-指纹用于任务前后精确对比，务必真实、禁止臆造 hash。`,
-    { label: 'worktree-snapshot', phase: phaseName || 'Preflight', model: modelFor('snapshot'), effort: 'low', schema: WORKTREE_SCHEMA })
+[确定性字节取证 · ${purpose}] 你处于只读模式：禁止 Write/Edit/创建/删除任何文件，禁止任何写操作，禁止任何破坏性 git 命令。
+你只做一件事：把下面这条命令【逐字】交给 shell 执行一次，然后原样回传输出。
+禁止：改写命令、增删参数、拆分或合并命令、总结输出、截断输出、重排行序、自行计算或补写任何 hash、凭记忆或猜测填数字。
+${extraConstraint || ''}
+命令（逐字执行，工作目录 = 仓库根）：
+\`\`\`sh
+${cmd}
+\`\`\`
+回传要求：command = 上述命令原文；exitCode = 真实退出码；rawStdout = stdout 原文（含每一行，保持行序）；rawStderr = stderr 原文；filesWritten 恒为 []；gitCommandsRun = 实际运行过的 git 命令。
+若命令无法执行（shell 不可用/命令不存在/仓库根无法进入）→ 如实报告 exitCode 与 rawStderr，并在 rawStdout 留空，禁止编造输出。`
 }
 
-// D2 §12/§13/§17/§18/§19：受守卫的 Flash 修复调用。
-// 启动前：preSnap 若已存在 governance/external/head/index 违规或 allowedRepairFiles 为空 → 不启动 Flash。
-// 启动后：扫描自报 gitCommandsRun（denylist）+ postSnap 指纹校验；任一层命中 → 返回 violation 交编排器 BLOCK。
+async function runFingerprintExecutor(purpose, phaseName, label) {
+  const cmd = buildFingerprintCommand(FP_REPO_ROOT || '.')
+  const ex = await agent(fingerprintExecutorPrompt(purpose, cmd), {
+    label: label || 'worktree-snapshot', phase: phaseName, model: modelFor('snapshot'), effort: 'low', schema: FP_EXECUTOR_SCHEMA,
+  })
+  if (!ex) return null
+  const snap = parseFingerprintEvidence(ex, cmd)
+  snap.purpose = purpose
+  snap.runLabel = label || 'worktree-snapshot'
+  FP_EVIDENCE_RUNS.push({
+    run: FP_EVIDENCE_RUNS.length + 1, label: snap.runLabel, purpose, phase: phaseName,
+    evidenceValid: snap.evidenceValid, problems: snap.problems.slice(0, 6),
+    head: snap.head, branch: snap.branch, dirtyPaths: dirtyPaths(snap).size,
+    commandVerbatim: snap.commandVerbatim, rawLineCount: snap.rawLineCount,
+  })
+  return snap
+}
+
+async function snapshotWorktree(purpose, phaseName) {
+  return await runFingerprintExecutor(purpose, phaseName, 'worktree-snapshot')
+}
+
+// 内容身份签名（§13/§16）：两次独立取证若真为确定性，签名必须逐字符相同；不同则说明证据源不可信。
+function identitySignature(s) {
+  const m = identityMap(s)
+  return JSON.stringify({
+    head: (s && s.head) || '', branch: (s && s.branch) || '',
+    staged: [...new Set(((s && s.staged) || []).map(canonicalPath))].sort(),
+    paths: Object.keys(m).sort().map((p) => p + '=' + m[p]),
+  })
+}
+
+// ---------- FINGERPRINT_ADJUDICATION（§16–§20）----------
+// 首次 baseline↔post 不一致不再直接 BLOCK：先由两个彼此不可见的独立只读 invocation 重新取证，
+// 脚本按确定性签名收敛。两者一致且与基准相同 → SNAPSHOT_FALSE_POSITIVE_RECOVERED（继续）；
+// 两者一致且确实不同 → EXTERNAL_CHANGED_DURING_TASK（有字节证据，BLOCK）；
+// 两者不一致 / 任一非法 / 模型不可用 → BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN（停止，交人工，绝不猜）。
+async function adjudicateFingerprints(ctx) {
+  const entry = {
+    n: ++adjudicationCount, stage: ctx.stage, phase: ctx.phase,
+    reason: ctx.violation ? ctx.violation.code : 'FINGERPRINT_EVIDENCE_INVALID',
+    disputedPaths: (ctx.disputed || []).slice(0, 20),
+    rejectedEvidence: ctx.evidenceRejected === true,
+    baselineWasInvalid: !isVerifiedEvidence(ctx.baseline),
+  }
+  if (entry.baselineWasInvalid && ctx.stage !== 'baseline') {
+    entry.verdict = 'BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN'
+    entry.detail = 'WORKTREE_BASELINE 本身未通过确定性校验，且当前已非任务前时刻：任务前的字节状态无法事后重建，任何"未变/已变"结论都缺乏证据基础。停止并交人工核查工作区。'
+    ADJUDICATION_LOG.push(entry)
+    return { blocked: { code: entry.verdict, detail: entry.detail, adjudication: entry } }
+  }
+  const pair = await parallel([
+    () => runFingerprintExecutor('FINGERPRINT_ADJUDICATION REHASH_A（独立重新取证，不复用上一次 hash）', ctx.phase, 'fingerprint-rehash-a'),
+    () => runFingerprintExecutor('FINGERPRINT_ADJUDICATION REHASH_B（独立重新取证，与 A 互不可见）', ctx.phase, 'fingerprint-rehash-b'),
+  ])
+  entry.rehashA = pair[0] ? evidenceStatusOf(pair[0]) : 'MODEL_UNAVAILABLE'
+  entry.rehashB = pair[1] ? evidenceStatusOf(pair[1]) : 'MODEL_UNAVAILABLE'
+  if (!pair[0] || !pair[1]) {
+    entry.verdict = 'BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN'
+    entry.detail = 'REHASH invocation 不可用（模型不可用或被跳过），无法完成独立二次取证。'
+    ADJUDICATION_LOG.push(entry)
+    return { blocked: { code: entry.verdict, detail: entry.detail, adjudication: entry } }
+  }
+  if (!isVerifiedEvidence(pair[0]) || !isVerifiedEvidence(pair[1])) {
+    entry.verdict = 'BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN'
+    entry.detail = '两次独立取证均未通过确定性校验（sha256 必须 64 位小写 hex、命令须逐字一致、执行手须零写入）：A=' + entry.rehashA + '，B=' + entry.rehashB
+    ADJUDICATION_LOG.push(entry)
+    return { blocked: { code: entry.verdict, detail: entry.detail, adjudication: entry } }
+  }
+  const sigA = identitySignature(pair[0]), sigB = identitySignature(pair[1])
+  if (sigA !== sigB) {
+    entry.verdict = 'BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN'
+    entry.inconsistency = { a: JSON.parse(sigA).paths.length, b: JSON.parse(sigB).paths.length }
+    const mA = identityMap(pair[0]), mB = identityMap(pair[1])
+    const keys = [...new Set(Object.keys(mA).concat(Object.keys(mB)))].sort()
+    entry.diverged = keys.filter((k) => mA[k] !== mB[k]).slice(0, 10).map((k) => k + ': A=' + String(mA[k]).slice(0, 16) + ' B=' + String(mB[k]).slice(0, 16))
+    entry.detail = 'REHASH_A 与 REHASH_B 的确定性签名不一致：同一命令在两次独立只读取证中产出了不同结果，说明取证链路本身不可信（文件或枚举不确定）。禁止在此情况下推断任何变更归属。'
+    ADJUDICATION_LOG.push(entry)
+    return { blocked: { code: entry.verdict, detail: entry.detail, adjudication: entry } }
+  }
+  entry.agreement = 'CONVERGED'
+  if (ctx.stage === 'baseline') {
+    entry.verdict = 'BASELINE_REESTABLISHED_BY_CONVERGENCE'
+    entry.detail = '任务前基线由两个独立 invocation 的收敛证据重建。'
+    ADJUDICATION_LOG.push(entry)
+    return { baseline: pair[0], current: ctx.current, adjudication: entry }
+  }
+  // 采信两个独立 invocation 收敛后的证据作为"当前工作区状态"，用同一套确定性逻辑重算 Task Delta。
+  const nextDelta = classifyDelta(ctx.baseline, pair[0], ctx.auth)
+  const nextViols = deltaViolations(nextDelta)
+  entry.recomputedViolations = nextViols.map((v) => v.code)
+  if (!nextViols.length) {
+    entry.verdict = ctx.evidenceRejected ? 'EVIDENCE_REESTABLISHED_BY_CONVERGENCE' : 'SNAPSHOT_FALSE_POSITIVE_RECOVERED'
+    entry.recoveredPaths = (ctx.disputed || []).slice()
+    entry.detail = ctx.evidenceRejected
+      ? '前一次取证未通过确定性校验（不可信证据源），两个独立 invocation 的收敛证据已替代它；替换后 Task Delta 干净，无内容变更事实。恢复推进。'
+      : '前一次快照的 hash 差异未被独立二次取证复现：确定性 SHA-256 显示相关路径内容与 WORKTREE_BASELINE 一致（未变），原差异属不可信 fingerprint 造成的误报。恢复推进，不因误报 BLOCK。'
+    FP_FALSE_POSITIVES_RECOVERED.push({ stage: ctx.stage, kind: entry.verdict, paths: entry.recoveredPaths, adjudication: entry.n })
+    ADJUDICATION_LOG.push(entry)
+    return { current: pair[0], delta: nextDelta, viols: [], recovered: true, adjudication: entry }
+  }
+  const persists = nextViols.find((v) => v.adjudicable)
+  if (persists) {
+    entry.verdict = 'EXTERNAL_CHANGED_DURING_TASK'
+    entry.detail = '两个独立 invocation 的确定性 SHA-256 一致地显示：pre-existing 内容在任务期间确实发生变化（与 WORKTREE_BASELINE 字节不同）。本次为有字节证据的真实外部改动，BLOCK 成立。'
+    ADJUDICATION_LOG.push(entry)
+    return { blocked: { code: persists.code, detail: persists.detail + '｜仲裁结论：' + entry.detail, adjudication: entry, evidence: 'CONFIRMED_BY_DOUBLE_REHASH' } }
+  }
+  entry.verdict = 'ADJUDICATION_REVEALED_OTHER_VIOLATION'
+  entry.detail = '内容差异未复现，但收敛证据暴露出其它治理/HEAD/index 违规，按原规则 BLOCK（不降级）。'
+  ADJUDICATION_LOG.push(entry)
+  return { blocked: nextViols[0], adjudication: entry }
+}
+
+// Task Delta 评估 + 自动仲裁（唯一入口）。返回 { delta, viols, current, baseline, adjudications }。
+async function evaluateTaskDelta(baseline, current, auth, phaseName, stage) {
+  let b = baseline, c = current, rounds = 0
+  const adjudications = []
+  for (;;) {
+    const delta = classifyDelta(b, c, auth)
+    const viols = deltaViolations(delta)
+    const ad = viols.find((v) => v.adjudicable)
+    if (!ad) return { baseline: b, current: c, delta, viols, adjudications }
+    if (rounds >= 1) {
+      return { blocked: { code: 'BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN', detail: '确定性证据在仲裁后仍未收敛（超出 1 轮仲裁预算），停止并交人工。' }, delta, viols, adjudications }
+    }
+    rounds++
+    const disputed = delta.evidenceRejected ? [] : [...new Set((delta.externalChangedDuringTask || []).concat(delta.preExistingReverted || []))].sort()
+    const res = await adjudicateFingerprints({ baseline: b, current: c, auth, phase: phaseName, stage, violation: ad, evidenceRejected: delta.evidenceRejected === true, disputed })
+    if (!res) return { blocked: { code: 'BLOCKED_MODEL_UNAVAILABLE', detail: '仲裁执行器不可用' }, delta, viols, adjudications }
+    // 仲裁记录必须进入终态报告的 ADJUDICATION 链（含"确认型 BLOCK"：blocked.adjudication 形式），否则证据链断在报告里。
+    if (res.adjudication) adjudications.push(res.adjudication)
+    else if (res.blocked && res.blocked.adjudication) adjudications.push(res.blocked.adjudication)
+    if (res.blocked) return { blocked: res.blocked, delta, viols, adjudications }
+    if (res.baseline) b = res.baseline
+    if (res.current) c = res.current
+    if (!res.current && !res.baseline) return { blocked: { code: 'BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN', detail: '仲裁未产出可用证据' }, delta, viols, adjudications }
+  }
+}
+
+// 任务前基线建立：证据非法时用两个独立收敛 invocation 重建（此时"现在"仍等于"任务前"）。
+async function establishWorktreeBaseline(phaseName) {
+  const first = await snapshotWorktree('Preflight baseline（Task Delta 基准）', phaseName || 'Preflight')
+  if (!first) return null
+  if (isVerifiedEvidence(first)) return { baseline: first }
+  const res = await adjudicateFingerprints({
+    baseline: first, current: first, auth: [], phase: phaseName || 'Preflight', stage: 'baseline',
+    violation: { code: 'FINGERPRINT_EVIDENCE_INVALID' }, evidenceRejected: true, disputed: [],
+  })
+  if (res.blocked) {
+    const ad = res.adjudication || (res.blocked && res.blocked.adjudication) || null
+    return { blocked: res.blocked, adjudications: (res.adjudications || []).concat(ad ? [ad] : []) }
+  }
+  return { baseline: res.baseline, adjudications: res.adjudications || [] }
+}
+
+// D2 §12/§13/§17/§18/§19 + D4 §16–§20：受守卫的 Flash 修复调用。
+// 启动前：Task Delta（经确定性证据 + 必要时仲裁）若仍有 governance/external/head/index 违规，或 allowedRepairFiles 为空 → 不启动 Flash。
+// 启动后：扫描自报 gitCommandsRun（denylist）+ 修复后确定性指纹校验；任一层命中 → 返回 violation 交编排器 BLOCK。
 async function guardedFlashRepair(prompt, label, allowedRepairFiles, phaseName) {
   const auth = [spec.specPath]
   const preSnap = await snapshotWorktree(`${label} 修复前快照`, phaseName || 'Repair')
   if (!preSnap) return { modelBlocked: mname(modelFor('snapshot')) }
-  const preDelta = classifyDelta(WORKTREE_BASELINE, preSnap, auth)
-  const preViols = deltaViolations(preDelta)
-  if (preViols.length) return { violation: preViols[0], stage: 'PRE_REPAIR_DELTA', preSnap }
+  const preEval = await evaluateTaskDelta(WORKTREE_BASELINE, preSnap, auth, phaseName || 'Repair', 'pre_repair')
+  if (preEval.baseline && preEval.baseline !== WORKTREE_BASELINE) WORKTREE_BASELINE = preEval.baseline
+  const preDelta = preEval.delta
+  const preViol = preEval.blocked || preEval.viols[0]
+  if (preViol) return { violation: preViol, stage: 'PRE_REPAIR_DELTA', preSnap, adjudications: preEval.adjudications }
+  const preVerified = preEval.current || preSnap
   const allowedNow = computeAllowedRepairFiles(preDelta, spec)
   const allowed = (allowedNow && allowedNow.length) ? allowedNow : (allowedRepairFiles || [])
   if (!allowed.length) return { violation: { code: 'BLOCKED_REPAIR_OUT_OF_SCOPE', detail: 'REPAIR_SCOPE.allowedRepairFiles 为空：required 门禁失败的归属文件不在本任务 allowedWritePaths 内（可能属 pre-existing / governance / 归属不明），不得由 Flash 修复。' }, stage: 'REPAIR_SCOPE_EMPTY', preSnap, REPAIR_SCOPE: buildRepairScope(preDelta, allowed) }
@@ -1163,11 +1726,16 @@ async function guardedFlashRepair(prompt, label, allowedRepairFiles, phaseName) 
     const u = scanUnsafeDbCommand(c)
     if (u) return { violation: { code: u.code, command: c, detail: u.detail }, stage: 'UNSAFE_DB_TARGET', result: res, preSnap }
   }
-  const postSnap = await snapshotWorktree(`${label} 修复后指纹校验快照`, phaseName || 'Repair')
+  const postSnap = await snapshotWorktree(`${label} 修复后确定性指纹校验快照`, phaseName || 'Repair')
   if (!postSnap) return { modelBlocked: mname(modelFor('snapshot')) }
-  const v = verifyRepairFingerprints(WORKTREE_BASELINE, preSnap, postSnap, allowed, auth)
+  const postEval = await evaluateTaskDelta(WORKTREE_BASELINE, postSnap, auth, phaseName || 'Repair', 'post_repair')
+  if (postEval.baseline && postEval.baseline !== WORKTREE_BASELINE) WORKTREE_BASELINE = postEval.baseline
+  const postViol = postEval.blocked || postEval.viols[0]
+  if (postViol) return { violation: postViol, stage: 'POST_REPAIR_DELTA', result: res, preSnap, postSnap, adjudications: postEval.adjudications }
+  const postVerified = postEval.current || postSnap
+  const v = verifyRepairFingerprints(WORKTREE_BASELINE, preVerified, postVerified, allowed, auth)
   if (!v.ok) return { violation: v.violation, stage: 'POST_REPAIR_FINGERPRINT', result: res, preSnap, postSnap }
-  return { result: res, preSnap, postSnap, delta: classifyDelta(WORKTREE_BASELINE, postSnap, auth), allowedRepairFiles: allowed }
+  return { result: res, preSnap: preVerified, postSnap: postVerified, delta: v.delta || postEval.delta, allowedRepairFiles: allowed, adjudications: (preEval.adjudications || []).concat(postEval.adjudications || []) }
 }
 
 // D2 §18：构造 REPAIR_SCOPE（供日志/报告与 eligibility 判定）。
@@ -1547,7 +2115,9 @@ Machine Gate（区分 required/record）：${j({ COMPUTED: { requiredPassed: gc.
 2. Machine Gate 的 required 命令全部通过、record 采集完整；抽查重跑其中最关键的 1~2 条命令核实退出码与记录一致（防虚报）。注意：record 型基线命令本就可能是红的（如全量 pytest/ruff），抽查重跑应"复现其红色 exitCode"才算记录属实；required 命令则应 exit 0。record 红属基线发现（已入 findings），不得据此判 TASK_FAIL；
 3. Review blockers 均已解决；
 4. Scope 以上方 Task Delta 为准：taskChanged 是否仍在 IN_SCOPE / EXPECTED_FILES 内、是否触碰 FILES_FORBIDDEN_TO_CHANGE；
-5. 治理与边界（对照 Task Delta）：taskGovernance 必须为空（治理文件 AGENTS.md/.qoder/rules/**/.qoder/workflows/**/.qoder/workflow-state/**（本次新生成 spec 除外）/.gitignore/.github/**/docs/workflow/** 不得被本任务改动）；preExistingUnchanged 中的文件属任务前已存在且指纹未变，**不算本任务改动、不判越界**；externalChangedDuringTask / preExistingReverted 必须为空（pre-existing 被改或被还原）；headChanged 必须为 false、stagedAppeared 必须为空。任一不满足 → 必须 TASK_FAIL；
+5. 治理与边界（对照 Task Delta）：taskGovernance 必须为空（治理文件 AGENTS.md/.qoder/rules/**/.qoder/workflows/**/.qoder/workflow-state/**（本次新生成 spec 除外）/.gitignore/.github/**/docs/workflow/** 不得被本任务改动）；preExistingUnchanged 中的文件属任务前已存在且【确定性 SHA-256 证据显示内容未变】，**不算本任务改动、不判越界**；externalChangedDuringTask / preExistingReverted 必须为空（pre-existing 被改或被还原）；headChanged 必须为 false、stagedAppeared 必须为空。任一不满足 → 必须 TASK_FAIL；
+5b. 【D4 身份证据抽查（防虚报，与 exitCode 抽查同级）】上述 Delta 的内容身份来自"脚本逐字下发命令 + 只读执行手原样回传 rawStdout + 脚本侧格式校验"，模型本身不得自报 hash。请从 preExistingUnchanged / taskChanged 中挑 1~2 个路径【自己逐字执行】脚本的确定性取证命令（${buildFingerprintCommand(FP_REPO_ROOT || '.').split('\n').length} 行；至少对单个文件执行 wc -c 与 sha256sum），核对你得到的 64 位小写 SHA-256 与 Delta 记录的 identity 是否一致；不一致或无法验证 → 记入 reasons 并判 TASK_FAIL（或 BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN 语义）。mtime 一律不作为内容变更依据。
+5c. 【D4 retry-owned 核验】若 RETRY_OWNERSHIP.accepted 非空（本任务是同一 Task 的重试，产物来自上一 run），核对：①retryOfTaskId 与本任务 TASK_ID 同一 Task；②路径在两版 TASK_SPEC 允许写集合内；③非治理文件；④上一 run manifest/journal 有该路径由该 Task Worker 产出之证据。缺任一证据却仍被放行 → blocker（归属过宽，可能吞用户改动）。
 6. 是否引入明显回归风险；
 7. ROLLBACK_PLAN 是否仍成立。
 全部满足 → TASK_PASS；否则 → TASK_FAIL（列出 reasons）。
@@ -1572,13 +2142,23 @@ if (ver.verdict !== 'TASK_PASS') {
   })
 }
 
-// D3：最终 Governance Guard 复核（Task Delta 权威判定）——治理/pre-existing/HEAD/index 任一越界即 TASK_FAIL。
+// D3/D4：最终 Governance Guard 复核（Task Delta 权威判定）——治理/pre-existing/HEAD/index 任一越界即 TASK_FAIL。
+// D4：复核基于【重新取证 + 必要时仲裁】的确定性证据，而不是复用实施期快照，也不把不可信 hash 当作 BLOCK 依据。
 {
-  const gv = deltaViolations(currentDelta)
-  if (gv.length) {
-    return blocked(gv[0].code, 'Verify', {
+  const guardSnap = await snapshotWorktree('Verify 后最终 Governance Guard 取证', 'Verify')
+  if (!guardSnap) return modelBlocked('Verify', mname(modelFor('snapshot')))
+  const guardEval = await evaluateTaskDelta(WORKTREE_BASELINE, guardSnap, [spec.specPath], 'Verify', 'final_guard')
+  if (guardEval.baseline && guardEval.baseline !== WORKTREE_BASELINE) WORKTREE_BASELINE = guardEval.baseline
+  currentDelta = guardEval.delta
+  currentSnap = guardEval.current || guardSnap
+  allowedRepairFiles = computeAllowedRepairFiles(currentDelta, spec)
+  const gv = guardEval.blocked || guardEval.viols[0]
+  if (gv) {
+    return blocked(gv.code, 'Verify', {
       TASK_ID: spec.TASK_ID,
-      DETAIL: gv[0].detail + '（Verify 阶段最终 Governance Guard 复核，先于 TASK_PASS）',
+      DETAIL: gv.detail + '（Verify 阶段最终 Governance Guard 复核，先于 TASK_PASS）',
+      FINGERPRINT: { backend: FINGERPRINT_BACKEND, authority: CONTENT_IDENTITY_AUTHORITY, scriptSideHash: SCRIPT_SIDE_HASH_AVAILABLE, baselineEvidence: evidenceStatusOf(WORKTREE_BASELINE), currentEvidence: evidenceStatusOf(currentSnap), invalidDetected: FP_INVALID_DETECTED.slice(0, 8), falsePositivesRecovered: FP_FALSE_POSITIVES_RECOVERED.slice() },
+      ADJUDICATION: (guardEval.adjudications || []).slice(),
       GOVERNANCE_PROTECTED_PATHS: GOVERNANCE_PROTECTED_PATHS.concat([SELF_WORKFLOW_PATH]),
       FILES_CURRENTLY_CHANGED: currentDelta.taskChanged,
       SAFE_NEXT_ACTION: '最终验收发现治理/pre-existing/HEAD/index 边界被破坏，判 TASK_FAIL。编排器未执行任何还原命令；请人工核查工作区，治理变更须走人工授权的治理流程。',
@@ -1649,14 +2229,30 @@ return {
   ...modeSummary(),
   GOVERNANCE_D2: {
     WORKTREE_BASELINE_HEAD: WORKTREE_BASELINE.head,
-    TASK_DELTA: { taskChanged: currentDelta.taskChanged, taskGovernance: currentDelta.taskGovernance, preExistingUnchanged: currentDelta.preExistingUnchanged, externalChangedDuringTask: currentDelta.externalChangedDuringTask, preExistingReverted: currentDelta.preExistingReverted, headChanged: currentDelta.headChanged, stagedAppeared: currentDelta.stagedAppeared },
+    TASK_DELTA: { taskChanged: currentDelta.taskChanged, taskGovernance: currentDelta.taskGovernance, preExistingUnchanged: currentDelta.preExistingUnchanged, externalChangedDuringTask: currentDelta.externalChangedDuringTask, preExistingReverted: currentDelta.preExistingReverted, retryOwnedArtifacts: currentDelta.retryOwnedArtifacts, treeUnitChanges: currentDelta.treeUnitChanges, headChanged: currentDelta.headChanged, stagedAppeared: currentDelta.stagedAppeared },
     ALLOWED_REPAIR_FILES: allowedRepairFiles,
     GOVERNANCE_PROTECTED_PATHS: GOVERNANCE_PROTECTED_PATHS.concat([SELF_WORKFLOW_PATH]),
     DESTRUCTIVE_GIT_HARD_DENY: GIT_HARD_DENY_SUBCOMMANDS,
     FLASH_FORBIDDEN_GIT_MUTATING: GIT_MUTATING_SUBCOMMANDS,
-    SCOPE_JUDGE: 'SCRIPT_TASK_DELTA (baseline↔fingerprint snapshot), not raw git status',
-    DEFENSE_LAYERS: ['prompt(FLASH_REPAIR_RULES)', 'orchestrator-precheck(SELF_REPAIR_ELIGIBILITY/REPAIR_SCOPE)', 'command-denylist(gitCommandsRun scan, bypass-aware)', 'post-repair-fingerprint-verify', 'D3-gate-anti-cheat(required-downgrade + unsafe-:5432 scan)', 'immediate-BLOCK-on-violation'],
+    SCOPE_JUDGE: 'SCRIPT_TASK_DELTA (baseline↔deterministic byte evidence), not raw git status, not LLM self-reported hash',
+    DEFENSE_LAYERS: ['prompt(FLASH_REPAIR_RULES)', 'orchestrator-precheck(SELF_REPAIR_ELIGIBILITY/REPAIR_SCOPE)', 'command-denylist(gitCommandsRun scan, bypass-aware)', 'post-repair-fingerprint-verify', 'D3-gate-anti-cheat(required-downgrade + unsafe-:5432 scan)', 'D4-deterministic-byte-evidence(script-pinned command + verbatim rawStdout + format/self-consistency validation + dual-independent-rehash adjudication)', 'immediate-BLOCK-on-violation'],
     TOOL_LEVEL_HARD_BLOCK_AVAILABLE: false,
+  },
+  // ---- D4：内容身份证据链 + 同任务重试产物归属 ----
+  GOVERNANCE_D4: {
+    FINGERPRINT_BACKEND,
+    CONTENT_IDENTITY_AUTHORITY,
+    SCRIPT_SIDE_HASH_AVAILABLE,
+    PINNED_COMMAND_PROTOCOL: FP_PROTOCOL,
+    EVIDENCE_RUNS: FP_EVIDENCE_RUNS.slice(),
+    INVALID_EVIDENCE_DETECTED: FP_INVALID_DETECTED.slice(0, 12),
+    FALSE_POSITIVES_RECOVERED: FP_FALSE_POSITIVES_RECOVERED.slice(),
+    ADJUDICATION: ADJUDICATION_LOG.slice(),
+    ADJUDICATION_COUNT: adjudicationCount,
+    TASK_IDENTITIES: { baseline: identityMap(WORKTREE_BASELINE), current: identityMap(currentSnap) },
+    TREE_UNITS: Object.keys(WORKTREE_BASELINE.trees || {}).concat(Object.keys(currentSnap.trees || {})),
+    RETRY_OWNERSHIP: { status: RETRY_OWNERSHIP.status, retryOf: RETRY_OWNERSHIP.retryOf, artifacts: RETRY_OWNERSHIP.artifacts.slice(), accepted: RETRY_OWNERSHIP.accepted.slice(), rejected: RETRY_OWNERSHIP.rejected.slice() },
+    REMAINING_LIMITATION: 'byte identity 依赖只读执行手原样回传（脚本沙箱无 fs/crypto，已实测）；以"命令逐字一致 + 严格格式/自洽校验 + 双独立 invocation 签名收敛 + Verifier 抽查重跑"把不可信证据降为可检出风险，而非彻底消除。',
   },
   GIT: baseline,
 }

@@ -302,7 +302,7 @@ Release Gate 返回新增 `ENGINEERING_RELEASE_READY: YES/NO`（按门禁判定�
 `PAUSED_FOR_HUMAN`（`BLOCK_REASON=HUMAN_REQUIRED`）、`MODEL_POLICY_VIOLATION`（FLASH_ONLY 路由守卫在任何 agent 调用前拦截被禁模型）、
 `GOVERNANCE_POLICY_VIOLATION`（required 降级）、`BLOCKED_UNSAFE_DATABASE_TARGET`（:5432 破坏性目标）。
 
-### D3 回归场景（新增 24 条 d3-01..d3-24，总数 36→60）
+### D3 回归场景（新增 25 条 d3-01..d3-25，总数 36→61）
 
 d3-01 happy(qfmodel-only/单审/合成判据全真/角色分离)｜d3-02 trip-wire 强制路由 Max→MODEL_POLICY_VIOLATION(0 agent)｜
 d3-03/d3-20 required 永远红(含执行手自报 allPassed:true)→BLOCKED_REPAIR_LIMIT（自报无验收权）｜
@@ -312,14 +312,93 @@ d3-09 B 永远否决→BLOCKED_REPAIR_LIMIT｜d3-10 required 降级 record→GOV
 d3-11 :5432 DROP→BLOCKED_UNSAFE_DATABASE_TARGET｜d3-12 record 红不降门禁→TASK_PASS｜
 d3-13 required 迁移缺安全环境→BLOCKED_MISSING_SAFE_TEST_ENV｜d3-14 Worker 写 AGENTS.md→BLOCKED_GOVERNANCE_CONFLICT｜
 d3-15 Self-Repair 报 `git checkout HEAD`→GOVERNANCE_POLICY_VIOLATION｜d3-16 Self-Repair 合法→TASK_PASS｜
-d3-17 humanDecisionRequired→PAUSED_FOR_HUMAN｜d3-18 privacy 但非 HIGH→单审（不误触发双审）｜
+d3-17 humanDecisionRequired→PAUSED_FOR_HUMAN｜d3-18 privacy→命中 HIGH，走 A+B 双独立审查（dualReview）｜
 d3-19 securitySensitive→HIGH 双审｜d3-21 migration taskType→HIGH 双审｜
 d3-22 连红两轮→第 2 轮起新独立 RCA invocation→TASK_PASS｜d3-23 显式 executionMode:'FULL' 恢复路径→qmodel_38max 被调用→TASK_PASS｜
-d3-24 HIGH 且 A/B 均永远否决→BLOCKED_REPAIR_LIMIT（有界，无死循环）。
+d3-24 HIGH 且 A/B 均永远否决→BLOCKED_REPAIR_LIMIT（有界，无死循环）｜
+d3-25 一次性测试库 `:55432` downgrade 不被 `:5432` 反作弊误伤→单审 TASK_PASS。
 
 D1 的 21 条 + D2 的 15 条（含 legacy 11 条已并入 D1 计数）全部保留且仍 PASS；
 所有 d3-*（除 d3-23）运行模型集合恒为 `{qfmodel}`；gateCalls 有上界（≤4），无死循环。
-运行：`node .qoder/workflow-state/dryrun-harness.mjs test` → **60/60**。
+运行：`node .qoder/workflow-state/dryrun-harness.mjs test` → **61/61**。
+
+## 第五轮治理修复 D4（2026-10-08）：确定性字节证据 + 内容身份仲裁
+
+### 事故根因（D4 要根治的真实事件）
+
+D2 的 `WORKTREE_BASELINE` 依赖执行手**自报**的 hash 摘要。M0-003 因此被误判 BLOCK：
+执行手交回的是 40 位 git blob SHA-1（`git status`/`git diff` 的 index 摘要形态），
+脚本拿它与任务前的另一形态摘要相比 → 永远不等 → 判成"pre-existing 文件被外部改动"。
+**摘要来源与格式不由脚本固定，内容身份就不可信。**
+
+### 内容身份权威（§6/§22/§23）
+
+```
+FINGERPRINT_BACKEND            = AGENT_EXECUTOR_FALLBACK   （实测：脚本沙箱无 fs/crypto/require，SCRIPT_SIDE_HASH_AVAILABLE=false）
+CONTENT_IDENTITY_AUTHORITY     = DETERMINISTIC_BYTE_HASH
+```
+
+- 文件内容身份 = **SHA-256**；未跟踪目录 = **目录单元** `tree:treeSha256`（成员 manifest 先 `LC_ALL=C sort`，枚举顺序绝不改变身份）。
+- `size` 与 `md5` 只做**佐证**（不自洽 → 证据非法），绝不参与身份判定；`mtime` 从未被采集，协议里只允许以 `#` 注释出现，解析器直接忽略 → **"只改了 mtime" 结构上不可能是内容变更**。
+- 命令由脚本生成并逐字下发（`git rev-parse HEAD` / `git branch --show-current` / `git status --porcelain=v1 -unormal` / `find|sort` / `wc -c` / `sha256sum` / `md5sum`），执行手（只读 invocation）只负责跑这一条命令并原样回传 stdout；
+  **所有判定在脚本侧完成**：`parseFingerprintEvidence` 校验协议头、命令逐字一致、零写入、退出码 0、X/Y 状态、路径 canonical、无重复、SHA-256 必须 64 位小写 hex（40 hex → `DIGEST_IS_40HEX_GIT_BLOB_SHA1`）、md5 32 hex、size 非负整数、目录单元 fileCount 与成员自洽。任一不过 → 该快照**不参与 Task Delta**。
+
+### 接线点（每次都走确定性取证）
+
+Preflight 建 `WORKTREE_BASELINE`｜Implement 前/后｜Self-Repair/受守卫 Flash 修复前/后｜Verify｜Final Governance Guard。
+
+### FINGERPRINT_ADJUDICATION（§16–§20，首次不一致不再直接 BLOCK）
+
+```
+baseline ↔ post 身份不一致
+→ 两个彼此不可见的独立只读 invocation 重新取证（fingerprint-rehash-a / fingerprint-rehash-b）
+→ 脚本比较两者的确定性签名：
+   一致且与 baseline 相同 → SNAPSHOT_FALSE_POSITIVE_RECOVERED（继续，M0-003 形态在此被纠正）
+   一致且确实不同         → EXTERNAL_CHANGED_DURING_TASK（有字节证据，BLOCK 成立）
+   A/B 不一致 / 任一非法   → BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN（停止交人工，绝不猜）
+   任务前基线本身非法      → 由两个收敛 invocation 重建（BASELINE_REESTABLISHED_BY_CONVERGENCE）
+   非法证据被合法证据替代  → EVIDENCE_REESTABLISHED_BY_CONVERGENCE
+```
+
+仲裁预算 1 轮；治理/HEAD/index 违规**不仲裁、不降级**，立即 BLOCK。仲裁全程写入终态报告 `ADJUDICATION` 链。
+
+### 同任务重试产物归属（§26–§30）
+
+`retryOfTaskId` + `retryArtifacts[{path, priorSpecExpected, priorRunSha256, priorRunWorkerEvidence}]` 全部满足才认定 `RETRY_OWNED`：
+同任务身份、非治理路径、同时在上一 run 与当前 SPEC 的写白名单内、上一 run 由 Worker 创建/修改的 manifest 证据（≥8 字符）、
+`priorRunSha256` 为 64 hex 且与**已验证的**任务前基线字节逐字相等。任一不满足 → 拒绝并给出原因
+（`TASK_ID_MISMATCH` / `GOVERNANCE_PROTECTED` / `NOT_IN_CURRENT_TASK_SPEC_ALLOWLIST` / `PRIOR_RUN_SHA256_NOT_64HEX` / `NO_PRIOR_RUN_*` / `ARTIFACT_ABSENT_AT_RETRY_START`）。
+`LAST_TASK_OUTPUT_HASH ≠ CURRENT_RETRY_START_HASH` → **在任何写动作之前** `BLOCKED_RETRY_ARTIFACT_CHANGED_EXTERNALLY`：retry 绝不吞掉用户在两次 run 之间的改动。
+
+### 目录单元与写白名单（§25）
+
+pre-existing 未跟踪目录内的新增/删除，先看成员是否落在 `SPEC_SCHEMA.ALLOWED_WRITE_PATHS`（新增，缺省回退 `EXPECTED_FILES`）：
+全在 → 归 `taskChanged`；否则 → 目录单元身份变化 → `externalChangedDuringTask`，并把**成员级明细**写入 `treeUnitChanges[{dir, addedOrChanged}]`（删除记 `path (DELETED)`），BLOCK 证据可直接指到具体文件。
+
+### D4 新增终态
+
+`BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN`（取证链路不可信，停止而非推断）、
+`BLOCKED_RETRY_ARTIFACT_CHANGED_EXTERNALLY`（retry 起点字节与上一 run 产物不符）、
+`GOVERNANCE_POLICY_VIOLATION:FINGERPRINT_EXECUTOR_WROTE_FILES` / `:FINGERPRINT_EXECUTOR_FORBIDDEN_GIT`（只读取证执行手写入或跑破坏性 git）。
+
+### D4 回归场景（新增 28 条 d4-01..d4-28，总数 61→89）
+
+d4-01 字节未变→UNCHANGED｜d4-02 仅 mtime 变→绝不判变更｜d4-03 同 size 1 字节差异→SHA-256 捕获+双确认 BLOCK｜
+d4-04 size 变→BLOCK｜d4-05/d4-06/d4-07 目录单元增/删/改名→BLOCK 且成员级明细｜d4-08 枚举顺序反转→treeSha 相同→无 Delta｜
+d4-09 40-hex SHA-1（M0-003 根因）→UNCERTAIN｜d4-10 非 hex 摘要→UNCERTAIN｜d4-11 协议头缺失→基线重建+证据重建→继续｜
+**d4-12 M0-003 误报复现：post 摘要与 baseline 不符但两个独立 rehash 均显示未变 → SNAPSHOT_FALSE_POSITIVE_RECOVERED → TASK_PASS**｜
+d4-13 两个 rehash 一致显示真变→BLOCK｜d4-14 A/B 矛盾→UNCERTAIN｜d4-15 qgraphflow 真实形态两次取证签名一致｜
+d4-16 同任务产物→RETRY_OWNED_APPLIED｜d4-17 任务号不同→绝不继承｜d4-18 产物被外部编辑→写之前 BLOCK｜
+d4-19 治理产物绝不 retry-owned｜d4-20 required 永远红→BLOCKED_REPAIR_LIMIT（D1 未削弱）｜
+d4-21 目录在 ALLOWED_WRITE_PATHS 内→归本任务｜d4-22 Self-Repair 破坏性 git→仍 BLOCK｜
+d4-23 HIGH 双审+确定性证据→TASK_PASS｜d4-24 HUMAN_REQUIRED→仍 PAUSED_FOR_HUMAN｜
+d4-25 执行手改写命令→UNCERTAIN｜d4-26 执行手写文件→标记违规且 fail-closed｜
+d4-27 fileCount 不自洽 / d4-28 孤儿树成员→证据非法→UNCERTAIN。
+
+D1 21 条 + D2 15 条 + D3 25 条 + D4 28 条 = 89（legacy 已并入 D1 计数）**全部保留且仍 PASS**；
+运行：`node .qoder/workflow-state/dryrun-harness.mjs test` → **89/89**（含 `SYNTAX_OK` + `STATIC_OK`）。
+终态报告新增 `GOVERNANCE_D4`（backend/authority/PINNED_COMMAND_PROTOCOL/EVIDENCE_RUNS/INVALID_EVIDENCE_DETECTED/FALSE_POSITIVES_RECOVERED/ADJUDICATION）
+与 `TASK_DELTA.retryOwnedArtifacts` / `TASK_DELTA.treeUnitChanges`。
 
 ## 运行监控 / 暂停 / 恢复 / 取消
 

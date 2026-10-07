@@ -62,6 +62,15 @@ PASS 必须同时满足，缺一不可：
 - 每项 check 记录 name/performed/result/command/exitCode/evidence；无证据项显式标 missing_evidence，禁止沉默跳过。
 - skippedGates 必须写明原因（项目不支持该命令等），Max Verify 复核其正当性。
 
+### D4 — 内容身份 = 确定性字节证据（2026-10-08）
+
+- `CONTENT_IDENTITY_AUTHORITY = DETERMINISTIC_BYTE_HASH`：文件内容身份只认 **SHA-256**；未跟踪目录只认**目录单元** `tree:treeSha256`（成员 manifest 先 `LC_ALL=C sort`，枚举顺序不改身份）。`size`/`md5` 只作佐证，**mtime 结构性排除**——"只改了 mtime"不可能被判为内容变更。
+- 取证命令由 Workflow 脚本逐字下发（协议 `V|D4-1`），执行手（只读 invocation）只运行、原样回传，**任何判定在脚本侧完成**：命令逐字一致、exitCode=0、零写入、路径 canonical、无重复、SHA-256 必须 64 位小写 hex（40 位 hex = git blob SHA-1，属非法摘要）、md5 32 hex、size 非负整数、目录单元 fileCount 与成员自洽。未通过校验的快照**不参与 Task Delta**。
+- **首次 baseline↔post 不一致不直接 BLOCK**：进入 `FINGERPRINT_ADJUDICATION`——两个彼此不可见的独立只读 invocation 重新取证，脚本按确定性签名收敛。一致且与 baseline 相同 → `SNAPSHOT_FALSE_POSITIVE_RECOVERED`（恢复推进，M0-003 误报形态即此）；一致且确实不同 → `EXTERNAL_CHANGED_DURING_TASK`（有字节证据，BLOCK 成立）；A/B 不一致或任一非法 → `BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN`（停止交人工，**绝不猜**）。治理/HEAD/index 违规不仲裁、不降级。
+- **同任务重试不得吞用户改动**：`RETRY_OWNED` 需同时满足同任务身份、非治理路径、两版 SPEC 白名单、上一 run manifest 证据、64-hex `priorRunSha256` 与已验证基线字节相等；`LAST_TASK_OUTPUT_HASH ≠ CURRENT_RETRY_START_HASH` → 在**任何写动作之前** `BLOCKED_RETRY_ARTIFACT_CHANGED_EXTERNALLY`。
+- pre-existing 未跟踪目录内的增删改：成员全落在 `TASK_SPEC.ALLOWED_WRITE_PATHS` 内才归本任务（`taskChanged`），否则目录单元身份变化 → `BLOCKED_EXTERNAL_WORKTREE_CHANGE`，并把成员级明细写入 `treeUnitChanges`。
+- 只读取证执行手若写入文件或运行破坏性 git → `GOVERNANCE_POLICY_VIOLATION` 标记，且该证据不可信 → fail-closed 停止。
+
 ## 治理文件门禁
 
 - 实施任务改动治理文件（AGENTS.md、.qoder/rules/**、.qoder/workflows/**、.qoder/workflow-state/**、.gitignore、.github/**、docs/workflow/**）→ 直接 TASK_FAIL。
