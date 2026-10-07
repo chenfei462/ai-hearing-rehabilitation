@@ -23,7 +23,10 @@
       "graph.json": "5f12d3d4503d2305f352b21b8d275bb5e2ea544a32f3d539ea6909951373f138",
       "index.html": "2bd127b7c22c25b20e04804cc5c745f686f7f462cae96649aa9b47612d4bf600",
       "fileCount": 2,
-      "bytes": { "graph.json": 34972, "index.html": 794348 },
+      "bytes": {
+        "graph.json": 34972,
+        "index.html": 794348
+      },
       "md5Corroboration": {
         "graph.json": "2fe742d810f7cd0ce2f5eb401f0050a0",
         "index.html": "c1bb9c9b90d92db933577e4056e3ba91"
@@ -295,13 +298,14 @@
       "summary": "Workflow governance defect: anti-downgrade guard and Gate Schema are mutually unsatisfiable for baseline/audit tasks, and the guard message misattributes planner-authored tiers to executor tampering",
       "status": "OPEN",
       "severity": "P1-BLOCKING",
-      "disposition": "REQUIRES HUMAN/Max GOVERNANCE PHASE — .qoder/workflows/** is Flash-forbidden and the Night Chain forbids auto-fixing governance defects at night. Two candidate repairs offered, neither applied: (A) guard reads the tier annotation from the spec string instead of assuming mandatory==required; (B) add a distinct EVIDENCE_ONLY/RECORD_ONLY command list in the SPEC contract so record items are not listed in MANDATORY_TESTS."
+      "disposition": "REQUIRES HUMAN/Max GOVERNANCE PHASE — .qoder/workflows/** is Flash-forbidden and the Night Chain forbids auto-fixing governance defects at night. Two candidate repairs offered, neither applied: (A) guard reads the tier annotation from the spec string instead of assuming mandatory==required; (B) add a distinct EVIDENCE_ONLY/RECORD_ONLY command list in the SPEC contract so record items are not listed in MANDATORY_TESTS.",
+      "candidateRepairs_C": "C (evaluated and DECLINED unattended): keep the guard untouched and author the TASK_SPEC so MANDATORY_TESTS/REGRESSION_TESTS contain only genuinely must-pass commands, moving baseline probes (full pytest/ruff/docker pull/migration availability) out of those arrays into ACCEPTANCE_CRITERIA + record-tier gate commands. Mechanically viable — retry-ownership preconditions were verified satisfiable (prior spec EXPECTED_FILES/ALLOWED_WRITE_PATHS contain the artifact; priorRunSha256 56ad8639...8def confirmed 64-hex; journal.jsonl#L18 of run wf_bd5d9d4f-2c7 records Worker IMPLEMENTED/FILES_CREATED for it). Declined because it silently redefines the semantics of MANDATORY_TESTS from \"must be executed\" (:1450/:1492) to \"must pass\", relocating enforcement of \"probe truly executed\" from a machine-checkable array into AC prose + Review judgment. That is a gate-shape change, i.e. exactly the governance decision the Night Chain reserves for a human (\"governance defects found at night must NOT be auto-fixed\"), so choosing it at 03:00 unattended would be circumvention, not compliance."
     }
   },
   "humanDecisionsRequired": [
     {
       "id": "HD-N-01",
-      "decision": "Fix the guard/Gate-Schema conflict (F-20) in .qoder/workflows/project-feature-delivery.js, and choose repair A or B",
+      "decision": "Fix the guard/Gate-Schema conflict (F-20) in .qoder/workflows/project-feature-delivery.js: choose repair A (guard validates an explicit tier field instead of substring-matching MANDATORY/REGRESSION strings), B (SPEC gains MACHINE_GATE_COMMANDS[].tier and MANDATORY_TESTS becomes a semantic-only list), or C (keep guard as-is and redefine MANDATORY_TESTS as must-pass only — evaluated by the night orchestrator, mechanically viable, deliberately NOT taken unattended; see findings.F-20.candidateRepairs_C)",
       "blocks": "ALL remaining M0 baseline tasks (M0-005/006/007/008) and therefore M0 MILESTONE_PASS"
     },
     {
@@ -409,7 +413,7 @@
     }
   ],
   "notes": {
-    "resumePrecondition": "Do NOT relaunch M0-005/006/007/008 until F-20 is repaired in .qoder/workflows/project-feature-delivery.js (HD-N-01 / FIX-GOV-001). Machine-proven that every baseline record-tier spec shape self-trips REQUIRED_DOWNGRADE, so a relaunch repeats a known wall at ~40 min/run. Required order: human fixes guard -> M0-005 -> M0-006 -> M0-007/M0-008 -> M0 Milestone Gate (Exit also needs HD-N-04 governance write of FIX-* rows into docs/workflow/TASK_CATALOG.md).",
+    "resumePrecondition": "Do NOT relaunch M0-005/006/007/008 until F-20 is repaired in .qoder/workflows/project-feature-delivery.js (HD-N-01 / FIX-GOV-001). Machine-proven that every baseline record-tier spec shape self-trips REQUIRED_DOWNGRADE, so a relaunch repeats a known wall at ~40 min/run. Required order: human fixes guard -> M0-005 -> M0-006 -> M0-007/M0-008 -> M0 Milestone Gate (Exit also needs HD-N-04 governance write of FIX-* rows into docs/workflow/TASK_CATALOG.md). Option C is available to the human but was not exercised unattended.",
     "dbSafety": "backend/alembic.ini:5 default sqlalchemy.url points to postgresql://...@localhost:5432/cochlear_rehab (the UNKNOWN listener). Any migration test MUST override the URL to a Goal-created isolated non-5432 container; NEVER touch 5432.",
     "dockerAvailable": "Docker 29.5.2 / Compose v5.1.4 confirmed available for §32-35 isolated test container.",
     "serialPolicy": "Overnight default serial (§18); progress files committed before Workflow launch and updated only after TASK_PASS (§116/§117)."
