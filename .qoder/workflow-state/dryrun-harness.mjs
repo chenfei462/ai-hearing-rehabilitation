@@ -27,7 +27,14 @@
 //           d4-08 枚举顺序无关｜d4-21 目录在 ALLOWED_WRITE_PATHS 内→归本任务 taskChanged
 //         · D1/D2/D3 保持：d4-20 required 永远红→BLOCKED_REPAIR_LIMIT｜d4-22 破坏性 git→仍 BLOCK｜
 //           d4-23 HIGH 双审仍生效｜d4-24 HUMAN_REQUIRED 仍 PAUSED
-// 全量：node .qoder/workflow-state/dryrun-harness.mjs test → 89/89（D1+D2+D3+D4）
+//       D5 恢复 FULL 默认回归（17）：d5-01..d5-17
+//         · d5-01 默认（不传 executionMode）→ ACTIVE/DEFAULT_EXECUTION_MODE 均 FULL｜d5-02 显式 FULL 等价
+//         · d5-03..d5-09 逐调用角色-模型矩阵：Planner/Explorer/RCA/Reviewer(A·B)/Verifier=Max，Worker/Gate/Self-Repair=Flash
+//         · d5-10/d5-11 无 fallback：Max 探针失败 / Max 角色返回空 → BLOCKED_MODEL_UNAVAILABLE，Flash 绝不代替
+//         · d5-12/d5-13 显式 executionMode:'FLASH_ONLY' 降级路径完整保留（含 HIGH 双独立审查）
+//         · d5-14 非法 executionMode → fail-closed（Input 阶段零 agent 调用，绝不静默回落）
+//         · d5-15/d5-16 D4 确定性字节证据 + 同任务重试归属在 FULL 下保持｜d5-17 D2 治理写保护在 FULL 下保持
+// 全量：node .qoder/workflow-state/dryrun-harness.mjs test → 106/106（D1+D2+D3+D4+D5）
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -257,6 +264,41 @@ if (cmd === 'test' || cmd === 'regression') {
     { scenario: 'd4-27-tree-filecount-inconsistent', status: 'BLOCKED', block: 'BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN', maxGateCalls: 0, mode: 'FLASH_ONLY', qfmodelOnly: true, rehashPair: true, invalidEvidenceContains: 'TREE_FILECOUNT_MISMATCH' },
     // 28 树成员不属于任何目录单元 → 证据非法 → UNCERTAIN
     { scenario: 'd4-28-tree-member-without-unit', status: 'BLOCKED', block: 'BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN', maxGateCalls: 0, mode: 'FLASH_ONLY', qfmodelOnly: true, rehashPair: true, invalidEvidenceContains: 'TREE_MEMBER_WITHOUT_UNIT' },
+    // ---- D5 恢复 FULL 为默认执行模式回归（D5-TEST-01..17，人工授权 2026-10-08）----
+    // 01 ★默认形态★：【完全不传】executionMode → Workflow 自报 ACTIVE/DEFAULT_EXECUTION_MODE 均 = FULL，且双模型真的分工干活
+    { scenario: 'd5-01-default-full-task-pass', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FULL', argOmitted: true, activeMode: 'FULL', defaultModeFull: true, optInPreserved: true, maxInvoked: true, singleReview: true, formula: true, roleSep: true },
+    // 02 显式 executionMode:'FULL' 与默认等价（调用方显式声明不改变政策）
+    { scenario: 'd5-02-explicit-full-task-pass', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FULL', argPassed: 'FULL', activeMode: 'FULL', defaultModeFull: true, maxInvoked: true, singleReview: true, formula: true },
+    // 03 Planner 族（Preflight/Classify/Scope Check/Task Spec）逐调用 = qmodel_38max，且实施/门禁绝不为 Max
+    { scenario: 'd5-03-planner-routes-max', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', formula: true, roleModelExpected: { preflight: 'qmodel_38max', classify: 'qmodel_38max', 'scope-check': 'qmodel_38max', 'task-spec': 'qmodel_38max' }, forbidMaxLabels: ['implement', 'machine-gate', 'self-repair', 'rca-fix'] },
+    // 04 Explorer = Max（只读探索由验收官执行）
+    { scenario: 'd5-04-explorer-routes-max', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', formula: true, roleModelExpected: { explore: 'qmodel_38max' }, forbidMaxLabels: ['implement', 'machine-gate'] },
+    // 05 Worker/Machine Gate = Flash，Review/Verify = Max（实施者无验收权的模型级体现）
+    { scenario: 'd5-05-worker-routes-flash', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', formula: true, roleModelExpected: { implement: 'qfmodel', 'machine-gate': 'qfmodel', 'max-review': 'qmodel_38max', verify: 'qmodel_38max' }, forbidMaxLabels: ['implement', 'machine-gate'] },
+    // 06 RCA = 独立 Max invocation（d3-22 的 FULL 版本）；Self-Repair/FIX_SPEC 实施仍为 Flash
+    { scenario: 'd5-06-rca-max-under-full', status: 'TASK_PASS', maxGateCalls: 4, mode: 'FULL', activeMode: 'FULL', formula: true, singleReview: true, expectLabels: ['self-repair', 'rca', 'rca-fix'], roleModelExpected: { rca: 'qmodel_38max', 'self-repair': 'qfmodel', 'rca-fix': 'qfmodel' } },
+    // 07 独立 Review = Max
+    { scenario: 'd5-07-reviewer-max-under-full', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', formula: true, roleModelExpected: { 'max-review': 'qmodel_38max' }, forbidMaxLabels: ['implement'] },
+    // 08 Verify = Max
+    { scenario: 'd5-08-verifier-max-under-full', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', formula: true, roleModelExpected: { verify: 'qmodel_38max' }, forbidMaxLabels: ['implement', 'machine-gate'] },
+    // 09 HIGH Risk：Reviewer A 与 B 均为独立 Max invocation
+    { scenario: 'd5-09-high-risk-reviewers-max', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', formula: true, dualReview: true, roleModelExpected: { 'max-review': 'qmodel_38max', 'max-review-b': 'qmodel_38max' } },
+    // 10 无 fallback ①：Max 探针失败 → BLOCKED_MODEL_UNAVAILABLE，Flash 绝不代替任何决策/实施调用
+    { scenario: 'd5-10-max-probe-down-blocks', status: 'BLOCKED', block: 'BLOCKED_MODEL_UNAVAILABLE', maxGateCalls: 0, mode: 'FULL', activeMode: 'FULL', forbidLabels: ['preflight', 'classify', 'explore', 'task-spec', 'implement', 'machine-gate', 'max-review', 'verify'] },
+    // 11 无 fallback ②：探针通过但 Max 角色实际返回空 → 仍 BLOCKED_MODEL_UNAVAILABLE，绝不改用 qfmodel 重跑该角色
+    { scenario: 'd5-11-max-role-down-no-fallback', status: 'BLOCKED', block: 'BLOCKED_MODEL_UNAVAILABLE', maxGateCalls: 0, mode: 'FULL', activeMode: 'FULL', expectLabels: ['task-spec'], roleModelExpected: { 'task-spec': 'qmodel_38max' }, forbidLabels: ['implement', 'machine-gate', 'self-repair', 'max-review', 'verify'] },
+    // 12 显式降级仍完整可用：executionMode:'FLASH_ONLY' → 运行时恒 qfmodel、默认字段仍 FULL、门禁判据不变
+    { scenario: 'd5-12-explicit-flash-only-preserved', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FLASH_ONLY', argPassed: 'FLASH_ONLY', activeMode: 'FLASH_ONLY', defaultModeFull: true, optInPreserved: true, qfmodelOnly: true, singleReview: true, formula: true, roleSep: true },
+    // 13 显式降级 + HIGH Risk：A/B 双独立审查仍为两个 qfmodel invocation（不因 D5 而丢失 D3 能力）
+    { scenario: 'd5-13-flash-high-double-review', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FLASH_ONLY', argPassed: 'FLASH_ONLY', activeMode: 'FLASH_ONLY', qfmodelOnly: true, dualReview: true, formula: true, roleModelExpected: { 'max-review': 'qfmodel', 'max-review-b': 'qfmodel' } },
+    // 14 非法 executionMode → fail-closed：在任何 agent() 调用之前 BLOCK，既不降级也不静默回落默认值
+    { scenario: 'd5-14-invalid-execution-mode-fail-closed', status: 'BLOCKED', block: 'INVALID_EXECUTION_MODE', maxGateCalls: 0, mode: 'INVALID', argPassed: 'FLASH-ONLY', activeMode: 'FULL', noAgents: true, failedPhase: 'Input' },
+    // 15 D4 保持：确定性字节证据链在 FULL 下同样成立（取证执行手 = Max 只读 invocation）
+    { scenario: 'd5-15-d4-fingerprint-under-full', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', formula: true, d4Backend: 'AGENT_EXECUTOR_FALLBACK', d4Authority: 'DETERMINISTIC_BYTE_HASH', noAdjudication: true, rehashNone: true, deltaPreExistingUnchangedIncludes: 'backend/app/pre.py', roleModelExpected: { 'worktree-snapshot': 'qmodel_38max', implement: 'qfmodel' } },
+    // 16 D4 保持：同任务重试产物归属在 FULL 下同样成立（M0-003 重跑依赖此路径）
+    { scenario: 'd5-16-d4-retry-ownership-under-full', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', formula: true, noAdjudication: true, rehashNone: true, retryStatus: 'RETRY_OWNED_APPLIED', retryAcceptedPath: ART, deltaRetryOwnedIncludes: ART, roleModelExpected: { implement: 'qfmodel', verify: 'qmodel_38max' } },
+    // 17 D2 保持：FULL 下 Worker 实施阶段改治理文件 → BLOCKED_GOVERNANCE_CONFLICT，且不启动任何修复（d3-14 的 FULL 版本）
+    { scenario: 'd5-17-full-governance-write-blocked', status: 'BLOCKED', block: 'BLOCKED_GOVERNANCE_CONFLICT', maxGateCalls: 0, mode: 'FULL', activeMode: 'FULL', forbidLabels: ['self-repair', 'rca-fix', 'fix'], roleModelExpected: { implement: 'qfmodel' } },
   ]
 
   const ALLOWED_MODELS = new Set(['qmodel_38max', 'qfmodel'])
@@ -322,6 +364,30 @@ if (cmd === 'test' || cmd === 'regression') {
       const flat = arr.map((t) => String((t && t.dir) || '') + '/' + String((t && t.addedOrChanged) || '')).concat(arr.map((t) => String((t && t.addedOrChanged) || '')))
       if (flat.indexOf(exp.deltaTreeUnitIncludes) < 0) errs.push(`D4 delta.treeUnitChanges missing ${exp.deltaTreeUnitIncludes} (got=${JSON.stringify(arr)})`)
     }
+    // ---- D5 断言：默认模式=FULL / 显式参数形状 / 逐角色模型矩阵 / 无 fallback / 非法模式零调用 ----
+    if (exp.argOmitted && parsed.executionModeArg !== 'NOT_PASSED') errs.push(`D5 expected executionMode NOT_PASSED (default call shape), got=${parsed.executionModeArg}`)
+    if (exp.argPassed && parsed.executionModeArg !== exp.argPassed) errs.push(`D5 expected executionMode arg '${exp.argPassed}', got=${parsed.executionModeArg}`)
+    if (exp.activeMode && parsed.ACTIVE_EXECUTION_MODE !== exp.activeMode) errs.push(`D5 ACTIVE_EXECUTION_MODE expected=${exp.activeMode} got=${parsed.ACTIVE_EXECUTION_MODE}`)
+    if (exp.defaultModeFull && parsed.DEFAULT_EXECUTION_MODE !== 'FULL') errs.push(`D5 DEFAULT_EXECUTION_MODE expected=FULL got=${JSON.stringify(parsed.DEFAULT_EXECUTION_MODE)}`)
+    if (exp.optInPreserved && parsed.FLASH_ONLY_MODE_PRESERVED !== true) errs.push(`D5 FLASH_ONLY_MODE_PRESERVED must be true (degraded mode retained), got=${JSON.stringify(parsed.FLASH_ONLY_MODE_PRESERVED)}`)
+    if (exp.roleModelExpected) {
+      for (const lb of Object.keys(exp.roleModelExpected)) {
+        const want = exp.roleModelExpected[lb]
+        const got = (parsed.labelModels || {})[lb]
+        if (!got) errs.push(`D5 label '${lb}' was never invoked (role-model matrix unverifiable)`)
+        else if (got.length !== 1 || got[0] !== want) errs.push(`D5 label '${lb}' model expected=[${want}] got=[${got.join(',')}]`)
+      }
+    }
+    for (const lb of (exp.forbidMaxLabels || [])) {
+      const got = (parsed.labelModels || {})[lb] || []
+      if (got.indexOf('qmodel_38max') >= 0) errs.push(`D5 label '${lb}' must NOT be served by qmodel_38max in ${expMode} (got=[${got.join(',')}])`)
+    }
+    for (const lb of (exp.forbidFlashLabels || [])) {
+      const got = (parsed.labelModels || {})[lb] || []
+      if (got.indexOf('qfmodel') >= 0) errs.push(`D5 label '${lb}' must NOT be served by qfmodel (got=[${got.join(',')}])`)
+    }
+    if (exp.noAgents && ((parsed.modelsUsed || []).length || (parsed.agentLabels || []).length)) errs.push(`D5 expected ZERO agent invocations, got=[${(parsed.agentLabels || []).join(',')}]`)
+    if (exp.failedPhase && d4.failedPhase !== exp.failedPhase) errs.push(`D5 FAILED_PHASE expected=${exp.failedPhase} got=${d4.failedPhase}`)
     if (errs.length) failures.push(`${exp.scenario}: ${errs.join('; ')}`)
     else { pass++; console.log(`  PASS ${exp.scenario} -> ${parsed.WORKFLOW_STATUS}${parsed.BLOCK_REASON ? '/' + parsed.BLOCK_REASON : ''} (gateCalls=${parsed.gateCalls}, models=[${(parsed.modelsUsed || []).join(',')}])`) }
   }
@@ -337,8 +403,32 @@ let gateCalls = 0
 let reviewCalls = 0
 let reviewBCalls = 0
 
-// D3/D4：每个场景的执行模式（legacy → FULL，d3-*/d4-* → FLASH_ONLY；d3-23 例外用于验证 FULL 恢复路径）。
-const MODE = scenario === 'd3-23-fullmode-recovery' ? 'FULL' : (/^d[34]-/.test(scenario) ? 'FLASH_ONLY' : 'FULL')
+// ============================================================
+// D5：场景 → 执行模式编排
+//   legacy / d3-* / d4-* 的规则保持原样（不得因 D5 改动旧场景语义）；
+//   d5-* 覆盖"默认已恢复 FULL"的每一种证明形态：
+//     FULL_DEFAULT = 完全【不传】executionMode（唯一能证明"默认值本身"的形态）
+//     INVALID      = 传入非法 executionMode（fail-closed：任何调用之前停止，且不静默降级）
+//     FLASH_ONLY   = 显式请求降级（D3 能力必须仍然可用）
+//     FULL         = 其余 d5-*（显式双模型）
+// ============================================================
+const D5_NO_MODE_ARG = new Set(['d5-01-default-full-task-pass'])
+const D5_FLASH_ONLY = new Set(['d5-12-explicit-flash-only-preserved', 'd5-13-flash-high-double-review'])
+const D5_INVALID_MODE = new Set(['d5-14-invalid-execution-mode-fail-closed'])
+// Max 探针失败（模拟 Max 配额不可用）：FULL 下必须 BLOCKED_MODEL_UNAVAILABLE，绝不用 Flash 顶上
+const D5_MAX_PROBE_DOWN = new Set(['d5-10-max-probe-down-blocks'])
+// Max 探针通过、但某个 Max 角色 invocation 返回空（模拟运行中 Max 不可用）→ 同样必须 BLOCK，不降级
+const D5_MAX_ROLE_DOWN = { 'd5-11-max-role-down-no-fallback': new Set(['task-spec']) }
+
+const MODE = D5_INVALID_MODE.has(scenario) ? 'INVALID'
+  : D5_NO_MODE_ARG.has(scenario) ? 'FULL_DEFAULT'
+  : D5_FLASH_ONLY.has(scenario) ? 'FLASH_ONLY'
+  : /^d5-/.test(scenario) ? 'FULL'
+  : scenario === 'd3-23-fullmode-recovery' ? 'FULL'
+  : (/^d[34]-/.test(scenario) ? 'FLASH_ONLY' : 'FULL')
+// 只有 FULL_DEFAULT 形态省略该参数；INVALID 形态传非法字面量；其余显式传 MODE。
+const PASS_MODE_ARG = MODE !== 'FULL_DEFAULT'
+const EXECUTION_MODE_ARG = MODE === 'INVALID' ? 'FLASH-ONLY' : MODE
 const ALLOWED_RUNTIME = MODE === 'FLASH_ONLY' ? new Set(['qfmodel']) : new Set(['qmodel_38max', 'qfmodel'])
 // label → 角色（用于角色分离/独立性断言）
 const ROLE_OF = {
@@ -740,6 +830,14 @@ const D4_RETRY_SNAPS = {
     snap({ untracked: [RETRY_ART, 'backend/app/kb/pdf.py'], fingerprints: [fp(RETRY_ART, 'edited-by-user-between-runs'), fp('backend/app/kb/pdf.py', 'pdf1')] }),
   ],
 }
+// ============================================================
+// D5：把 D4 的证据/归属场景在【FULL 双模型】下复跑一遍（证明 D5 恢复默认没有削弱 D4）。
+// 复用同一组快照对象（只读 fixture，不复制语义），仅换 scenario 键与执行模式。
+// 必须注册在 D4_SCENARIOS / D4_DIRTY_FEATURE 计算之前，否则这些场景不会进入"feature 分支 dirty 预检"名单。
+// ============================================================
+D4_SNAPS['d5-15-d4-fingerprint-under-full'] = D4_SNAPS['d4-01-byte-identity-unchanged']
+D4_RETRY['d5-16-d4-retry-ownership-under-full'] = D4_RETRY['d4-16-retry-owned-artifact-allowed']
+D4_RETRY_SNAPS['d5-16-d4-retry-ownership-under-full'] = D4_RETRY_SNAPS['d4-16-retry-owned-artifact-allowed']
 const D4_SCENARIOS = new Set(Object.keys(D4_SNAPS).concat(Object.keys(D4_RETRY_SNAPS)))
 const D4_DIRTY_FEATURE = new Set(Object.keys(D4_SNAPS).concat(Object.keys(D4_RETRY_SNAPS)))
 // D4 §26–§30：按场景覆盖 TASK_SPEC 的允许写集合（EXPECTED_FILES / ALLOWED_WRITE_PATHS）。
@@ -763,6 +861,23 @@ D2_SELFREPAIR_GIT['d4-22-destructive-git-still-block'] = ['git checkout HEAD -- 
 D3_HIGH.add('d4-23-high-risk-still-dual-review')
 D3_HUMAN.add('d4-24-human-required-still-pauses')
 D3_GATE_FAIL_ALWAYS.add('d4-20-d1-required-fail-still-machine-fail')
+
+// ============================================================
+// D5 场景编排：默认恢复 FULL 后，角色矩阵 / 显式降级保留 / D1·D2·D3·D4 保护不削弱
+// ============================================================
+// 16：retry 产物归属在 FULL 下复跑（沿用 d4-16 的 SPEC 允许写集合）
+D4_SPEC['d5-16-d4-retry-ownership-under-full'] = D4_SPEC['d4-16-retry-owned-artifact-allowed']
+// 06：d3-22 的 FULL 版本 —— 连红两轮后由【独立 Max RCA invocation】出 FIX_SPEC
+D3_GATE_FAIL_UNTIL['d5-06-rca-max-under-full'] = 3
+D2_SELFREPAIR_GIT['d5-06-rca-max-under-full'] = ['git status']
+// 09/13：HIGH Risk 双独立审查（FULL = 两位 Max 审查者；FLASH_ONLY = 两位 Flash 审查者）
+D3_HIGH.add('d5-09-high-risk-reviewers-max')
+D3_HIGH.add('d5-13-flash-high-double-review')
+// 17：d3-14 的 FULL 版本 —— Worker 实施阶段改治理文件 → BLOCKED_GOVERNANCE_CONFLICT（gateCalls=0，不启动修复）
+SNAPSHOTS['d5-17-full-governance-write-blocked'] = [
+  CLEAN_BASE,
+  snap({ trackedModified: ['AGENTS.md', 'backend/app/kb/parser.py'], untracked: ['backend/app/kb/pdf.py'], fingerprints: [fp('AGENTS.md', 'a1'), fp('backend/app/kb/pdf.py', 'pdf1'), fp('backend/app/kb/parser.py', 'par1')] }),
+]
 
 let snapCalls = 0
 const rehashCalls = { a: 0, b: 0 }
@@ -794,8 +909,10 @@ function stubAgent(prompt, opts) {
   const model = opts && opts.model
   calls.push({ label, model, phase: opts && opts.phase, role: ROLE_OF[label] || null, readOnly: READ_ONLY.has(label), promptReadOnly: /只读|禁止\s*Write|禁止任何写|禁止修改任何文件/.test(prompt || '') })
   if (model && !ALLOWED_RUNTIME.has(model)) throw new Error('MODEL_POLICY_VIOLATION: ' + model + ' @ ' + label + ' (mode=' + MODE + ')')
+  // D5：模拟"被路由到 Max 的角色实际不可用"（探针通过、调用返回空）→ Workflow 必须 modelBlocked，绝不用 Flash 顶上。
+  if (D5_MAX_ROLE_DOWN[scenario] && D5_MAX_ROLE_DOWN[scenario].has(label)) return Promise.resolve(null)
   switch (label) {
-    case 'probe:max': return Promise.resolve(scenario === 'modeldown' ? null : 'OK')
+    case 'probe:max': return Promise.resolve(scenario === 'modeldown' || D5_MAX_PROBE_DOWN.has(scenario) ? null : 'OK')
     case 'probe:flash': return Promise.resolve('OK')
     case 'preflight': {
       if (scenario === 'dirtymain' || scenario === 'd2-15-dirty-main') return Promise.resolve({ isGitRepo: true, isCorrectRepo: true, branch: 'master', dirty: true, dirtyFiles: ['backend/x.py'], notes: '' })
@@ -901,14 +1018,18 @@ const stubs = {
 
 let ARGS
 const forceMax = scenario === 'd3-02-runtime-max-call'
+// D5：FULL_DEFAULT 形态【完全不传】executionMode —— 只有这种调用形状才能证明"默认值本身"已是 FULL。
+// INVALID 形态传一个非法字面量（'FLASH-ONLY'），证明 fail-closed：既不降级也不静默回落默认值。
+const modeArg = PASS_MODE_ARG ? { executionMode: EXECUTION_MODE_ARG } : {}
 // D4 §26–§30：人工授权的同任务重跑才传 retryOfTaskId/retryArtifacts（普通任务恒不传 → RETRY_OWNED 恒空）
 const retry = D4_RETRY[scenario]
 switch (scenario) {
   case 'notask': ARGS = undefined; break
-  case 'badmode': ARGS = { task: 'x', mode: 'yolo', executionMode: MODE }; break
-  case 'milestone': ARGS = { task: '知识库 M1 Milestone', mode: 'milestone_gate', executionMode: MODE }; break
-  case 'release': ARGS = { task: 'v1.0 发布', mode: 'release_gate', executionMode: MODE }; break
-  default: ARGS = Object.assign({ task: '实现知识库 PDF 解析器，支持文本与元数据提取', mode: 'task', executionMode: MODE, __d3_force_max_route: forceMax },
+  case 'badmode': ARGS = Object.assign({ task: 'x', mode: 'yolo' }, modeArg); break
+  case 'milestone': ARGS = Object.assign({ task: '知识库 M1 Milestone', mode: 'milestone_gate' }, modeArg); break
+  case 'release': ARGS = Object.assign({ task: 'v1.0 发布', mode: 'release_gate' }, modeArg); break
+  default: ARGS = Object.assign({ task: '实现知识库 PDF 解析器，支持文本与元数据提取', mode: 'task' }, modeArg,
+    { __d3_force_max_route: forceMax },
     retry ? { retryOfTaskId: retry.retryOfTaskId, retryArtifacts: retry.artifacts } : {})
 }
 
@@ -945,12 +1066,23 @@ const D4M = (function () {
     failedPhase: (result && result.FAILED_PHASE) || null,
   }
 })()
+// D5：label → 实际服务该 label 的模型集合（"角色-模型矩阵"断言的唯一数据源；矩阵违规必须能被指到具体调用）
+const lmSets = {}
+for (const c of calls) { if (c.model) (lmSets[c.label] = lmSets[c.label] || new Set()).add(c.model) }
+const labelModels = {}
+for (const k of Object.keys(lmSets)) labelModels[k] = [...lmSets[k]].sort()
+
 console.log(JSON.stringify({
   scenario,
-  executionMode: MODE,
+  // FULL_DEFAULT 形态【不传】executionMode，所以它的"实际模式"只能取 Workflow 自己报告的 ACTIVE_EXECUTION_MODE。
+  executionMode: MODE === 'FULL_DEFAULT' ? String(result && result.ACTIVE_EXECUTION_MODE) : MODE,
+  executionModeArg: PASS_MODE_ARG ? EXECUTION_MODE_ARG : 'NOT_PASSED',
   WORKFLOW_STATUS: result && result.WORKFLOW_STATUS,
   BLOCK_REASON: result && result.BLOCK_REASON,
   ACTIVE_EXECUTION_MODE: result && result.ACTIVE_EXECUTION_MODE,
+  DEFAULT_EXECUTION_MODE: result && result.DEFAULT_EXECUTION_MODE,
+  FLASH_ONLY_MODE_PRESERVED: result && result.FLASH_ONLY_MODE_PRESERVED,
+  AUTO_MODEL_FALLBACK: result && result.AUTO_MODEL_FALLBACK,
   REAL_PRODUCTION_APPROVED: result && result.REAL_PRODUCTION_APPROVED,
   d4: D4M,
   snapCalls,
@@ -962,6 +1094,7 @@ console.log(JSON.stringify({
   reviewCalls,
   reviewBCalls,
   agentLabels: calls.filter(c => c.model).map(c => c.label),
+  labelModels,
   roleCalls: roleSet,
   readOnlyPromptMisses: calls.filter(c => c.readOnly && !c.promptReadOnly).map(c => c.label),
   reviewInvocations: (result && result.REVIEW_INVOCATIONS) || null,

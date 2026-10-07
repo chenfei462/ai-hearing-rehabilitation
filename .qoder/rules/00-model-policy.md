@@ -37,8 +37,9 @@
 ## D3 — FLASH_ONLY_DEGRADED_MODE（人工授权的降级模式，2026-10-07）
 
 > 本节是对上方「永久禁止 fallback」政策的**受控例外**，由**人工明确授权**，不是自动降级、不是换模型蒙混。
-> 触发条件：Max（`qmodel_38max`）配额不可用。恢复条件：Max 配额恢复后把 `EXECUTION_MODE` 改回 `'FULL'`（或调用传 `executionMode:'FULL'`）。
+> 触发条件：Max（`qmodel_38max`）配额不可用，且**调用方显式**请求该模式。恢复条件：Max 配额恢复后把 `EXECUTION_MODE` 改回 `'FULL'`（或调用传 `executionMode:'FULL'`）。
 > **`FULL_MODE` 双模型政策始终为最终目标，完整保留。**
+> **D5（2026-10-08）状态：恢复条件已达成——默认执行模式已回到 `'FULL'`；本节全部判据作为 `executionMode:'FLASH_ONLY'` 显式降级路径的原样保留继续生效。**
 
 1. **运行时模型**：FLASH_ONLY 模式下**所有**运行时角色的模型恒为 `qfmodel`；**绝不**实际调用 `qmodel_38max` / 任何第三模型 / default / auto / fallback。路由由脚本顶部 `modelFor(role)` 决定，Preflight 的**路由守卫在任何 agent() 调用之前**拦截违规路由 → `MODEL_POLICY_VIOLATION`。
 2. **角色独立性不降级**：FLASH_PLANNER / FLASH_EXPLORER / FLASH_WORKER / FLASH_REVIEWER / FLASH_VERIFIER / FLASH_RCA 必须是**相互独立的 agent() invocation**；**禁止**"同一 Flash 会话先写代码再自我验收"。独立性由调用隔离保证，而非模型差异。
@@ -50,3 +51,16 @@
 7. **HUMAN_REQUIRED 绝不自动批准**：验收本质需真实人工审批（医疗专家验证 / 患者数据授权 / 伦理 / 版权 / 生产密钥 / 生产库危险操作 / 正式生产部署 / 支付 / 真实验证码 / 法务）→ `PAUSED_FOR_HUMAN`，不实现代码、不改文件。
 8. **Release 终态拆分**：`ENGINEERING_RELEASE_READY`（按门禁）与 `REAL_PRODUCTION_APPROVED`（**无真实人工批准恒为 NO**，绝不假装已获生产批准）。
 9. **治理文件在本模式下的修改权**：治理文件仍仅 Max 在治理阶段可改；FLASH_ONLY 迁移期间对治理文件的改动必须由**人工授权**并单独说明（如本轮 D3 迁移）。
+
+## D5 — DEFAULT_EXECUTION_MODE 恢复 FULL（人工授权，2026-10-08）
+
+> D3 是"Max 配额耗尽"期间的受控例外。配额恢复后若仍让例外充当默认，本文件开头的双模型政策就只剩调用隔离一层保障。
+> D5 的唯一目标：**默认执行模式 `FLASH_ONLY → FULL`**；FLASH_ONLY 模式**完整保留**，不做任何删减。
+
+1. **默认即双模型**：Workflow 顶部 `EXECUTION_MODE = 'FULL'`。不传 `executionMode` 时，规划/探索/Scope/Task Spec/RCA/Review A/B/Verify/Gate 判定/指纹取证 = `qmodel_38max`（只读决策），实施/Machine Gate/Self-Repair/FIX_SPEC 实施 = `qfmodel`。
+2. **降级改为显式 opt-in**：`FLASH_ONLY` 只在调用方传 `executionMode:'FLASH_ONLY'`（或人工改顶部常量）时生效，D3 节全部判据原样适用。**任何自动降级都禁止**。
+3. **逐角色矩阵校验**：脚本内 `EXPECTED_RUNTIME_MODEL` 表 + Preflight 路由守卫在任何 `agent()` 调用之前校验"角色 → 实际模型"。反向串位（Worker 走 Max 自验收、或 Reviewer 走 Flash）→ `MODEL_POLICY_VIOLATION`（`VIOLATION_KIND=ROLE_MODEL_MISMATCH`）。"默认已恢复 FULL"由此成为机器可校验事实，而非文档声明。
+4. **非法模式 fail-closed**：`executionMode` 只接受 `'FULL' | 'FLASH_ONLY'` 或缺省；其他值 → `INVALID_EXECUTION_MODE`（`FAILED_PHASE=Input`，零 agent 调用），绝不静默回落到默认值——拼写错误不得悄悄改变模型政策。
+5. **无 fallback 的两层证明**：Max 探针失败 → `BLOCKED_MODEL_UNAVAILABLE`；Max 探针通过但某个 Max 角色实际返回空 → 同一终态。两条路径都不得由 `qfmodel` 代替该角色。
+6. **既有保护零削弱**：D1 required/record 分层与双真相、D2 Task Delta/治理写保护/破坏性 git 禁令、D3 HIGH 双独立审查与 `PAUSED_FOR_HUMAN`、D4 确定性字节证据与同任务重试归属，全部在 FULL 默认下有对应回归场景（d5-12..d5-17）。
+7. **回归**：`node .qoder/workflow-state/dryrun-harness.mjs test` → **106/106**（既有 89 条全保留 + 新增 17 条 d5-*）。

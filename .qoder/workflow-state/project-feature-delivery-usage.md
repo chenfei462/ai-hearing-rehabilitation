@@ -24,11 +24,14 @@
 若未来模型标识变更，只需修改脚本顶部的 `MAX` / `FLASH` 两个常量。
 探针失败时 Workflow 返回 `BLOCKED_MODEL_UNAVAILABLE`，绝不自动换模型。
 
-> **D3 执行模式**：顶部 `EXECUTION_MODE` 当前默认 `'FLASH_ONLY'`（Max 配额不可用时的降级模式，经人工授权）。
-> FLASH_ONLY 下**所有运行时角色模型恒为 `qfmodel`**，绝不实际调用 `qmodel_38max`/第三模型/default/auto/fallback；
-> 决策角色的独立性由**相互独立的 agent() invocation** + HIGH Risk 双审查保证，门禁裁判权与 D1/D2 保护**不降**。
-> `FULL_MODE`（Max+Flash 双模型）**完整保留**：恢复 Max 后把 `EXECUTION_MODE` 改回 `'FULL'`，或调用时传 `executionMode:'FULL'`。
-> 详见下文「第四轮治理迁移 D3」。
+> **执行模式（D5 起）**：顶部 `EXECUTION_MODE` 默认 `'FULL'`——`qmodel_38max` 承担规划/探索/审查/验收/RCA，
+> `qfmodel` 承担实施/门禁/修复，即 AGENTS.md §2 的原始双模型政策。
+> `FLASH_ONLY`（D3 人工授权降级）**未删除**，改为**显式 opt-in**：只有调用方传 `executionMode:'FLASH_ONLY'`
+> 或人工把顶部常量改为 `'FLASH_ONLY'` 时生效；生效时所有运行时角色模型恒为 `qfmodel`，
+> 绝不实际调用 `qmodel_38max`/第三模型/default/auto/fallback，且决策角色仍由**相互独立的 agent() invocation** 承担、
+> HIGH Risk 双审查与 D1/D2/D4 保护**一分不降**。
+> 传入其他值（拼写错误等）→ `INVALID_EXECUTION_MODE`，在任何 agent 调用之前 fail-closed，绝不静默回落默认值。
+> Max 不可用 → `BLOCKED_MODEL_UNAVAILABLE`，**绝不自动改用 Flash**。详见下文「第六轮治理修复 D5」。
 
 ## 启动方式（在 Qoder CN 会话中）
 
@@ -239,8 +242,8 @@ Max（`qmodel_38max`）配额耗尽，无法承担规划/探索/审查/验收/RC
 新增 `FLASH_ONLY_MODE` 作为降级运行模式：所有运行时角色的**模型**改为 `qfmodel`，但角色**独立性**、
 门禁裁判权、D1/D2 全部保护**一分不降**。`FULL_MODE`（Max+Flash 双模型）**完整保留**，为未来恢复路径。
 
-- 顶部常量 `EXECUTION_MODE = 'FLASH_ONLY'` 为当前默认；调用可传 `executionMode:'FULL'` 临时回到双模型。
-- 恢复 Max 后：把 `EXECUTION_MODE` 改回 `'FULL'`（或所有调用传 `executionMode:'FULL'`）即回到 `qmodel_38max` 规划/审查/验收 + `qfmodel` 实施/门禁。
+- （D3 时点）顶部常量曾为 `EXECUTION_MODE = 'FLASH_ONLY'`；**D5 起默认已恢复 `'FULL'`**，FLASH_ONLY 改为显式 `executionMode:'FLASH_ONLY'` 才生效。
+- 回到双模型：默认即是（无需传参），或显式传 `executionMode:'FULL'` —— `qmodel_38max` 规划/审查/验收 + `qfmodel` 实施/门禁。
 - FLASH_ONLY 运行期间**绝不**实际调用 `qmodel_38max` / 任何第三模型 / default / auto / fallback。
 
 ### 角色 → 模型路由（`modelFor(role)`）
@@ -397,8 +400,68 @@ d4-27 fileCount 不自洽 / d4-28 孤儿树成员→证据非法→UNCERTAIN。
 
 D1 21 条 + D2 15 条 + D3 25 条 + D4 28 条 = 89（legacy 已并入 D1 计数）**全部保留且仍 PASS**；
 运行：`node .qoder/workflow-state/dryrun-harness.mjs test` → **89/89**（含 `SYNTAX_OK` + `STATIC_OK`）。
+> 上面是 **D4 时点**的总数；D5 起全量为 **106/106**（89 条既有场景全部保留 + 17 条 d5-*），见下文「第六轮治理修复 D5」。
 终态报告新增 `GOVERNANCE_D4`（backend/authority/PINNED_COMMAND_PROTOCOL/EVIDENCE_RUNS/INVALID_EVIDENCE_DETECTED/FALSE_POSITIVES_RECOVERED/ADJUDICATION）
 与 `TASK_DELTA.retryOwnedArtifacts` / `TASK_DELTA.treeUnitChanges`。
+
+## 第六轮治理修复 D5（2026-10-08）：恢复 FULL 为默认执行模式（FLASH_ONLY 完整保留为显式降级）
+
+### 背景与授权
+
+Max（`qmodel_38max`）配额恢复。D3 的 `FLASH_ONLY_DEGRADED_MODE` 本是为配额耗尽而设的**受控例外**，
+例外不应长期成为默认——否则"Flash 无验收权"的原始双模型政策只剩调用隔离一层保障。
+经**人工授权**，D5 的唯一目标是把默认执行模式从 `'FLASH_ONLY'` 改回 `'FULL'`，同时
+**完整保留 FLASH_ONLY 能力**（显式 opt-in）与 D1/D2/D3/D4 的全部保护。
+
+### 改动清单（5 处，全部在 Workflow 脚本内）
+
+1. `let EXECUTION_MODE = 'FULL'`（原 `'FLASH_ONLY'`）——顶部默认值即双模型。
+2. `modeSummary()` 新增审计字段：`DEFAULT_EXECUTION_MODE:'FULL'`、`FULL_MODE_PRESERVED:true`、
+   `FLASH_ONLY_MODE_PRESERVED:true`、`AUTO_MODEL_FALLBACK:'FORBIDDEN — …'`、`DEGRADED_MODE_OPT_IN:'…'`。
+   终态报告因此**自证**当前模式与政策，而不是靠文档声明。
+3. 输入解析 fail-closed：`executionMode` 只接受 `'FULL' | 'FLASH_ONLY'` 或缺省；
+   其他值 → `INVALID_EXECUTION_MODE`（`FAILED_PHASE=Input`，**零 agent 调用**），绝不静默回落默认值——
+   否则 `'flashonly'` 这类拼写错误会把任务悄悄换成另一套模型政策。
+4. 新增 `EXPECTED_RUNTIME_MODEL`（FULL / FLASH_ONLY 两张"角色 → 应有运行时模型"真值表）。
+5. Preflight 路由守卫在原有"允许模型集合"检查之后追加**逐角色矩阵校验**：
+   FULL 下决策角色（planner/explorer/reviewer/reviewerB/verifier/rca/snapshot）必须是 `qmodel_38max`、
+   实施角色（worker/gate/fixer/evidence）必须是 `qfmodel`；反向串位同样在**任何 agent() 调用之前**
+   `MODEL_POLICY_VIOLATION`（`VIOLATION_KIND=ROLE_MODEL_MISMATCH`）。这让"默认已恢复 FULL"成为机器可校验事实。
+
+角色矩阵（FULL）：Preflight / Classify / Scope Check / Task Spec / Explore / RCA / Review A / Review B /
+Verify / Milestone Verdict / Release Security / Release Verdict / 指纹取证执行手 = `qmodel_38max`；
+Implement / Machine Gate / Self-Repair / FIX_SPEC 实施 / Gate 证据收集 = `qfmodel`。
+
+### 无 fallback 的两条独立证明
+
+- Max **探针**失败（`probe:max` 返回空）→ `BLOCKED_MODEL_UNAVAILABLE`，其后的 Preflight/Classify/Implement 等
+  一个都不启动（d5-10）。
+- Max **探针通过、但某个 Max 角色实际返回空**（运行中配额耗尽）→ 同一终态，绝不把该角色改用 `qfmodel` 重跑（d5-11）。
+  实施者（`qfmodel`）在两条路径里都没有代替决策角色的机会。
+
+### D3 能力保留证明
+
+显式 `executionMode:'FLASH_ONLY'` 仍然完整可用且判据不变：运行时模型集合恒为 `{qfmodel}`、
+单审查任务仍 `TASK_PASS`、HIGH Risk 仍是两个彼此独立的 `qfmodel` 审查 invocation 均 PASS（d5-12 / d5-13）。
+D4 的确定性字节证据与同任务重试产物归属在 FULL 下同样成立（d5-15 / d5-16），
+D2 的治理文件写保护在 FULL 下同样 `BLOCKED_GOVERNANCE_CONFLICT` 且不启动任何修复（d5-17）。
+
+### D5 回归场景（新增 17 条 d5-01..d5-17，总数 89→106）
+
+d5-01 **默认形态（完全不传 executionMode）**→ ACTIVE/DEFAULT_EXECUTION_MODE 均 `FULL` 且双模型真分工｜
+d5-02 显式 `FULL` 与默认等价｜d5-03 Planner 族逐调用 = Max｜d5-04 Explorer = Max｜
+d5-05 Worker/Gate = Flash 且 Review/Verify = Max｜d5-06 RCA = 独立 Max（Self-Repair/Fix 仍 Flash）｜
+d5-07 Reviewer = Max｜d5-08 Verifier = Max｜d5-09 HIGH Risk A+B 均 Max 双独立审查｜
+d5-10 Max 探针失败 → `BLOCKED_MODEL_UNAVAILABLE`（Flash 无任何代替调用）｜
+d5-11 Max 角色返回空 → 同一终态（无 fallback）｜
+d5-12 显式 `FLASH_ONLY` 降级路径保留（qfmodel-only + 默认字段仍 FULL）｜
+d5-13 `FLASH_ONLY` + HIGH Risk 双独立审查仍生效（A/B 均 qfmodel）｜
+d5-14 非法 `executionMode` → `INVALID_EXECUTION_MODE`，`FAILED_PHASE=Input`、零 agent 调用、不降级｜
+d5-15 D4 确定性字节证据在 FULL 下保持｜d5-16 D4 retry 产物归属在 FULL 下保持｜
+d5-17 D2 治理写保护在 FULL 下保持（Worker 改 `AGENTS.md` → BLOCK，gateCalls=0）。
+
+既有 89 条（legacy 11 + §8 A–H 10 + D2 15 + D3 25 + D4 28）**全部保留且仍 PASS**；
+运行：`node .qoder/workflow-state/dryrun-harness.mjs test` → **106/106**（含 `SYNTAX_OK` + `STATIC_OK`）。
 
 ## 运行监控 / 暂停 / 恢复 / 取消
 

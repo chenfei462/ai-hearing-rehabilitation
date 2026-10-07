@@ -31,19 +31,22 @@ const FLASH = 'qfmodel'       // Qwen3.8-Flash 程序员
 const MODEL_BLOCKED_HINT = '请运行 /model 命令查看当前可用模型列表，确认 qmodel_38max (Qwen3.8-Max) 与 qfmodel (Qwen3.8-Flash) 是否仍然有效；如模型标识已变更，请更新本 Workflow 顶部的 MAX / FLASH 常量。禁止改用其他模型继续。'
 
 // ============================================================
-// 治理升级 D3 — FLASH_ONLY_DEGRADED_MODE（Human Authorized Governance Migration）
+// 治理升级 D3 — FLASH_ONLY_DEGRADED_MODE（人工授权降级模式）＋ D5 — 恢复 FULL 为默认
 // ------------------------------------------------------------
 // 两种执行模式，均由 qmodel_38max / qfmodel 两个标识构成，禁止任何第三模型 / default / auto / fallback：
-//   · FULL_MODE  ：规划/探索/审查/验收/RCA = qmodel_38max(Max)；实施/门禁/取证 = qfmodel(Flash)。
-//     —— Max Token 恢复后把下方 EXECUTION_MODE 默认改回 'FULL'（或在调用时传 executionMode:'FULL'）即回到此模式。
-//   · FLASH_ONLY_MODE（本 Goal 当前默认）：Max 配额不可用，全部运行时角色的【模型】= qfmodel。
-//     但角色分离不靠模型、靠【独立 invocation】：Planner / Explorer / Worker / Reviewer / Verifier / RCA
-//     各为独立 agent() 调用（不同 label），HIGH Risk 追加 FLASH_REVIEWER_A + FLASH_REVIEWER_B 双独立审查。
+//   · FULL_MODE（**D5 起的默认**）：规划/探索/审查/验收/RCA/取证 = qmodel_38max(Max)；实施/门禁/修复 = qfmodel(Flash)。
+//     天然模型级角色分离：决策者不实施，实施者无验收权。
+//   · FLASH_ONLY_MODE（**完整保留，但只可显式启用**）：为 Max 配额不可用而设的人工授权降级模式。
+//     启用方式只有两种：调用时显式传 executionMode:'FLASH_ONLY'，或人工把下方 EXECUTION_MODE 默认改为 'FLASH_ONLY'。
+//     **绝不自动降级**：Max 探针/调用失败一律 BLOCKED_MODEL_UNAVAILABLE，不允许改用 Flash 蒙混。
+//     降级时角色分离不靠模型、靠【独立 invocation】：Planner / Explorer / Worker / Reviewer / Verifier / RCA
+//     各为独立 agent() 调用（不同 label），HIGH Risk 追加 FLASH_REVIEWER_A + FLASH_REVIEWER_B 双独立审查；
 //     Worker 自报 PASS/DONE/IMPLEMENTED 一律无最终验收权；TASK_PASS 仍须
 //     Machine Gate PASS ∧ 独立 Review PASS ∧ Verify PASS ∧ Task Delta PASS ∧ Governance Guard PASS。
-//     为“只有 Flash”而降低任何 Gate / 把 required 降为 record / 放宽测试，一律禁止。
+//     为"只有 Flash"而降低任何 Gate / 把 required 降为 record / 放宽测试，一律禁止。
+// D5：DEFAULT_EXECUTION_MODE = 'FULL'（2026-10-08，人工授权）。D1/D2/D3/D4 全部治理保护不因此削弱。
 // ============================================================
-let EXECUTION_MODE = 'FLASH_ONLY'        // 当前默认运行模式（D3）。恢复 Max 后改为 'FULL' 或传 executionMode:'FULL'。
+let EXECUTION_MODE = 'FULL'              // D5 默认运行模式 = FULL（双模型）。FLASH_ONLY 为显式降级选项，见上方注释。
 let D3_TEST_FORCE_MAX_ROUTE = false      // 仅测试 trip-wire：验证 FLASH_ONLY 下 qmodel_38max 运行时路由被拒（生产恒 false）
 
 // 角色 → FULL 模式设计模型（真值）。FLASH_ONLY 下运行时统一路由到 FLASH。
@@ -65,14 +68,24 @@ function modelFor(role) {
 function allowedRuntimeModels() {
   return EXECUTION_MODE === 'FLASH_ONLY' ? new Set([FLASH]) : new Set([MAX, FLASH])
 }
+// D5：每种执行模式下"角色 → 应有运行时模型"的期望表。Preflight 路由守卫据此做**逐角色**一致性校验：
+// FULL 下决策角色必须是 Max、实施角色必须是 Flash（反之亦然即为违规）；FLASH_ONLY 下必须全部是 Flash。
+// 这让"默认已恢复 FULL"成为机器可校验事实，而不只是文档声明。
+const EXPECTED_RUNTIME_MODEL = {
+  FULL: { planner: MAX, explorer: MAX, reviewer: MAX, reviewerB: MAX, verifier: MAX, rca: MAX, snapshot: MAX, worker: FLASH, gate: FLASH, evidence: FLASH, fixer: FLASH },
+  FLASH_ONLY: { planner: FLASH, explorer: FLASH, reviewer: FLASH, reviewerB: FLASH, verifier: FLASH, rca: FLASH, snapshot: FLASH, worker: FLASH, gate: FLASH, evidence: FLASH, fixer: FLASH },
+}
 function mname(m) { return m === MAX ? MAX + ' (Qwen3.8-Max)' : (m === FLASH ? FLASH + ' (Qwen3.8-Flash)' : String(m)) }
 
 // D3：把当前执行模式与各角色运行时模型汇总为报告字段（供审计与最终报告）。
 function modeSummary() {
   return {
     ACTIVE_EXECUTION_MODE: EXECUTION_MODE,
+    DEFAULT_EXECUTION_MODE: 'FULL',
     FULL_MODE_PRESERVED: true,
-    RECOVERY_TO_FULL: "Max 配额恢复后：把顶部 EXECUTION_MODE 改回 'FULL'，或调用时传 executionMode:'FULL'，即回到 qmodel_38max(规划/审查/验收) + qfmodel(实施/门禁) 双模型模式。",
+    FLASH_ONLY_MODE_PRESERVED: true,
+    AUTO_MODEL_FALLBACK: 'FORBIDDEN — Max 不可用一律 BLOCKED_MODEL_UNAVAILABLE，绝不自动改用 qfmodel',
+    DEGRADED_MODE_OPT_IN: "FLASH_ONLY 是人工授权的显式降级选项（未删除）：仅当调用方传 executionMode:'FLASH_ONLY' 或人工把顶部 EXECUTION_MODE 改为 'FLASH_ONLY' 时生效；生效时全部运行时角色模型 = qfmodel，且门禁/审查/验收判据一条不降。默认模式自 D5 起为 FULL（qmodel_38max 规划/审查/验收 + qfmodel 实施/门禁）。",
     ALLOWED_RUNTIME_MODELS: [...allowedRuntimeModels()],
     ROLE_RUNTIME_MODELS: {
       planner: mname(modelFor('planner')), explorer: mname(modelFor('explorer')), worker: mname(modelFor('worker')),
@@ -1072,7 +1085,16 @@ if (typeof args === 'string') {
 } else if (args && typeof args === 'object') {
   task = String(args.task || '').trim()
   mode = String(args.mode || 'task')
-  // D3：执行模式可由调用方覆盖（默认已是 FLASH_ONLY）；仅接受 'FULL' / 'FLASH_ONLY' 两个合法值。
+  // D3/D5：执行模式可由调用方显式覆盖；D5 起默认 'FULL'，仅接受 'FULL' / 'FLASH_ONLY' 两个合法值。
+  // D5 fail-closed：传了却无法识别的 executionMode 绝不静默回落到默认值——任何 agent 调用之前就 BLOCK，
+  // 否则拼写错误（如 'flashonly'/'full_mode'）会悄悄将任务降级到另一种模型政策。
+  if (args.executionMode !== undefined && args.executionMode !== 'FULL' && args.executionMode !== 'FLASH_ONLY') {
+    return blocked('INVALID_EXECUTION_MODE', 'Input', {
+      RECEIVED_EXECUTION_MODE: typeof args.executionMode === 'string' ? args.executionMode : JSON.stringify(args.executionMode),
+      DETAIL: "executionMode 只允许 'FULL' | 'FLASH_ONLY'，或缺省（= 'FULL'）。非法值不降级、不回落默认，直接停止。",
+      SAFE_NEXT_ACTION: "改为 executionMode:'FULL'（默认，双模型）或 executionMode:'FLASH_ONLY'（人工授权的显式降级）后重跑。",
+    })
+  }
   if (args.executionMode === 'FULL' || args.executionMode === 'FLASH_ONLY') EXECUTION_MODE = args.executionMode
   // D3 测试专用 trip-wire（生产恒不传）：验证 FLASH_ONLY 下把角色路由到 qmodel_38max 会被 Preflight 路由守卫拦截。
   if (args.__d3_force_max_route === true) D3_TEST_FORCE_MAX_ROUTE = true
@@ -1100,6 +1122,8 @@ phase('Preflight')
 // 当前执行模式下，任何"运行时会发起 agent() 的角色"若被路由到不在允许集合内的模型
 // （FLASH_ONLY 只允许 qfmodel；任何 default/auto/fallback/第三模型都不在集合内），
 // 立即返回 MODEL_POLICY_VIOLATION —— 绝不实际调用被禁模型。
+// D5 追加【逐角色】矩阵校验：FULL 下决策角色必须 = qmodel_38max、实施/门禁角色必须 = qfmodel，
+// 反向串位（Worker 走 Max 自验收、或 Reviewer 走 Flash）同样在任何调用之前拦截。
 // ============================================================
 {
   const runtimeRoles = ['planner', 'explorer', 'worker', 'gate', 'fixer', 'reviewer', 'reviewerB', 'verifier', 'rca', 'snapshot', 'evidence']
@@ -1115,6 +1139,20 @@ phase('Preflight')
         SAFE_NEXT_ACTION: EXECUTION_MODE === 'FLASH_ONLY'
           ? 'FLASH_ONLY 降级模式禁止调用 qmodel_38max / 任何第三模型 / default / auto / fallback。请检查 Workflow 顶部 EXECUTION_MODE 与 modelFor()/D3_TEST_FORCE_MAX_ROUTE；确需 Max 请恢复 Max 配额后以 executionMode:"FULL" 运行。'
           : 'FULL 模式仅允许 qmodel_38max / qfmodel，请核对 MAX/FLASH 常量。',
+      })
+    }
+    // D5：逐角色矩阵校验（FULL 下决策角色必须 Max / 实施角色必须 Flash；FLASH_ONLY 下必须全 Flash）
+    const want = (EXPECTED_RUNTIME_MODEL[EXECUTION_MODE] || {})[r]
+    if (want && m !== want) {
+      return blocked('MODEL_POLICY_VIOLATION', 'Preflight', {
+        DETAIL: `执行模式=${EXECUTION_MODE} 下角色 '${r}' 应路由到 '${want}'，实际将路由到 '${m}'。D5 角色-模型矩阵不匹配，已在任何 agent() 调用之前拦截。`,
+        ACTIVE_EXECUTION_MODE: EXECUTION_MODE,
+        VIOLATION_KIND: 'ROLE_MODEL_MISMATCH',
+        OFFENDING_ROLE: r,
+        EXPECTED_MODEL: want,
+        OFFENDING_MODEL: m,
+        ROLE_MODEL_MATRIX: EXPECTED_RUNTIME_MODEL[EXECUTION_MODE],
+        SAFE_NEXT_ACTION: '核对顶部 EXECUTION_MODE / ROLE_FULL_MODEL / modelFor()：FULL 下决策角色=Max、实施角色=Flash；FLASH_ONLY 下全部=Flash。禁止为通过本检查而放宽角色。',
       })
     }
   }
