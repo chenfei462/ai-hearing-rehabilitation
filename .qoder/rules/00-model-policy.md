@@ -33,3 +33,20 @@
 
 - 治理文件（AGENTS.md、`.qoder/rules/**`、`.qoder/workflows/**`、`.qoder/workflow-state/**`、`.gitignore`、`.github/**`、`docs/workflow/**`）仅允许 Max 在治理阶段修改。
 - dirty main guard：main/master + 非空 `git status --porcelain`（含未跟踪文件）→ `BLOCKED_DIRTY_MAIN`。
+
+## D3 — FLASH_ONLY_DEGRADED_MODE（人工授权的降级模式，2026-10-07）
+
+> 本节是对上方「永久禁止 fallback」政策的**受控例外**，由**人工明确授权**，不是自动降级、不是换模型蒙混。
+> 触发条件：Max（`qmodel_38max`）配额不可用。恢复条件：Max 配额恢复后把 `EXECUTION_MODE` 改回 `'FULL'`（或调用传 `executionMode:'FULL'`）。
+> **`FULL_MODE` 双模型政策始终为最终目标，完整保留。**
+
+1. **运行时模型**：FLASH_ONLY 模式下**所有**运行时角色的模型恒为 `qfmodel`；**绝不**实际调用 `qmodel_38max` / 任何第三模型 / default / auto / fallback。路由由脚本顶部 `modelFor(role)` 决定，Preflight 的**路由守卫在任何 agent() 调用之前**拦截违规路由 → `MODEL_POLICY_VIOLATION`。
+2. **角色独立性不降级**：FLASH_PLANNER / FLASH_EXPLORER / FLASH_WORKER / FLASH_REVIEWER / FLASH_VERIFIER / FLASH_RCA 必须是**相互独立的 agent() invocation**；**禁止**"同一 Flash 会话先写代码再自我验收"。独立性由调用隔离保证，而非模型差异。
+3. **HIGH Risk 双独立审查**：命中 HIGH Risk（安全/认证/RBAC/IDOR/隐私/健康数据/语音数据/医疗安全/敏感迁移/发布配置）时，FLASH_REVIEWER A 与 FLASH_REVIEWER B 为**两个彼此不可见结论**的独立 invocation，**均 PASS** 才算独立 Review 通过。
+4. **实施者无验收权**：FLASH_WORKER 自报 `IMPLEMENTED/PASS/DONE` **一律无最终验收权**。Task PASS 唯一判据（写入 `TASK_PASS_FORMULA`）：
+   `MACHINE_GATE_PASS ∧ INDEPENDENT_FLASH_REVIEW_PASS ∧ FLASH_VERIFY_PASS ∧ TASK_DELTA_PASS ∧ GOVERNANCE_GUARD_PASS`（HIGH Risk 追加 A+B 双审均 PASS）。门禁 PASS/FAIL 仍由脚本按真实 `exitCode` 计算，忽略执行手自报 `allPassed`。
+5. **D1/D2 保护不降级**：required/record 分层、双真相（GATE_HEALTH / PROJECT_BASELINE_HEALTH）、WORKTREE_BASELINE / Task Delta / 治理文件保护 / 破坏性 git 禁令 / 指纹校验全部保留。新增反作弊：禁止把 required 降级为 record（`GOVERNANCE_POLICY_VIOLATION`）、禁止对 `:5432` 执行破坏性操作（`BLOCKED_UNSAFE_DATABASE_TARGET`，不误伤一次性测试库 `:55432`）。
+6. **修复循环 ≤3 轮**（与 FULL 相同）；第 2 轮起改由**新的独立 FLASH_RCA invocation** 出 ROOT_CAUSE/FIX_SPEC，非原 Worker 会话。
+7. **HUMAN_REQUIRED 绝不自动批准**：验收本质需真实人工审批（医疗专家验证 / 患者数据授权 / 伦理 / 版权 / 生产密钥 / 生产库危险操作 / 正式生产部署 / 支付 / 真实验证码 / 法务）→ `PAUSED_FOR_HUMAN`，不实现代码、不改文件。
+8. **Release 终态拆分**：`ENGINEERING_RELEASE_READY`（按门禁）与 `REAL_PRODUCTION_APPROVED`（**无真实人工批准恒为 NO**，绝不假装已获生产批准）。
+9. **治理文件在本模式下的修改权**：治理文件仍仅 Max 在治理阶段可改；FLASH_ONLY 迁移期间对治理文件的改动必须由**人工授权**并单独说明（如本轮 D3 迁移）。

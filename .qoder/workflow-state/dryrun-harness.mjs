@@ -124,6 +124,57 @@ if (cmd === 'test' || cmd === 'regression') {
     { scenario: 'd2-14-postrepair-preexisting-changed', status: 'BLOCKED', block: 'BLOCKED_EXTERNAL_WORKTREE_CHANGE', maxGateCalls: 1, expectLabels: ['self-repair'] },
     // 15 main/master + dirty → 仍 BLOCKED_DIRTY_MAIN（Delta 逻辑不得让脏 main 通过）
     { scenario: 'd2-15-dirty-main', status: 'BLOCKED', block: 'BLOCKED_DIRTY_MAIN', maxGateCalls: 0 },
+    // ---- D3 FLASH_ONLY_DEGRADED_MODE 回归（≥25，d3-01..d3-25）----
+    // 01 正常任务：全绿 + 单审查（medium）→ TASK_PASS；qfmodel-only；合成判据全真；角色分离（planner/explorer/worker/reviewer/verifier 各自独立 invocation）
+    { scenario: 'd3-01-happy', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FLASH_ONLY', qfmodelOnly: true, singleReview: true, formula: true, roleSep: true },
+    // 02 trip-wire：FLASH_ONLY 下把角色路由到 qmodel_38max → Preflight 路由守卫在任何 agent 调用前拦截 → BLOCKED MODEL_POLICY_VIOLATION（未实际请求 Max）
+    { scenario: 'd3-02-runtime-max-call', status: 'BLOCKED', block: 'MODEL_POLICY_VIOLATION', maxGateCalls: 0, mode: 'FLASH_ONLY' },
+    // 03 required 门禁永远失败（Worker 自报 IMPLEMENTED/allPassed 无验收权，脚本按 exitCode 裁判）→ 修复耗尽 BLOCKED_REPAIR_LIMIT
+    { scenario: 'd3-03-gate-red-repair-limit', status: 'BLOCKED', block: 'BLOCKED_REPAIR_LIMIT', maxGateCalls: 4, mode: 'FLASH_ONLY', qfmodelOnly: true },
+    // 04 独立 Review 首轮 REQUEST_CHANGES、次轮 PASS（Review 有实际否决/驱动修复权）→ TASK_PASS
+    { scenario: 'd3-04-review-rc-then-pass', status: 'TASK_PASS', maxGateCalls: 3, mode: 'FLASH_ONLY', qfmodelOnly: true, singleReview: true, formula: true, roleSep: true },
+    // 05 独立 Reviewer A 永远 REQUEST_CHANGES → BLOCKED_REPAIR_LIMIT（Reviewer 可否决 Worker 自报 PASS）
+    { scenario: 'd3-05-reviewer-always-rc', status: 'BLOCKED', block: 'BLOCKED_REPAIR_LIMIT', maxGateCalls: 4, mode: 'FLASH_ONLY', qfmodelOnly: true },
+    // 06 独立 Verifier TASK_FAIL（即便 gate+review 通过）→ BLOCKED TASK_FAIL（Verifier 独立否决）
+    { scenario: 'd3-06-verifier-fail', status: 'BLOCKED', block: 'TASK_FAIL', maxGateCalls: 1, mode: 'FLASH_ONLY', qfmodelOnly: true },
+    // 07 HIGH Risk（riskLevel=high）→ 双独立审查 A+B 均 PASS → TASK_PASS，REVIEW_INVOCATIONS 含 max-review + max-review-b
+    { scenario: 'd3-07-high-risk-double-pass', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FLASH_ONLY', qfmodelOnly: true, dualReview: true, formula: true },
+    // 08 HIGH Risk：B 首轮否决、次轮通过 → merged 由 PASS→RC→PASS → TASK_PASS（B 的结论真正参与合并）
+    { scenario: 'd3-08-high-risk-B-rc-then-pass', status: 'TASK_PASS', maxGateCalls: 3, mode: 'FLASH_ONLY', qfmodelOnly: true, dualReview: true, formula: true },
+    // 09 HIGH Risk：B 永远否决 → 合并永远 RC → BLOCKED_REPAIR_LIMIT（独立第二审查者硬否决）
+    { scenario: 'd3-09-high-risk-B-always-block', status: 'BLOCKED', block: 'BLOCKED_REPAIR_LIMIT', maxGateCalls: 4, mode: 'FLASH_ONLY', qfmodelOnly: true, dualReview: true },
+    // 10 反作弊：执行手把 required 必跑项降级为 record → gateGuardViolation 检出 → BLOCKED GOVERNANCE_POLICY_VIOLATION
+    { scenario: 'd3-10-required-downgrade-cheat', status: 'BLOCKED', block: 'GOVERNANCE_POLICY_VIOLATION', maxGateCalls: 1, mode: 'FLASH_ONLY', qfmodelOnly: true },
+    // 11 反作弊：门禁命令指向生产/未知 :5432 且含 DROP → BLOCKED_UNSAFE_DATABASE_TARGET（:55432 一次性测试库不误伤）
+    { scenario: 'd3-11-unsafe-db-5432', status: 'BLOCKED', block: 'BLOCKED_UNSAFE_DATABASE_TARGET', maxGateCalls: 1, mode: 'FLASH_ONLY', qfmodelOnly: true },
+    // 12 D1 保持：required 全绿 + record 基线红 → 仍 TASK_PASS（GATE_HEALTH PASS，基线 DEGRADED 入 findings，绝不因 Flash-only 降门禁）
+    { scenario: 'd3-12-record-red-not-lowering', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FLASH_ONLY', qfmodelOnly: true, singleReview: true, formula: true },
+    // 13 D1 保持：required 迁移缺安全环境 → BLOCKED_MISSING_SAFE_TEST_ENV（绝不降级放行）
+    { scenario: 'd3-13-migration-required-noenv', status: 'BLOCKED', block: 'BLOCKED_MISSING_SAFE_TEST_ENV', maxGateCalls: 1, mode: 'FLASH_ONLY', qfmodelOnly: true },
+    // 14 D2 保持：FLASH_ONLY 下 Worker 实施阶段改治理文件 AGENTS.md → 实施后 Delta 校验 BLOCKED_GOVERNANCE_CONFLICT（先于门禁，gateCalls=0，不启动 Flash 修复）
+    { scenario: 'd3-14-worker-governance-write', status: 'BLOCKED', block: 'BLOCKED_GOVERNANCE_CONFLICT', maxGateCalls: 0, mode: 'FLASH_ONLY', forbidLabels: ['self-repair', 'rca-fix', 'fix'] },
+    // 15 D2 保持：Self-Repair 自报 git checkout HEAD -- file → denylist 命中 → BLOCKED GOVERNANCE_POLICY_VIOLATION
+    { scenario: 'd3-15-selfrepair-destructive-git', status: 'BLOCKED', block: 'GOVERNANCE_POLICY_VIOLATION', maxGateCalls: 1, mode: 'FLASH_ONLY', qfmodelOnly: true, expectLabels: ['self-repair'] },
+    // 16 D2 保持：Self-Repair 只改授权任务文件 → 修复正常继续 → TASK_PASS（未一刀切禁修复）
+    { scenario: 'd3-16-selfrepair-allowed-continues', status: 'TASK_PASS', maxGateCalls: 3, mode: 'FLASH_ONLY', qfmodelOnly: true, singleReview: true, formula: true, expectLabels: ['self-repair'] },
+    // 17 HUMAN_REQUIRED：classify 判定需真实人工审批 → PAUSED_FOR_HUMAN / HUMAN_REQUIRED（绝不自动批准，未实现任何代码）
+    { scenario: 'd3-17-human-required', status: 'PAUSED_FOR_HUMAN', block: 'HUMAN_REQUIRED', maxGateCalls: 0, mode: 'FLASH_ONLY' },
+    // 18 HIGH 判定精确性：privacySensitive=true → HIGH（D3 指令 HIGH 最小集含 privacy/健康数据/语音数据）→ 双独立审查 A+B → TASK_PASS
+    { scenario: 'd3-18-privacy-triggers-high', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FLASH_ONLY', qfmodelOnly: true, dualReview: true, formula: true },
+    // 19 securitySensitive=true → HIGH → 双独立审查 → TASK_PASS
+    { scenario: 'd3-19-security-sensitive-high', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FLASH_ONLY', qfmodelOnly: true, dualReview: true, formula: true },
+    // 20 Worker 自报 allPassed:true 但 required exitCode=1 → 脚本仍判 MACHINE_FAIL → 修复耗尽（自报无最终验收权）
+    { scenario: 'd3-20-selfreport-pass-gate-fail', status: 'BLOCKED', block: 'BLOCKED_REPAIR_LIMIT', maxGateCalls: 4, mode: 'FLASH_ONLY', qfmodelOnly: true },
+    // 21 taskType 含 migration（敏感迁移）→ HIGH → 双独立审查 → TASK_PASS
+    { scenario: 'd3-21-high-risk-migration', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FLASH_ONLY', qfmodelOnly: true, dualReview: true, formula: true },
+    // 22 FLASH_RCA 隔离：required 连失败两轮 → 第 2 轮起启动【新独立 RCA invocation】→ 第 3 轮通过 → TASK_PASS（标签含 rca）
+    { scenario: 'd3-22-rca-isolation', status: 'TASK_PASS', maxGateCalls: 4, mode: 'FLASH_ONLY', qfmodelOnly: true, singleReview: true, formula: true, expectLabels: ['rca'] },
+    // 23 FULL_MODE 保持：显式 executionMode:'FULL' → 决策角色路由 qmodel_38max → TASK_PASS 且 maxModelInvoked=true（证明恢复路径/双模型未被破坏）
+    { scenario: 'd3-23-fullmode-recovery', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FULL', maxInvoked: true, formula: true },
+    // 24 双审查 + A/B 均永远否决 → 有界修复循环 → BLOCKED_REPAIR_LIMIT（无死循环，gateCalls≤4）
+    { scenario: 'd3-24-high-risk-double-always-block', status: 'BLOCKED', block: 'BLOCKED_REPAIR_LIMIT', maxGateCalls: 4, mode: 'FLASH_ONLY', qfmodelOnly: true, dualReview: true },
+    // 25 反误伤负例：required 命令含一次性测试库 :55432 + downgrade 词，scanUnsafeDbCommand 精确匹配 5432 不误伤 :55432 → 不 BLOCK → TASK_PASS
+    { scenario: 'd3-25-safe-55432-not-flagged', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FLASH_ONLY', qfmodelOnly: true, singleReview: true, formula: true },
   ]
 
   const ALLOWED_MODELS = new Set(['qmodel_38max', 'qfmodel'])
@@ -150,6 +201,22 @@ if (cmd === 'test' || cmd === 'regression') {
     const labels = parsed.agentLabels || []
     for (const l of (exp.expectLabels || [])) { if (labels.indexOf(l) < 0) errs.push(`expected label '${l}' not invoked (labels=[${labels.join(',')}])`) }
     for (const l of (exp.forbidLabels || [])) { if (labels.indexOf(l) >= 0) errs.push(`forbidden label '${l}' was invoked (Flash must not run)`) }
+    // ---- D3 断言：执行模式 / qfmodel-only / 双独立审查 / 合成判据 / 角色分离 ----
+    const expMode = exp.mode || (/^d3-/.test(exp.scenario) ? 'FLASH_ONLY' : 'FULL')
+    if (parsed.executionMode !== expMode) errs.push(`executionMode expected=${expMode} got=${parsed.executionMode}`)
+    // 仅对确实进入 FLASH_ONLY 运行的场景校验 Workflow 自报模式（notask/badmode 等在解析 args 前即终止、不比对）
+    if (parsed.executionMode === 'FLASH_ONLY' && parsed.ACTIVE_EXECUTION_MODE && parsed.ACTIVE_EXECUTION_MODE !== 'FLASH_ONLY') errs.push(`ACTIVE_EXECUTION_MODE=${parsed.ACTIVE_EXECUTION_MODE} != FLASH_ONLY`)
+    if (expMode === 'FLASH_ONLY') {
+      if ((parsed.modelsUsed || []).some(m => m === 'qmodel_38max')) errs.push('FLASH_ONLY invoked qmodel_38max (FORBIDDEN — no Max at runtime)')
+      // 允许零 agent 调用（如 d3-02 在任何调用前被路由守卫拦截）；一旦有调用，必须全部为 qfmodel
+      if ((parsed.modelsUsed || []).some(m => m !== 'qfmodel')) errs.push(`FLASH_ONLY used non-qfmodel model: ${JSON.stringify(parsed.modelsUsed)}`)
+    }
+    if (exp.qfmodelOnly && parsed.allQfmodel !== true) errs.push(`expected qfmodel-only, models=${JSON.stringify(parsed.modelsUsed)}`)
+    if (exp.maxInvoked && !parsed.maxModelInvoked) errs.push('expected qmodel_38max invoked (FULL recovery) but none used')
+    if (exp.dualReview && labels.indexOf('max-review-b') < 0) errs.push('HIGH risk missing dual review (max-review-b not invoked)')
+    if (exp.singleReview && labels.indexOf('max-review-b') >= 0) errs.push('non-HIGH risk must NOT invoke max-review-b')
+    if (exp.formula) { const f = parsed.taskPassFormula; if (!f || f.ALL_CLAUSES_TRUE !== true) errs.push(`TASK_PASS_FORMULA.ALL_CLAUSES_TRUE not true: ${JSON.stringify(f)}`) }
+    if (exp.roleSep) { const rc = parsed.roleCalls || {}; for (const role of ['planner', 'explorer', 'worker', 'reviewer', 'verifier']) { if (!rc[role]) errs.push(`role separation missing independent invocation: ${role}`) } }
     if (errs.length) failures.push(`${exp.scenario}: ${errs.join('; ')}`)
     else { pass++; console.log(`  PASS ${exp.scenario} -> ${parsed.WORKFLOW_STATUS}${parsed.BLOCK_REASON ? '/' + parsed.BLOCK_REASON : ''} (gateCalls=${parsed.gateCalls}, models=[${(parsed.modelsUsed || []).join(',')}])`) }
   }
@@ -163,6 +230,22 @@ if (cmd === 'test' || cmd === 'regression') {
 const scenario = cmd
 let gateCalls = 0
 let reviewCalls = 0
+let reviewBCalls = 0
+
+// D3：每个场景的执行模式（legacy → FULL，d3-* → FLASH_ONLY；d3-23 例外用于验证 FULL 恢复路径）。
+const MODE = scenario === 'd3-23-fullmode-recovery' ? 'FULL' : (/^d3-/.test(scenario) ? 'FLASH_ONLY' : 'FULL')
+const ALLOWED_RUNTIME = MODE === 'FLASH_ONLY' ? new Set(['qfmodel']) : new Set(['qmodel_38max', 'qfmodel'])
+// label → 角色（用于角色分离/独立性断言）
+const ROLE_OF = {
+  'probe:max': 'probeMax', 'probe:flash': 'probeFlash', 'preflight': 'planner', 'worktree-snapshot': 'snapshot',
+  'classify': 'planner', 'explore': 'explorer', 'scope-check': 'planner', 'task-spec': 'planner',
+  'implement': 'worker', 'machine-gate': 'gate', 'self-repair': 'fixer', 'rca': 'rca', 'rca-fix': 'fixer',
+  'max-review': 'reviewer', 'max-review-b': 'reviewerB', 'fix': 'fixer', 'verify': 'verifier',
+  'milestone-evidence': 'evidence', 'milestone-verdict': 'verifier', 'release-evidence': 'evidence',
+  'release-security': 'reviewer', 'release-verdict': 'verifier',
+}
+// 只读决策角色（禁止 Write/Edit）的 label 集合
+const READ_ONLY = new Set(['explore', 'classify', 'scope-check', 'worktree-snapshot', 'max-review', 'max-review-b', 'verify', 'rca', 'release-security', 'preflight', 'milestone-verdict', 'release-verdict'])
 
 const specObj = {
   TASK_ID: 'kb-pdf-parser', TITLE: 'PDF 解析器', OBJECTIVE: 'o', CONTEXT: 'c',
@@ -231,6 +314,11 @@ const SNAPSHOTS = {
     snap({ trackedModified: ['backend/app/pre.py', 'backend/app/kb/parser.py'], untracked: ['backend/app/kb/pdf.py'], fingerprints: [fp('backend/app/pre.py', 'pre0'), fp('backend/app/kb/pdf.py', 'pdf1'), fp('backend/app/kb/parser.py', 'par1')] }), // pre-repair（pre 未变）
     snap({ trackedModified: ['backend/app/pre.py', 'backend/app/kb/parser.py'], untracked: ['backend/app/kb/pdf.py'], fingerprints: [fp('backend/app/pre.py', 'pre1'), fp('backend/app/kb/pdf.py', 'pdf2'), fp('backend/app/kb/parser.py', 'par1')] }), // post-repair（pre0→pre1！）
   ],
+  // D3-14：FLASH_ONLY 下实施阶段 Worker 改治理文件 AGENTS.md（clean baseline → dirty）→ 实施后 Delta 校验 BLOCKED_GOVERNANCE_CONFLICT（先于门禁，gateCalls=0）
+  'd3-14-worker-governance-write': [
+    CLEAN_BASE,
+    snap({ trackedModified: ['AGENTS.md', 'backend/app/kb/parser.py'], untracked: ['backend/app/kb/pdf.py'], fingerprints: [fp('AGENTS.md', 'a1'), fp('backend/app/kb/pdf.py', 'pdf1'), fp('backend/app/kb/parser.py', 'par1')] }),
+  ],
 }
 // 需要"required 门禁失败以进入修复循环"的 D2 场景
 const D2_GATE_FAIL = new Set(['d2-03-selfrepair-checkout-head', 'd2-04-selfrepair-restore', 'd2-05-selfrepair-reset-hard-cmdc', 'd2-06-selfrepair-clean-bashc', 'd2-07-selfrepair-stash', 'd2-10-selfrepair-allowed', 'd2-13-selfrepair-allowed-continues', 'd2-14-postrepair-preexisting-changed'])
@@ -250,6 +338,40 @@ const D2_SELFREPAIR_GIT = {
 // preflight 需报告 dirty 的 feature 分支场景（非 main/master）
 const D2_DIRTY_FEATURE = new Set(['d2-01-gov-preexisting-unchanged', 'd2-02-gov-hash-changed', 'd2-11-preexisting-changed-noop', 'd2-14-postrepair-preexisting-changed'])
 
+// ============================================================
+// D3 场景编排：FLASH_ONLY 降级模式的独立角色 / 门禁裁判 / 反作弊 / HIGH 双审 / HUMAN_REQUIRED
+// ============================================================
+// 触发 HIGH Risk（riskLevel=high）→ 双独立审查
+const D3_HIGH = new Set(['d3-07-high-risk-double-pass', 'd3-08-high-risk-B-rc-then-pass', 'd3-09-high-risk-B-always-block', 'd3-24-high-risk-double-always-block'])
+// securitySensitive=true → HIGH（属 HIGH 最小集；privacy 亦已纳入，见 D3_PRIV）
+const D3_SEC = new Set(['d3-19-security-sensitive-high'])
+// taskType 含 migration → HIGH（敏感迁移属 HIGH 最小集）
+const D3_MIGRATION_TYPE = new Set(['d3-21-high-risk-migration'])
+// privacySensitive=true → HIGH（D3 指令 HIGH 最小集含 privacy / 健康数据 / 语音数据）→ 双独立审查
+const D3_PRIV = new Set(['d3-18-privacy-triggers-high'])
+// classify 判定 humanDecisionRequired → PAUSED_FOR_HUMAN
+const D3_HUMAN = new Set(['d3-17-human-required'])
+// required 门禁永远失败（Worker 自报无验收权，脚本按 exitCode 裁判）→ 修复耗尽
+const D3_GATE_FAIL_ALWAYS = new Set(['d3-03-gate-red-repair-limit', 'd3-20-selfreport-pass-gate-fail'])
+// required 门禁失败到指定轮次才通过（验证 RCA 独立 invocation 隔离）
+const D3_GATE_FAIL_UNTIL = { 'd3-22-rca-isolation': 3 }
+// Reviewer A 永远 REQUEST_CHANGES（独立 Review 否决权）
+const D3_REVIEW_ALWAYS_RC = new Set(['d3-05-reviewer-always-rc', 'd3-24-high-risk-double-always-block'])
+// Reviewer A 首轮 REQUEST_CHANGES 次轮 PASS
+const D3_REVIEW_RC_THEN_PASS = new Set(['d3-04-review-rc-then-pass'])
+// Reviewer B 永远 REQUEST_CHANGES
+const D3_REVIEWB_ALWAYS_RC = new Set(['d3-09-high-risk-B-always-block', 'd3-24-high-risk-double-always-block'])
+// Reviewer B 首轮 REQUEST_CHANGES 次轮 PASS
+const D3_REVIEWB_RC_THEN_PASS = new Set(['d3-08-high-risk-B-rc-then-pass'])
+// D2 复用：需进入修复循环 / 自修复 git 命令
+D2_GATE_FAIL.add('d3-15-selfrepair-destructive-git'); D2_GATE_FAIL.add('d3-16-selfrepair-allowed-continues')
+D2_GATE_FAIL_THEN_PASS.add('d3-16-selfrepair-allowed-continues')
+D2_SELFREPAIR_GIT['d3-15-selfrepair-destructive-git'] = ['git checkout HEAD -- backend/app/kb/pdf.py']
+D2_SELFREPAIR_GIT['d3-16-selfrepair-allowed-continues'] = ['git status', 'git diff -- backend/app/kb/pdf.py']
+D2_SELFREPAIR_GIT['d3-22-rca-isolation'] = ['git status']
+D2_SELFREPAIR_GIT['d3-03-gate-red-repair-limit'] = ['git status']
+D2_SELFREPAIR_GIT['d3-20-selfreport-pass-gate-fail'] = ['git status']
+
 let snapCalls = 0
 function worktreeSnapshotStub() {
   snapCalls++
@@ -260,9 +382,9 @@ function worktreeSnapshotStub() {
 
 function stubAgent(prompt, opts) {
   const label = (opts && opts.label) || '?'
-  calls.push({ label, model: opts && opts.model, phase: opts && opts.phase })
   const model = opts && opts.model
-  if (model !== 'qmodel_38max' && model !== 'qfmodel') throw new Error('MODEL_POLICY_VIOLATION: ' + model + ' @ ' + label)
+  calls.push({ label, model, phase: opts && opts.phase, role: ROLE_OF[label] || null, readOnly: READ_ONLY.has(label), promptReadOnly: /只读|禁止\s*Write|禁止任何写|禁止修改任何文件/.test(prompt || '') })
+  if (model && !ALLOWED_RUNTIME.has(model)) throw new Error('MODEL_POLICY_VIOLATION: ' + model + ' @ ' + label + ' (mode=' + MODE + ')')
   switch (label) {
     case 'probe:max': return Promise.resolve(scenario === 'modeldown' ? null : 'OK')
     case 'probe:flash': return Promise.resolve('OK')
@@ -272,7 +394,15 @@ function stubAgent(prompt, opts) {
       return Promise.resolve({ isGitRepo: true, isCorrectRepo: true, branch: 'feature/kb', dirty: false, dirtyFiles: [], notes: 'AGENTS.md 不存在' })
     }
     case 'worktree-snapshot': return Promise.resolve(worktreeSnapshotStub())
-    case 'classify': return Promise.resolve({ blocked: false, taskType: ['backend', 'knowledge', 'rag'], medicalSensitive: false, privacySensitive: true, securitySensitive: false, frontendTouchedExpected: false, backendTouchedExpected: true, schemaTouchedExpected: false, migrationExpected: false, knowledgeTouchedExpected: true, ragTouchedExpected: true, riskLevel: 'medium' })
+    case 'classify': {
+      const base = { blocked: false, taskType: ['backend', 'knowledge', 'rag'], medicalSensitive: false, privacySensitive: false, securitySensitive: false, frontendTouchedExpected: false, backendTouchedExpected: true, schemaTouchedExpected: false, migrationExpected: false, knowledgeTouchedExpected: true, ragTouchedExpected: true, riskLevel: 'medium' }
+      if (D3_HIGH.has(scenario)) return Promise.resolve(Object.assign({}, base, { riskLevel: 'high' }))
+      if (D3_SEC.has(scenario)) return Promise.resolve(Object.assign({}, base, { securitySensitive: true }))
+      if (D3_MIGRATION_TYPE.has(scenario)) return Promise.resolve(Object.assign({}, base, { taskType: ['backend', 'migration'], migrationExpected: true }))
+      if (D3_PRIV.has(scenario)) return Promise.resolve(Object.assign({}, base, { privacySensitive: true }))
+      if (D3_HUMAN.has(scenario)) return Promise.resolve(Object.assign({}, base, { humanDecisionRequired: true, humanDecisionReason: '本任务的验收本质上需要真实人工/授权主体审批（示例：真实患者数据授权 / 医疗专家验证），Agent 无权自行批准。' }))
+      return Promise.resolve(base)
+    }
     case 'explore': return Promise.resolve({ CURRENT_STATE: 'kb 模块已有 md 解析', RELATED_FILES: ['backend/app/kb/parser.py'], DEPENDENCIES: 'sqlalchemy', RISKS: '解析器接口耦合', EXISTING_TESTS: 'backend/tests/kb', POTENTIAL_REGRESSIONS: 'md 解析', TEST_COMMANDS: { backend: ['pytest backend/tests/kb'], frontend: [], lint: ['ruff check backend'], migration: [], integration: ['pytest -m integration'] }, parallelSafe: false, parallelSafeReason: '共享 parser 接口' })
     case 'scope-check': return Promise.resolve(scenario === 'mega'
       ? { atomic: false, estimatedDevDays: 12, reason: 'Mega Task：完成整个知识库', recommendedTasks: [{ taskId: 'kb-01', title: 'PDF 解析', objective: 'o', dependencies: [], acceptanceSummary: 's' }, { taskId: 'kb-02', title: 'HTML 解析', objective: 'o2', dependencies: ['kb-01'], acceptanceSummary: 's2' }] }
@@ -284,6 +414,14 @@ function stubAgent(prompt, opts) {
       const req = (command, exitCode, purpose) => ({ command, purpose: purpose || 'required check', kind: 'required', exitCode, stdoutSummary: exitCode === 0 ? 'ok' : 'FAIL', stderrSummary: exitCode === 0 ? '' : 'non-zero' })
       const reqBlocked = (command, purpose) => ({ command, purpose: purpose || 'required check blocked by missing safe env', kind: 'required', recordStatus: 'SAFELY_NOT_EXECUTED_AND_RECORDED', stderrSummary: 'no provably-safe one-time test env' })
       const rec = (command, exitCode, purpose, recordStatus) => { const o = { command, purpose: purpose || 'baseline record', kind: 'record', stdoutSummary: '' }; if (typeof exitCode === 'number') o.exitCode = exitCode; o.recordStatus = recordStatus || (typeof exitCode === 'number' ? 'EXECUTED_AND_RECORDED' : 'SAFELY_NOT_EXECUTED_AND_RECORDED'); return o }
+      // ---- D3：FLASH_ONLY 门禁裁判 / 反作弊场景（优先于 D2）----
+      if (D3_GATE_FAIL_ALWAYS.has(scenario)) return Promise.resolve({ commands: [req('pytest backend/tests/kb', 1, 'target tests (required)')], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (D3_GATE_FAIL_UNTIL[scenario]) return Promise.resolve(gateCalls < D3_GATE_FAIL_UNTIL[scenario] ? { commands: [req('pytest backend/tests/kb', 1, 'target tests (required)')], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] } : { commands: [req('pytest backend/tests/kb', 0, 'target tests (required)'), req('ruff check backend', 0, 'lint')], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (scenario === 'd3-10-required-downgrade-cheat') return Promise.resolve({ commands: [req('ruff check app', 0, 'lint (required)'), { command: 'pytest backend/tests/kb', purpose: '目标测试（本应 required，执行手擅自降级为 record）', kind: 'record', exitCode: 1, recordStatus: 'EXECUTED_AND_RECORDED', stdoutSummary: '1 failed' }], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (scenario === 'd3-11-unsafe-db-5432') return Promise.resolve({ commands: [req('pytest backend/tests/kb', 0, 'target tests (required)'), req('psql -h 127.0.0.1 -p 5432 -c "DROP DATABASE aiear_prod"', 1, 'destructive op against prod instance')], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (scenario === 'd3-25-safe-55432-not-flagged') return Promise.resolve({ commands: [req('pytest backend/tests/kb', 0, 'target tests (required)'), req('PGPORT=55432 alembic -n ci_tmp downgrade -1', 0, 'migration downgrade against one-time test db on port 55432 (must NOT be flagged)')], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (scenario === 'd3-12-record-red-not-lowering') return Promise.resolve({ commands: [req('pytest backend/tests/kb', 0, 'target tests (required)'), req('ruff check app', 0, 'lint (required)'), rec('pytest -q', 1, 'baseline full pytest (record)'), rec('ruff check app/ --statistics', 1, 'baseline full ruff (record)')], findings: ['F-D3-01|P1|基线全量 pytest 红|backend|CT-x'], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (scenario === 'd3-13-migration-required-noenv') return Promise.resolve({ commands: [req('pytest backend/tests/kb', 0, 'target tests (required)'), reqBlocked('alembic upgrade head && alembic downgrade -1 && alembic upgrade head', 'REQUIRED migration triple（无安全测试环境）')], allPassed: false, blockedMissingSafeTestEnv: true, skippedGates: [] })
       // ---- D2：需要 required 失败以进入修复循环的场景 ----
       if (D2_GATE_FAIL.has(scenario)) {
         if (D2_GATE_FAIL_THEN_PASS.has(scenario) && gateCalls > 1) return Promise.resolve({ commands: [req('pytest backend/tests/kb', 0, 'target tests (required)')], findings: [], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
@@ -309,11 +447,26 @@ function stubAgent(prompt, opts) {
     case 'rca-fix': return Promise.resolve({ status: 'FIXED', summary: '按 FIX_SPEC 修复', filesChanged: ['backend/app/kb/pdf.py'], gitCommandsRun: [] })
     case 'max-review': {
       reviewCalls++
-      if (scenario === 'reviewfix' && reviewCalls === 1) return Promise.resolve({ verdict: 'REQUEST_CHANGES', acceptanceResults: [{ id: 'AC-01', met: true, evidence: 'test 401' }], blockers: [{ BLOCKER_ID: 'B1', LOCATION: 'backend/app/kb/pdf.py:20', EVIDENCE: '异常被静默吞掉', IMPACT: '解析失败不可见', REQUIRED_FIX: '抛出并记录日志', VERIFICATION_METHOD: '新增单测' }], nonBlockingNotes: ['命名建议'] })
-      return Promise.resolve({ verdict: 'PASS', acceptanceResults: [{ id: 'AC-01', met: true, evidence: 'pytest 通过' }], blockers: [], nonBlockingNotes: ['后续可加缓存'] })
+      const RC = (why) => ({ verdict: 'REQUEST_CHANGES', acceptanceResults: [{ id: 'AC-01', met: false, evidence: why }], blockers: [{ BLOCKER_ID: 'B1', LOCATION: 'backend/app/kb/pdf.py:20', EVIDENCE: why, IMPACT: '验收未满足', REQUIRED_FIX: '修正实现并通过目标测试', VERIFICATION_METHOD: 'pytest backend/tests/kb' }], nonBlockingNotes: [] })
+      const PS = () => ({ verdict: 'PASS', acceptanceResults: [{ id: 'AC-01', met: true, evidence: 'pytest 通过' }], blockers: [], nonBlockingNotes: ['后续可加缓存'] })
+      if (D3_REVIEW_ALWAYS_RC.has(scenario)) return Promise.resolve(RC('D3：Reviewer A 独立复核判定 blocker 未解决'))
+      if (D3_REVIEW_RC_THEN_PASS.has(scenario)) return Promise.resolve(reviewCalls === 1 ? RC('D3：Reviewer A 首轮 blocker') : PS())
+      if (scenario === 'reviewfix' && reviewCalls === 1) return Promise.resolve(RC('异常被静默吞掉'))
+      return Promise.resolve(PS())
+    }
+    case 'max-review-b': {
+      reviewBCalls++
+      const RCB = (why) => ({ verdict: 'REQUEST_CHANGES', acceptanceResults: [{ id: 'AC-01', met: false, evidence: why }], blockers: [{ BLOCKER_ID: 'B2', LOCATION: 'backend/app/kb/pdf.py:20', EVIDENCE: why, IMPACT: '独立复核发现风险', REQUIRED_FIX: '按 blocker 修复', VERIFICATION_METHOD: 'pytest backend/tests/kb' }], nonBlockingNotes: [] })
+      const PSB = () => ({ verdict: 'PASS', acceptanceResults: [{ id: 'AC-01', met: true, evidence: '双独立复核通过' }], blockers: [], nonBlockingNotes: [] })
+      if (D3_REVIEWB_ALWAYS_RC.has(scenario)) return Promise.resolve(RCB('D3：Reviewer B 持续否决'))
+      if (D3_REVIEWB_RC_THEN_PASS.has(scenario)) return Promise.resolve(reviewBCalls === 1 ? RCB('D3：Reviewer B 首轮否决') : PSB())
+      return Promise.resolve(PSB())
     }
     case 'fix': return Promise.resolve({ status: 'FIXED', summary: '修复 B1', filesChanged: ['backend/app/kb/pdf.py'] })
-    case 'verify': return Promise.resolve({ verdict: 'TASK_PASS', acceptanceAllMet: true, scopeIntact: true, unexpectedFiles: [], regressionRisk: 'low', rollbackIntact: true, changedFiles: ['backend/app/kb/pdf.py', 'backend/app/kb/parser.py'], reasons: ['全部满足'], suggestedNextTask: 'kb-02 HTML 解析器' })
+    case 'verify': {
+      if (scenario === 'd3-06-verifier-fail') return Promise.resolve({ verdict: 'TASK_FAIL', acceptanceAllMet: false, scopeIntact: true, unexpectedFiles: [], regressionRisk: 'medium', rollbackIntact: true, changedFiles: ['backend/app/kb/pdf.py', 'backend/app/kb/parser.py'], reasons: ['D3：独立 Verifier 抽查重跑目标测试仍失败，Worker 自报不作为验收依据'], suggestedNextTask: null })
+      return Promise.resolve({ verdict: 'TASK_PASS', acceptanceAllMet: true, scopeIntact: true, unexpectedFiles: [], regressionRisk: 'low', rollbackIntact: true, changedFiles: ['backend/app/kb/pdf.py', 'backend/app/kb/parser.py'], reasons: ['全部满足'], suggestedNextTask: 'kb-02 HTML 解析器' })
+    }
     case 'milestone-evidence': return Promise.resolve({ checks: [{ name: 'regression', performed: true, result: 'pass', command: 'pytest', exitCode: 0, evidence: '30 passed' }], summary: 'ok', missing: [] })
     case 'milestone-verdict': return Promise.resolve({ verdict: 'MILESTONE_PASS', reasons: ['所有 Task PASS'], openBlockers: [], taskStatusReview: '3/3 PASS' })
     case 'release-evidence': return Promise.resolve({ checks: [{ name: 'backend full tests', performed: true, result: 'pass', command: 'pytest', exitCode: 0, evidence: 'ok' }, { name: 'performance tests', performed: false, result: 'missing_evidence', evidence: '项目暂无性能测试' }], summary: 'partial', missing: ['performance tests'] })
@@ -335,12 +488,13 @@ const stubs = {
 }
 
 let ARGS
+const forceMax = scenario === 'd3-02-runtime-max-call'
 switch (scenario) {
   case 'notask': ARGS = undefined; break
-  case 'badmode': ARGS = { task: 'x', mode: 'yolo' }; break
-  case 'milestone': ARGS = { task: '知识库 M1 Milestone', mode: 'milestone_gate' }; break
-  case 'release': ARGS = { task: 'v1.0 发布', mode: 'release_gate' }; break
-  default: ARGS = { task: '实现知识库 PDF 解析器，支持文本与元数据提取', mode: 'task' }
+  case 'badmode': ARGS = { task: 'x', mode: 'yolo', executionMode: MODE }; break
+  case 'milestone': ARGS = { task: '知识库 M1 Milestone', mode: 'milestone_gate', executionMode: MODE }; break
+  case 'release': ARGS = { task: 'v1.0 发布', mode: 'release_gate', executionMode: MODE }; break
+  default: ARGS = { task: '实现知识库 PDF 解析器，支持文本与元数据提取', mode: 'task', executionMode: MODE, __d3_force_max_route: forceMax }
 }
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
@@ -348,13 +502,26 @@ const fn = new AsyncFunction('agent', 'parallel', 'pipeline', 'phase', 'log', 'a
 const result = await fn(stubs.agent, stubs.parallel, stubs.pipeline, stubs.phase, stubs.log, ARGS, stubs.budget, stubs.workflow)
 
 const modelsUsed = [...new Set(calls.filter(c => c.model).map(c => c.model))]
+const roleSet = {}
+for (const c of calls) { if (c.role) (roleSet[c.role] = roleSet[c.role] || []).push(c.label) }
 console.log(JSON.stringify({
   scenario,
+  executionMode: MODE,
   WORKFLOW_STATUS: result && result.WORKFLOW_STATUS,
   BLOCK_REASON: result && result.BLOCK_REASON,
+  ACTIVE_EXECUTION_MODE: result && result.ACTIVE_EXECUTION_MODE,
+  REAL_PRODUCTION_APPROVED: result && result.REAL_PRODUCTION_APPROVED,
   modelsUsed,
+  allQfmodel: modelsUsed.length > 0 && modelsUsed.every(m => m === 'qfmodel'),
+  maxModelInvoked: modelsUsed.indexOf('qmodel_38max') >= 0,
   gateCalls,
   reviewCalls,
+  reviewBCalls,
   agentLabels: calls.filter(c => c.model).map(c => c.label),
+  roleCalls: roleSet,
+  readOnlyPromptMisses: calls.filter(c => c.readOnly && !c.promptReadOnly).map(c => c.label),
+  reviewInvocations: (result && result.REVIEW_INVOCATIONS) || null,
+  taskPassFormula: (result && result.TASK_PASS_FORMULA) || null,
+  highRisk: (result && typeof result.HIGH_RISK !== 'undefined') ? result.HIGH_RISK : null,
   resultKeys: result ? Object.keys(result) : null,
 }, null, 1))

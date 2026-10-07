@@ -20,6 +20,7 @@
 
 - Flash **无 PASS 权**。Task PASS 唯一路径：Machine Gate PASS（真实 exitCode）+ Max Review PASS + Max Verify PASS。
 - 禁止 fallback 到其他模型；模型不可用时返回 `BLOCKED_MODEL_UNAVAILABLE`。
+- **D3 受控降级（FLASH_ONLY_DEGRADED_MODE，人工授权）**：Max 配额不可用时，决策角色改由**相互独立的 `qfmodel` invocation** 承担（Planner/Explorer/Worker/Reviewer/Verifier/RCA 各为独立调用，HIGH Risk 追加 Reviewer A+B 双独立审查），运行时**绝不**调用 `qmodel_38max`/第三模型/default/auto/fallback；实施者自报无验收权，Task PASS = Machine Gate ∧ 独立 Review ∧ Verify ∧ Task Delta ∧ Governance Guard。`FULL_MODE` 双模型为最终目标、完整保留（恢复 Max 后 `EXECUTION_MODE` 改回 `'FULL'` 或传 `executionMode:'FULL'`）。HUMAN_REQUIRED 一律 `PAUSED_FOR_HUMAN` 不自动批准；Release 拆分 `ENGINEERING_RELEASE_READY` 与 `REAL_PRODUCTION_APPROVED`（无人工批准恒 NO）。详见 `.qoder/rules/00-model-policy.md` D3 节。
 - 详见 `.qoder/rules/00-model-policy.md`。
 
 ## 3. 交付流水线契约

@@ -24,6 +24,12 @@
 若未来模型标识变更，只需修改脚本顶部的 `MAX` / `FLASH` 两个常量。
 探针失败时 Workflow 返回 `BLOCKED_MODEL_UNAVAILABLE`，绝不自动换模型。
 
+> **D3 执行模式**：顶部 `EXECUTION_MODE` 当前默认 `'FLASH_ONLY'`（Max 配额不可用时的降级模式，经人工授权）。
+> FLASH_ONLY 下**所有运行时角色模型恒为 `qfmodel`**，绝不实际调用 `qmodel_38max`/第三模型/default/auto/fallback；
+> 决策角色的独立性由**相互独立的 agent() invocation** + HIGH Risk 双审查保证，门禁裁判权与 D1/D2 保护**不降**。
+> `FULL_MODE`（Max+Flash 双模型）**完整保留**：恢复 Max 后把 `EXECUTION_MODE` 改回 `'FULL'`，或调用时传 `executionMode:'FULL'`。
+> 详见下文「第四轮治理迁移 D3」。
+
 ## 启动方式（在 Qoder CN 会话中）
 
 Task 模式（默认）：
@@ -47,10 +53,13 @@ Workflow({ name: "project-feature-delivery", args: { task: "v1.0 发布", mode: 
 - `TASK_PASS` / `TASK_FAIL`
 - `NEEDS_DECOMPOSITION`（Mega Task，附 recommendedTasks[]，绝不边说大边实施）
 - `MILESTONE_PASS` / `MILESTONE_BLOCKED`
-- `PROJECT_READY` / `PROJECT_NOT_READY`
+- `PROJECT_READY` / `PROJECT_NOT_READY`（D3：Release 另出 `ENGINEERING_RELEASE_READY` 与 `REAL_PRODUCTION_APPROVED`，无真实人工批准时后者恒为 `NO`）
+- `PAUSED_FOR_HUMAN`（D3：`BLOCK_REASON=HUMAN_REQUIRED`，验收本质需真实人工审批，Agent 绝不代批）
 - `BLOCKED`：`BLOCKED_DIRTY_MAIN` / `BLOCKED_MODEL_UNAVAILABLE` / `BLOCKED_UNCLEAR_TASK` /
   `SPEC_CONFLICT` / `BLOCKED_MISSING_SAFE_TEST_ENV` / `BLOCKED_REPAIR_LIMIT`（修复循环硬上限 3 轮）/
   `MISSING_TASK` / `INVALID_MODE` / `BLOCKED_NOT_GIT_REPO` / `BLOCKED_WRONG_REPO`
+- `BLOCKED`（D2 治理）：`BLOCKED_GOVERNANCE_CONFLICT` / `BLOCKED_EXTERNAL_WORKTREE_CHANGE` / `BLOCKED_GIT_HISTORY_MUTATED` / `BLOCKED_GIT_INDEX_MUTATED` / `BLOCKED_REPAIR_OUT_OF_SCOPE` / `GOVERNANCE_POLICY_VIOLATION`
+- `BLOCKED`（D3 新增）：`MODEL_POLICY_VIOLATION`（FLASH_ONLY 路由守卫在任何 agent 调用前拦截被禁模型）/ `GOVERNANCE_POLICY_VIOLATION`（执行手把 required 降级为 record）/ `BLOCKED_UNSAFE_DATABASE_TARGET`（对 `:5432` 破坏性操作）
 
 ## 流程（task 模式）
 
@@ -221,6 +230,96 @@ d2-15 dirty main→BLOCKED_DIRTY_MAIN（守卫未被 D2 削弱）。
 
 D1 的 21 条全部保留且仍 PASS；模型路由仍仅 `qmodel_38max`/`qfmodel`，无新增模型/Agent/fallback；
 gateCalls 有上界，无死循环。运行：`node .qoder/workflow-state/dryrun-harness.mjs test` → 36/36。
+
+## 第四轮治理迁移 D3（2026-10-07）：FLASH_ONLY_DEGRADED_MODE（人工授权的降级模式）
+
+### 背景与授权
+
+Max（`qmodel_38max`）配额耗尽，无法承担规划/探索/审查/验收/RCA 等决策角色。经**人工明确授权**，
+新增 `FLASH_ONLY_MODE` 作为降级运行模式：所有运行时角色的**模型**改为 `qfmodel`，但角色**独立性**、
+门禁裁判权、D1/D2 全部保护**一分不降**。`FULL_MODE`（Max+Flash 双模型）**完整保留**，为未来恢复路径。
+
+- 顶部常量 `EXECUTION_MODE = 'FLASH_ONLY'` 为当前默认；调用可传 `executionMode:'FULL'` 临时回到双模型。
+- 恢复 Max 后：把 `EXECUTION_MODE` 改回 `'FULL'`（或所有调用传 `executionMode:'FULL'`）即回到 `qmodel_38max` 规划/审查/验收 + `qfmodel` 实施/门禁。
+- FLASH_ONLY 运行期间**绝不**实际调用 `qmodel_38max` / 任何第三模型 / default / auto / fallback。
+
+### 角色 → 模型路由（`modelFor(role)`）
+
+| 角色 | FULL 模型 | FLASH_ONLY 运行时模型 | 独立性来源 |
+|---|---|---|---|
+| FLASH_PLANNER（preflight/classify/scope/spec） | Max | `qfmodel` | 独立 agent() invocation |
+| FLASH_EXPLORER（explore） | Max | `qfmodel` | 独立 invocation（只读） |
+| FLASH_WORKER（implement） | Flash | `qfmodel` | 独立 invocation |
+| FLASH_GATE/证据执行手（machine-gate/milestone/release-evidence） | Flash | `qfmodel` | 机械执行手，无判定权 |
+| FLASH_REVIEWER A（max-review） | Max | `qfmodel` | 独立 invocation，与 Worker 分离 |
+| FLASH_REVIEWER B（max-review-b，仅 HIGH Risk） | Max | `qfmodel` | **第二个**独立 invocation，看不到 A 的结论 |
+| FLASH_VERIFIER（verify/verdict） | Max | `qfmodel` | 独立 invocation |
+| FLASH_RCA（rca，第 2 轮起） | Max | `qfmodel` | **新独立** invocation，非原 Worker 会话 |
+| 快照（worktree-snapshot） | Max | `qfmodel` | 只读 |
+
+**关键约束**：Planner / Worker / Reviewer / Verifier 必须是**相互独立的 invocation**；
+禁止"同一个 Flash 会话先写代码再自我验收"。HIGH Risk 追加 A+B 双独立审查（不同 label、不同调用）。
+
+### HIGH Risk 判定（触发双独立审查）
+
+`isHighRisk(cls)` = `riskLevel==='high'` ∨ `securitySensitive` ∨ `medicalSensitive` ∨
+`taskType ∋ {auth, security, medical, migration, deployment}`。
+（**不含泛化 privacySensitive**，以保证 legacy 场景仍单审查、D1/D2 回归不受影响。）
+HIGH Risk 最小集合覆盖：安全、认证、RBAC、IDOR、隐私、健康数据、语音数据、医疗安全、敏感迁移、发布配置。
+
+### Normal / HIGH Task 的 PASS 合成判据（写入 `TASK_PASS_FORMULA`）
+
+```
+TASK_PASS = MACHINE_GATE_PASS ∧ INDEPENDENT_FLASH_REVIEW_PASS ∧ FLASH_VERIFY_PASS
+          ∧ TASK_DELTA_PASS ∧ GOVERNANCE_GUARD_PASS
+HIGH Risk 追加：INDEPENDENT_FLASH_REVIEW_PASS 要求 Reviewer A 与 B【均】PASS
+```
+
+- **实施者（FLASH_WORKER）自报 IMPLEMENTED/PASS/DONE 一律无最终验收权**；Machine Gate 由脚本按真实 `exitCode` 计算（忽略执行手自报 `allPassed`）。
+- 最终报告含 `WORKER_SELF_REPORT.finalAuthority = NONE`、`REVIEW_INVOCATIONS`、`HIGH_RISK`。
+
+### D1 / D2 在 FLASH_ONLY 下全部保留（不得因降级降低门禁）
+
+- **D1**：required/record 分层、recordStatus、findings、GATE_HEALTH、PROJECT_BASELINE_HEALTH 双真相全部保留；required 失败必须阻断，record 红只如实记录。
+- **D2**：WORKTREE_BASELINE、Task Delta、GOVERNANCE_PROTECTED_PATHS、SELF_REPAIR_ELIGIBILITY、DESTRUCTIVE_GIT_PROTECTION、pre/post 指纹、PRE_EXISTING_UNCHANGED、EXTERNAL_CHANGED_DURING_TASK 全部保留。Flash 修复仍禁 `git checkout/restore/reset/clean/stash/revert/merge/rebase/cherry-pick/switch`。绝不重演"D1 回滚被 Flash 执行"事故。
+- **新增反作弊扫描（`gateGuardViolation()`，门禁后、判定前）**：
+  - `detectRequiredDowngrade()`：执行手把 TASK_SPEC 必跑项或含 `[GATE-REQUIRED]` 的命令记为 `kind:record` → `GOVERNANCE_POLICY_VIOLATION / REQUIRED_DOWNGRADE`。
+  - `scanUnsafeDbCommand()`：命令指向 `:5432`（UNKNOWN/可能生产实例，精确匹配、不误伤一次性测试库 `:55432`）且含 drop/truncate/delete/downgrade 等破坏词 → `BLOCKED_UNSAFE_DATABASE_TARGET`。同样扫描修复 Worker 自报的 `gitCommandsRun[]`/`commandsRun[]`。
+
+### HUMAN_REQUIRED 绝不自动批准（`PAUSED_FOR_HUMAN`）
+
+Classify 阶段判定 `humanDecisionRequired=true`（真实医疗专家验证 / 患者数据授权 / 伦理审查 /
+版权许可 / 生产密钥 / 生产库危险操作 / 正式生产部署 / 支付 / 真实验证码 / 法务）→
+立即返回 `PAUSED_FOR_HUMAN` / `BLOCK_REASON=HUMAN_REQUIRED`，**不实现任何代码、不改任何文件**，交人工审批。
+
+### Release 终态拆分（工程就绪 ≠ 生产已批准）
+
+Release Gate 返回新增 `ENGINEERING_RELEASE_READY: YES/NO`（按门禁判定）与
+`REAL_PRODUCTION_APPROVED: 'NO'`（**恒 NO**，除非有真实人工/授权主体批准，绝不假装已获生产批准）。
+
+### D3 新增终态
+
+`PAUSED_FOR_HUMAN`（`BLOCK_REASON=HUMAN_REQUIRED`）、`MODEL_POLICY_VIOLATION`（FLASH_ONLY 路由守卫在任何 agent 调用前拦截被禁模型）、
+`GOVERNANCE_POLICY_VIOLATION`（required 降级）、`BLOCKED_UNSAFE_DATABASE_TARGET`（:5432 破坏性目标）。
+
+### D3 回归场景（新增 24 条 d3-01..d3-24，总数 36→60）
+
+d3-01 happy(qfmodel-only/单审/合成判据全真/角色分离)｜d3-02 trip-wire 强制路由 Max→MODEL_POLICY_VIOLATION(0 agent)｜
+d3-03/d3-20 required 永远红(含执行手自报 allPassed:true)→BLOCKED_REPAIR_LIMIT（自报无验收权）｜
+d3-04 独立 Review 首轮 RC 次轮 PASS→TASK_PASS｜d3-05 Reviewer A 永远 RC→BLOCKED_REPAIR_LIMIT｜
+d3-06 Verifier TASK_FAIL→BLOCKED/TASK_FAIL｜d3-07 HIGH 双审均 PASS｜d3-08 B 首否次允→TASK_PASS｜
+d3-09 B 永远否决→BLOCKED_REPAIR_LIMIT｜d3-10 required 降级 record→GOVERNANCE_POLICY_VIOLATION｜
+d3-11 :5432 DROP→BLOCKED_UNSAFE_DATABASE_TARGET｜d3-12 record 红不降门禁→TASK_PASS｜
+d3-13 required 迁移缺安全环境→BLOCKED_MISSING_SAFE_TEST_ENV｜d3-14 Worker 写 AGENTS.md→BLOCKED_GOVERNANCE_CONFLICT｜
+d3-15 Self-Repair 报 `git checkout HEAD`→GOVERNANCE_POLICY_VIOLATION｜d3-16 Self-Repair 合法→TASK_PASS｜
+d3-17 humanDecisionRequired→PAUSED_FOR_HUMAN｜d3-18 privacy 但非 HIGH→单审（不误触发双审）｜
+d3-19 securitySensitive→HIGH 双审｜d3-21 migration taskType→HIGH 双审｜
+d3-22 连红两轮→第 2 轮起新独立 RCA invocation→TASK_PASS｜d3-23 显式 executionMode:'FULL' 恢复路径→qmodel_38max 被调用→TASK_PASS｜
+d3-24 HIGH 且 A/B 均永远否决→BLOCKED_REPAIR_LIMIT（有界，无死循环）。
+
+D1 的 21 条 + D2 的 15 条（含 legacy 11 条已并入 D1 计数）全部保留且仍 PASS；
+所有 d3-*（除 d3-23）运行模型集合恒为 `{qfmodel}`；gateCalls 有上界（≤4），无死循环。
+运行：`node .qoder/workflow-state/dryrun-harness.mjs test` → **60/60**。
 
 ## 运行监控 / 暂停 / 恢复 / 取消
 

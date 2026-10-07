@@ -30,6 +30,61 @@ const FLASH = 'qfmodel'       // Qwen3.8-Flash 程序员
 
 const MODEL_BLOCKED_HINT = '请运行 /model 命令查看当前可用模型列表，确认 qmodel_38max (Qwen3.8-Max) 与 qfmodel (Qwen3.8-Flash) 是否仍然有效；如模型标识已变更，请更新本 Workflow 顶部的 MAX / FLASH 常量。禁止改用其他模型继续。'
 
+// ============================================================
+// 治理升级 D3 — FLASH_ONLY_DEGRADED_MODE（Human Authorized Governance Migration）
+// ------------------------------------------------------------
+// 两种执行模式，均由 qmodel_38max / qfmodel 两个标识构成，禁止任何第三模型 / default / auto / fallback：
+//   · FULL_MODE  ：规划/探索/审查/验收/RCA = qmodel_38max(Max)；实施/门禁/取证 = qfmodel(Flash)。
+//     —— Max Token 恢复后把下方 EXECUTION_MODE 默认改回 'FULL'（或在调用时传 executionMode:'FULL'）即回到此模式。
+//   · FLASH_ONLY_MODE（本 Goal 当前默认）：Max 配额不可用，全部运行时角色的【模型】= qfmodel。
+//     但角色分离不靠模型、靠【独立 invocation】：Planner / Explorer / Worker / Reviewer / Verifier / RCA
+//     各为独立 agent() 调用（不同 label），HIGH Risk 追加 FLASH_REVIEWER_A + FLASH_REVIEWER_B 双独立审查。
+//     Worker 自报 PASS/DONE/IMPLEMENTED 一律无最终验收权；TASK_PASS 仍须
+//     Machine Gate PASS ∧ 独立 Review PASS ∧ Verify PASS ∧ Task Delta PASS ∧ Governance Guard PASS。
+//     为“只有 Flash”而降低任何 Gate / 把 required 降为 record / 放宽测试，一律禁止。
+// ============================================================
+let EXECUTION_MODE = 'FLASH_ONLY'        // 当前默认运行模式（D3）。恢复 Max 后改为 'FULL' 或传 executionMode:'FULL'。
+let D3_TEST_FORCE_MAX_ROUTE = false      // 仅测试 trip-wire：验证 FLASH_ONLY 下 qmodel_38max 运行时路由被拒（生产恒 false）
+
+// 角色 → FULL 模式设计模型（真值）。FLASH_ONLY 下运行时统一路由到 FLASH。
+const ROLE_FULL_MODEL = {
+  planner: MAX, explorer: MAX, reviewer: MAX, reviewerB: MAX, verifier: MAX, rca: MAX, snapshot: MAX,
+  worker: FLASH, gate: FLASH, evidence: FLASH, fixer: FLASH, probeFlash: FLASH, probeMax: MAX,
+}
+// FLASH_ONLY 下本应走 Max、需被路由到 FLASH 的角色；测试 trip-wire 命中这些角色时会被强制路由回 MAX 以验证拦截。
+const FLASH_ONLY_ROUTED_ROLES = ['planner', 'explorer', 'reviewer', 'reviewerB', 'verifier', 'rca', 'snapshot']
+
+function modelFor(role) {
+  if (EXECUTION_MODE === 'FLASH_ONLY') {
+    if (role === 'probeMax') return null                       // FLASH_ONLY 不探测 Max（Max 不可用）
+    if (D3_TEST_FORCE_MAX_ROUTE && FLASH_ONLY_ROUTED_ROLES.indexOf(role) >= 0) return MAX // 测试 trip-wire：模拟违规路由，由 Preflight 路由守卫拦截
+    return FLASH                                                // 正常 FLASH_ONLY：所有运行时角色 = qfmodel
+  }
+  return ROLE_FULL_MODEL[role]
+}
+function allowedRuntimeModels() {
+  return EXECUTION_MODE === 'FLASH_ONLY' ? new Set([FLASH]) : new Set([MAX, FLASH])
+}
+function mname(m) { return m === MAX ? MAX + ' (Qwen3.8-Max)' : (m === FLASH ? FLASH + ' (Qwen3.8-Flash)' : String(m)) }
+
+// D3：把当前执行模式与各角色运行时模型汇总为报告字段（供审计与最终报告）。
+function modeSummary() {
+  return {
+    ACTIVE_EXECUTION_MODE: EXECUTION_MODE,
+    FULL_MODE_PRESERVED: true,
+    RECOVERY_TO_FULL: "Max 配额恢复后：把顶部 EXECUTION_MODE 改回 'FULL'，或调用时传 executionMode:'FULL'，即回到 qmodel_38max(规划/审查/验收) + qfmodel(实施/门禁) 双模型模式。",
+    ALLOWED_RUNTIME_MODELS: [...allowedRuntimeModels()],
+    ROLE_RUNTIME_MODELS: {
+      planner: mname(modelFor('planner')), explorer: mname(modelFor('explorer')), worker: mname(modelFor('worker')),
+      gate: mname(modelFor('gate')), reviewer: mname(modelFor('reviewer')), reviewerB: mname(modelFor('reviewerB')),
+      verifier: mname(modelFor('verifier')), rca: mname(modelFor('rca')), snapshot: mname(modelFor('snapshot')), evidence: mname(modelFor('evidence')),
+    },
+    ROLE_SEPARATION: EXECUTION_MODE === 'FLASH_ONLY'
+      ? 'FLASH_ONLY：所有角色模型=qfmodel，独立性由【独立 agent() invocation】保证（Planner/Explorer/Worker/Reviewer/Verifier/RCA 各为不同 label 的独立调用）；HIGH Risk 追加 FLASH_REVIEWER_A+B 双独立审查。'
+      : 'FULL：规划/探索/审查/验收/RCA=qmodel_38max（只读决策），实施/门禁/取证=qfmodel，天然模型级角色分离。',
+  }
+}
+
 const PROJECT_RULES = `
 [项目] ai-hearing-rehabilitation — 人工耳蜗术后听觉康复教育与训练辅助工具。不是自动诊断系统、不是处方系统、不是人工耳蜗调机系统。
 [技术栈] Frontend: React 18 + TypeScript + Vite + MUI + Tailwind CSS；Backend: Python 3.11 + FastAPI + SQLAlchemy + PostgreSQL + Redis；AI: Fun-ASR / Qwen TTS / LLM；知识库(未来): PostgreSQL + pgvector。
@@ -47,6 +102,20 @@ const MAX_RULES = `
 - 程序员不能验收自己：实现质量由客观命令（退出码）与你的独立审查共同裁决。
 - 你是只读决策者时，禁止 Write/Edit/创建/删除任何文件。
 `
+
+// FLASH_ONLY 降级模式下承担【规划/探索/审查/验收/RCA】决策角色的独立 invocation 行为准则。
+// 关键点：角色分离靠【独立 agent() 调用】保证，而不是靠模型；绝不因为"只有 Flash"而降低任何门禁、
+// 把 required 降级为 record、放宽测试或对本任务的实现自我验收。FULL 模式下 decisionRules() 返回原始 MAX_RULES。
+const FLASH_ONLY_DECISION_RULES = `
+你在 FLASH_ONLY_DEGRADED_MODE 下运行：当前由 qfmodel (Qwen3.8-Flash) 承担【规划/探索/审查/验收/RCA/快照】职责（原由 Qwen3.8-Max 承担）。
+- 你是一次【独立 invocation】：与实施代码的 Worker 是不同的调用；你不得因为参与同一任务而放松标准，也不得替实现者背书。
+- 只输出有明确证据的结构化结论；禁止"基本通过 / 看起来可以 / 建议以后优化 / 应该没问题"。
+- 程序员不能验收自己：实现质量由客观命令（真实 exitCode）与独立 Review/Verify 共同裁决。
+- 你处于只读决策角色时：禁止 Write/Edit/创建/删除任何文件，禁止修改 TASK_SPEC / 验收标准 / 架构 / 安全规则 / 医疗边界 / 治理文件 / Workflow 本体。
+- 严禁为了"能过"而降低门禁：不得把 required 改成 record、不得删/skip/放宽测试、不得放松 lint/typecheck/build、不得无视 Scope/治理/pre-existing 边界。
+- 若发现需要真实人工审批的事项（医疗专家验证 / 患者数据授权 / 伦理审查 / 版权许可 / 生产密钥 / 生产库危险操作 / 正式发布部署 / 支付 / 验证码 / 法务），必须标 humanDecisionRequired=true 交人工，绝不代为批准。
+`
+function decisionRules() { return EXECUTION_MODE === 'FLASH_ONLY' ? FLASH_ONLY_DECISION_RULES : MAX_RULES }
 
 const FLASH_RULES = `
 你是 Qwen3.8-Flash（程序员/实施者）。权限与禁令：
@@ -240,6 +309,7 @@ function blocked(reason, failedPhase, extra) {
     WORKFLOW_STATUS: 'BLOCKED',
     BLOCK_REASON: reason,
     FAILED_PHASE: failedPhase,
+    ACTIVE_EXECUTION_MODE: EXECUTION_MODE,
     ATTEMPTS: (extra && extra.ATTEMPTS) || 0,
     BLOCKERS: (extra && extra.BLOCKERS) || [],
     FILES_CURRENTLY_CHANGED: (extra && extra.FILES_CURRENTLY_CHANGED) || [],
@@ -256,6 +326,62 @@ function modelBlocked(failedPhase, model) {
     USER_ACTION: MODEL_BLOCKED_HINT,
     SAFE_NEXT_ACTION: '确认模型可用后重跑；禁止自动换模型。',
   })
+}
+
+// D3：HUMAN_REQUIRED 终态——需要真实人工审批时立即停下交人工，绝不自动批准。
+function pausedForHuman(reason, failedPhase, extra) {
+  const out = {
+    WORKFLOW_STATUS: 'PAUSED_FOR_HUMAN',
+    BLOCK_REASON: 'HUMAN_REQUIRED',
+    FAILED_PHASE: failedPhase,
+    ACTIVE_EXECUTION_MODE: EXECUTION_MODE,
+    REASON: reason,
+    SAFE_NEXT_ACTION: '此任务需要真实人工/授权主体的审批或操作，Agent 不得代为批准。请人工完成相应审批（医疗专家验证 / 患者数据授权 / 伦理审查 / 版权许可 / 生产密钥 / 生产库危险操作 / 正式生产部署 / 支付 / 验证码 / 法务）后再决定后续。本 Workflow 未实现任何业务代码，也未修改任何文件。',
+    REAL_PRODUCTION_APPROVED: 'NO',
+  }
+  if (extra) { for (const k of Object.keys(extra)) { if (!(k in out)) out[k] = extra[k] } }
+  return out
+}
+
+// D3：HIGH Risk 判定——触发双独立审查（FLASH_REVIEWER_A + FLASH_REVIEWER_B）。
+function isHighRisk(cls) {
+  if (!cls) return false
+  if (cls.riskLevel === 'high') return true
+  if (cls.securitySensitive || cls.medicalSensitive || cls.privacySensitive) return true
+  const t = cls.taskType || []
+  for (const x of ['auth', 'security', 'medical', 'migration', 'deployment']) { if (t.indexOf(x) >= 0) return true }
+  return false
+}
+
+// D3 反作弊①：禁止执行手（Flash）把 required 命令动态降级为 record。
+// 若一条 kind=record 的命令明显对应 TASK_SPEC 的 MANDATORY/REGRESSION 必跑项，或 purpose 含 [GATE-REQUIRED]，即判降级违规。
+function detectRequiredDowngrade(cmds, specObj) {
+  const must = []
+    .concat((specObj && specObj.MANDATORY_TESTS) || [])
+    .concat((specObj && specObj.REGRESSION_TESTS) || [])
+    .map(s => String(s == null ? '' : s).trim())
+    .filter(Boolean)
+  for (const c of cmds) {
+    if (!c || c.kind !== 'record') continue
+    const cmd = String(c.command || '').trim()
+    const purpose = String(c.purpose || '')
+    if (/\[GATE-REQUIRED/i.test(purpose) || /\[GATE-REQUIRED/i.test(cmd)) {
+      return { code: 'GOVERNANCE_POLICY_VIOLATION', tier: 'REQUIRED_DOWNGRADE', detail: `执行手把 required 门禁项降级为 record（purpose/command 仍含 [GATE-REQUIRED]）：${cmd}` }
+    }
+    for (const m of must) { if (cmd && (cmd === m || cmd.indexOf(m) >= 0 || m.indexOf(cmd) >= 0)) return { code: 'GOVERNANCE_POLICY_VIOLATION', tier: 'REQUIRED_DOWNGRADE', detail: `执行手把 TASK_SPEC 必跑项 '${m}' 记为 record（kind=record），属动态降级，禁止。` } }
+  }
+  return null
+}
+
+// D3 反作弊②：破坏性数据库目标守卫——禁止对未知/生产 :5432 实例执行破坏性操作。
+// 精确匹配 5432（前后非数字），不误伤一次性测试库 :55432。
+function scanUnsafeDbCommand(cmd) {
+  const s = String(cmd == null ? '' : cmd).toLowerCase()
+  if (!/(?<!\d)5432(?!\d)/.test(s)) return null
+  if (/(drop|truncate|delete|destroy|reset|downgrade|remove|dropdb|drop\s+database|\bgolden\b|prod(uction)?\b)/.test(s)) {
+    return { code: 'BLOCKED_UNSAFE_DATABASE_TARGET', detail: `命令指向 :5432（UNKNOWN_DATABASE_INSTANCE / 可能是生产库），且含破坏性操作词，禁止执行：${cmd}` }
+  }
+  return null
 }
 
 // ---------- Schemas ----------
@@ -289,6 +415,8 @@ const CLASSIFY_SCHEMA = {
     knowledgeTouchedExpected: { type: 'boolean' },
     ragTouchedExpected: { type: 'boolean' },
     riskLevel: { type: 'string', enum: ['low', 'medium', 'high'] },
+    humanDecisionRequired: { type: 'boolean', description: 'D3：任务验收本质上需要真实人工审批（医疗专家验证/患者数据授权/伦理/版权/生产密钥/生产库危险操作/正式生产部署/支付/验证码/法务）时为 true；命中则 PAUSED_FOR_HUMAN，绝不自动批准' },
+    humanDecisionReason: { type: 'string', description: '需要哪一类人工审批、为何无法由 Agent 自行批准' },
   },
   required: ['blocked', 'taskType', 'medicalSensitive', 'privacySensitive', 'securitySensitive', 'frontendTouchedExpected', 'backendTouchedExpected', 'schemaTouchedExpected', 'migrationExpected', 'knowledgeTouchedExpected', 'ragTouchedExpected', 'riskLevel'],
 }
@@ -589,6 +717,10 @@ if (typeof args === 'string') {
 } else if (args && typeof args === 'object') {
   task = String(args.task || '').trim()
   mode = String(args.mode || 'task')
+  // D3：执行模式可由调用方覆盖（默认已是 FLASH_ONLY）；仅接受 'FULL' / 'FLASH_ONLY' 两个合法值。
+  if (args.executionMode === 'FULL' || args.executionMode === 'FLASH_ONLY') EXECUTION_MODE = args.executionMode
+  // D3 测试专用 trip-wire（生产恒不传）：验证 FLASH_ONLY 下把角色路由到 qmodel_38max 会被 Preflight 路由守卫拦截。
+  if (args.__d3_force_max_route === true) D3_TEST_FORCE_MAX_ROUTE = true
 }
 if (['task', 'milestone_gate', 'release_gate'].indexOf(mode) === -1) {
   return blocked('INVALID_MODE', 'Input', { SAFE_NEXT_ACTION: "mode 只允许 'task' | 'milestone_gate' | 'release_gate'。" })
@@ -603,14 +735,48 @@ if (!task) {
 // PHASE 0 — PREFLIGHT
 // ============================================================
 phase('Preflight')
-log('探测模型可用性：qmodel_38max (Qwen3.8-Max) / qfmodel (Qwen3.8-Flash)')
-const probes = await parallel([
-  () => agent('模型可用性探针。只回复一个词：OK', { label: 'probe:max', phase: 'Preflight', model: MAX, effort: 'low' }),
-  () => agent('模型可用性探针。只回复一个词：OK', { label: 'probe:flash', phase: 'Preflight', model: FLASH, effort: 'low' }),
-])
-if (!probes[0]) return modelBlocked('Preflight', MAX + ' (Qwen3.8-Max)')
-if (!probes[1]) return modelBlocked('Preflight', FLASH + ' (Qwen3.8-Flash)')
-log('两个模型均可用。执行 Git 守护检查（只读）。')
+
+// ============================================================
+// D3 路由守卫（在任何角色 Agent 真正调用之前执行，纯脚本判定，不调用模型）：
+// 当前执行模式下，任何"运行时会发起 agent() 的角色"若被路由到不在允许集合内的模型
+// （FLASH_ONLY 只允许 qfmodel；任何 default/auto/fallback/第三模型都不在集合内），
+// 立即返回 MODEL_POLICY_VIOLATION —— 绝不实际调用被禁模型。
+// ============================================================
+{
+  const runtimeRoles = ['planner', 'explorer', 'worker', 'gate', 'fixer', 'reviewer', 'reviewerB', 'verifier', 'rca', 'snapshot', 'evidence']
+  for (const r of runtimeRoles) {
+    const m = modelFor(r)
+    if (!allowedRuntimeModels().has(m)) {
+      return blocked('MODEL_POLICY_VIOLATION', 'Preflight', {
+        DETAIL: `执行模式=${EXECUTION_MODE} 下角色 '${r}' 将被路由到模型 '${m}'，不在允许模型集合 [${[...allowedRuntimeModels()].join(', ')}] 内。已在调用前拦截，未实际请求该模型。`,
+        ACTIVE_EXECUTION_MODE: EXECUTION_MODE,
+        OFFENDING_ROLE: r,
+        OFFENDING_MODEL: m,
+        ALLOWED_RUNTIME_MODELS: [...allowedRuntimeModels()],
+        SAFE_NEXT_ACTION: EXECUTION_MODE === 'FLASH_ONLY'
+          ? 'FLASH_ONLY 降级模式禁止调用 qmodel_38max / 任何第三模型 / default / auto / fallback。请检查 Workflow 顶部 EXECUTION_MODE 与 modelFor()/D3_TEST_FORCE_MAX_ROUTE；确需 Max 请恢复 Max 配额后以 executionMode:"FULL" 运行。'
+          : 'FULL 模式仅允许 qmodel_38max / qfmodel，请核对 MAX/FLASH 常量。',
+      })
+    }
+  }
+}
+
+// 模型可用性探针（模式感知）：FLASH_ONLY 只探测 qfmodel，绝不探测/调用 qmodel_38max。
+if (EXECUTION_MODE === 'FLASH_ONLY') {
+  log(`执行模式=FLASH_ONLY（Max 配额不可用）：全部运行时角色模型 = ${FLASH}，仅探测 qfmodel，禁止调用 qmodel_38max。`)
+  const pf = await agent('模型可用性探针。只回复一个词：OK', { label: 'probe:flash', phase: 'Preflight', model: FLASH, effort: 'low' })
+  if (!pf) return modelBlocked('Preflight', FLASH + ' (Qwen3.8-Flash)')
+  log('qfmodel 可用。执行 Git 守护检查（只读）。')
+} else {
+  log('执行模式=FULL：探测模型可用性 qmodel_38max (Qwen3.8-Max) / qfmodel (Qwen3.8-Flash)')
+  const probes = await parallel([
+    () => agent('模型可用性探针。只回复一个词：OK', { label: 'probe:max', phase: 'Preflight', model: modelFor('probeMax'), effort: 'low' }),
+    () => agent('模型可用性探针。只回复一个词：OK', { label: 'probe:flash', phase: 'Preflight', model: FLASH, effort: 'low' }),
+  ])
+  if (!probes[0]) return modelBlocked('Preflight', MAX + ' (Qwen3.8-Max)')
+  if (!probes[1]) return modelBlocked('Preflight', FLASH + ' (Qwen3.8-Flash)')
+  log('两个模型均可用。执行 Git 守护检查（只读）。')
+}
 
 const pre = await agent(`${PROJECT_RULES}
 [任务] 只读执行以下命令并如实报告，禁止任何写操作、禁止任何破坏性 git 命令：
@@ -619,8 +785,8 @@ const pre = await agent(`${PROJECT_RULES}
 3. git rev-parse --show-toplevel
 确认：(a) 当前确实处于 Git 仓库；(b) 该仓库是否为 ai-hearing-rehabilitation 项目（结合目录名、README.md 标题或 git remote 判断）；(c) 当前分支名；(d) working tree 是否干净（git status --porcelain 输出是否为空），dirty 时列出 dirtyFiles。
 另外在 notes 中记录：仓库根目录下是否存在 AGENTS.md 与 .qoder/rules/ 目录。`,
-  { label: 'preflight', phase: 'Preflight', model: MAX, effort: 'low', schema: PREFLIGHT_SCHEMA })
-if (!pre) return modelBlocked('Preflight', MAX + ' (Qwen3.8-Max)')
+  { label: 'preflight', phase: 'Preflight', model: modelFor('planner'), effort: 'low', schema: PREFLIGHT_SCHEMA })
+if (!pre) return modelBlocked('Preflight', mname(modelFor('planner')))
 
 if (!pre.isGitRepo) return blocked('BLOCKED_NOT_GIT_REPO', 'Preflight', { SAFE_NEXT_ACTION: '请在 ai-hearing-rehabilitation Git 仓库根目录运行。' })
 if (!pre.isCorrectRepo) return blocked('BLOCKED_WRONG_REPO', 'Preflight', { repoRoot: pre.repoRoot, SAFE_NEXT_ACTION: '当前目录不是 ai-hearing-rehabilitation 仓库，请切换到正确项目。' })
@@ -639,7 +805,7 @@ log(`Preflight 通过：branch=${baseline.branch}, dirty=${baseline.dirty}（已
 // D2 §4：捕获 WORKTREE_BASELINE（含指纹），作为 Task Delta 判定的基准。
 // feature 分支上的 pre-existing 授权改动会被记录指纹；本任务结束前须保证其内容不被改动。
 let WORKTREE_BASELINE = await snapshotWorktree('Preflight baseline（Task Delta 基准）', 'Preflight')
-if (!WORKTREE_BASELINE) return modelBlocked('Preflight', MAX + ' (Qwen3.8-Max)')
+if (!WORKTREE_BASELINE) return modelBlocked('Preflight', mname(modelFor('snapshot')))
 baseline.head = WORKTREE_BASELINE.head
 const _bPre = (WORKTREE_BASELINE.trackedModified || []).length + (WORKTREE_BASELINE.untracked || []).length + (WORKTREE_BASELINE.trackedDeleted || []).length + (WORKTREE_BASELINE.staged || []).length
 log(`WORKTREE_BASELINE 已建立：HEAD=${(WORKTREE_BASELINE.head || '').slice(0, 12)}，pre-existing 改动 ${_bPre} 项（含指纹）。Scope/forbidden 判定将基于 Task Delta（baseline↔当前），不再基于裸 git status。`)
@@ -667,26 +833,27 @@ ${FLASH_RULES}
 
   phase('Gate Verdict')
   const mv = await agent(`${PROJECT_RULES}
-${MAX_RULES}
+${decisionRules()}
 [Milestone Gate 判定] 目标 Milestone：${task}
 证据收集结果：
 ${j(ev, 16000)}
 请自行只读复核关键证据（可读取文件、运行只读命令、查看 git log），确认：
 1. 该 Milestone 所有 Task 均已 PASS；2. 无未关闭 blocker；3. Milestone 级 Regression 与 integration tests 真实通过；4. 架构一致性、文档、安全影响、数据库状态无问题；5. Knowledge/RAG 或医疗安全 Milestone 的附加项已验证。
 不得根据历史文档假设通过；必须有当前有效证据。只能返回 MILESTONE_PASS 或 MILESTONE_BLOCKED。`,
-    { label: 'milestone-verdict', phase: 'Gate Verdict', model: MAX, schema: MILESTONE_SCHEMA })
-  if (!mv) return modelBlocked('Gate Verdict', MAX + ' (Qwen3.8-Max)')
+    { label: 'milestone-verdict', phase: 'Gate Verdict', model: modelFor('verifier'), schema: MILESTONE_SCHEMA })
+  if (!mv) return modelBlocked('Gate Verdict', mname(modelFor('verifier')))
 
   return {
     WORKFLOW_STATUS: mv.verdict,
     MODE: 'milestone_gate',
     MILESTONE: task,
-    MODEL_USAGE: { EVIDENCE_RUNNER: FLASH + ' (Qwen3.8-Flash)', VERDICT: MAX + ' (Qwen3.8-Max)' },
+    MODEL_USAGE: { EVIDENCE_RUNNER: mname(modelFor('evidence')), VERDICT: mname(modelFor('verifier')) },
     REASONS: mv.reasons,
     OPEN_BLOCKERS: mv.openBlockers || [],
     TASK_STATUS_REVIEW: mv.taskStatusReview || '',
     CHECKS: ev.checks,
     MISSING_EVIDENCE: ev.missing,
+    ...modeSummary(),
     GIT: baseline,
   }
 }
@@ -720,10 +887,10 @@ ${FLASH_RULES}
 
   phase('Gate Verdict')
   const sec = await agent(`${PROJECT_RULES}
-${MAX_RULES}
+${decisionRules()}
 [Release 安全审查] 只读审查当前仓库的安全状态：认证/授权实现、IDOR 风险、Secret 管理（.env 是否被 gitignore、是否存在硬编码密码——不要输出真实 Secret 值）、依赖已知风险、CORS/生产配置、日志脱敏、医疗安全边界（无诊断/处方/调机参数输出）、隐私数据隔离。
 输出 findings 摘要与结论。禁止修改任何文件。`,
-    { label: 'release-security', phase: 'Gate Verdict', model: MAX, effort: 'high', schema: {
+    { label: 'release-security', phase: 'Gate Verdict', model: modelFor('reviewer'), effort: 'high', schema: {
       type: 'object',
       properties: {
         findings: { type: 'array', items: { type: 'string' } },
@@ -732,10 +899,10 @@ ${MAX_RULES}
       },
       required: ['findings', 'blockingFindings', 'summary'],
     } })
-  if (!sec) return modelBlocked('Gate Verdict', MAX + ' (Qwen3.8-Max)')
+  if (!sec) return modelBlocked('Gate Verdict', mname(modelFor('reviewer')))
 
   const rv = await agent(`${PROJECT_RULES}
-${MAX_RULES}
+${decisionRules()}
 [Release Gate 判定] 发布目标：${task}
 命令证据：
 ${j(ev, 16000)}
@@ -743,19 +910,24 @@ ${j(ev, 16000)}
 ${j(sec, 8000)}
 规则：任何必须项没有当前有效证据 → PROJECT_NOT_READY（不得根据历史文档假设通过；TODO 中的集成测试/安全审查/性能测试若未完成必须如实反映）。存在 blocking 安全发现 → PROJECT_NOT_READY。
 只能返回 PROJECT_READY 或 PROJECT_NOT_READY，并列出 reasons 与 missingEvidence。`,
-    { label: 'release-verdict', phase: 'Gate Verdict', model: MAX, schema: RELEASE_SCHEMA })
-  if (!rv) return modelBlocked('Gate Verdict', MAX + ' (Qwen3.8-Max)')
+    { label: 'release-verdict', phase: 'Gate Verdict', model: modelFor('verifier'), schema: RELEASE_SCHEMA })
+  if (!rv) return modelBlocked('Gate Verdict', mname(modelFor('verifier')))
 
   return {
     WORKFLOW_STATUS: rv.verdict,
     MODE: 'release_gate',
     TARGET: task,
-    MODEL_USAGE: { EVIDENCE_RUNNER: FLASH + ' (Qwen3.8-Flash)', SECURITY_REVIEW: MAX + ' (Qwen3.8-Max)', VERDICT: MAX + ' (Qwen3.8-Max)' },
+    MODEL_USAGE: { EVIDENCE_RUNNER: mname(modelFor('evidence')), SECURITY_REVIEW: mname(modelFor('reviewer')), VERDICT: mname(modelFor('verifier')) },
     REASONS: rv.reasons,
     MISSING_EVIDENCE: rv.missingEvidence.concat(ev.missing || []),
     SECURITY_REVIEW: sec.summary,
     SECURITY_BLOCKING: sec.blockingFindings,
     CHECKS: ev.checks,
+    // D3 终态二分：工程就绪 vs 真实生产批准。二者相互独立，绝不混为一谈。
+    ENGINEERING_RELEASE_READY: rv.verdict === 'PROJECT_READY' ? 'YES' : 'NO',
+    REAL_PRODUCTION_APPROVED: 'NO',
+    REAL_PRODUCTION_APPROVAL_NOTE: '正式生产上线（formal production deployment）、生产库危险操作、生产密钥、支付、验证码、法务与医疗审批、真实患者数据授权均属 HUMAN_REQUIRED，必须由真实人工/授权主体批准。本 Workflow 仅给出【工程就绪】结论，绝不自动批准或假装生产已获批。ENGINEERING_RELEASE_READY=YES 也不等于可以上线——仍需人工完成 HUMAN_REQUIRED 审批链。',
+    ...modeSummary(),
     GIT: baseline,
   }
 }
@@ -767,7 +939,7 @@ ${j(sec, 8000)}
 // ---------- PHASE 1 — CLASSIFY ----------
 phase('Classify')
 const cls = await agent(`${PROJECT_RULES}
-${MAX_RULES}
+${decisionRules()}
 [任务分类] 用户任务：
 """
 ${task}
@@ -775,22 +947,27 @@ ${task}
 将任务分类（可多选）：frontend/backend/schema/migration/medical/knowledge/rag/training/irt/privacy/auth/security/observability/deployment/evaluation/cross_stack/bugfix/refactor/documentation。
 判定 medicalSensitive（任务是否触及医疗内容/训练建议/疗效表达/转诊边界）、privacySensitive（是否触及用户健康信息/语音/个人数据）、securitySensitive（是否触及认证/授权/密钥/攻击面）。
 判定各项 touched/expected 布尔位与 riskLevel(low/medium/high)。
+【D3 HIGH Risk 判定】凡属以下任一类别，riskLevel 必须为 high（触发双独立审查）：安全关键、认证关键、RBAC、IDOR、隐私、健康数据、语音数据、医疗安全、敏感迁移、发布配置（deployment）。
+【D3 HUMAN_REQUIRED 判定】若该任务的【完成验收】本质上需要真实人工审批——真实医疗专家验证、真实患者数据授权、伦理审查、版权/许可、生产密钥、生产数据库危险操作、正式生产部署、支付、真实短信验证码、法务审批——则 humanDecisionRequired=true 并在 humanDecisionReason 说明是哪一类、为什么无法由 Agent 自行批准。宁可标 true 交人工，绝不为推进任务而假装可自动批准。
 如果无法可靠分类：blocked=true 并给出 blockReason。不要猜。`,
-  { label: 'classify', phase: 'Classify', model: MAX, schema: CLASSIFY_SCHEMA })
-if (!cls) return modelBlocked('Classify', MAX + ' (Qwen3.8-Max)')
+  { label: 'classify', phase: 'Classify', model: modelFor('planner'), schema: CLASSIFY_SCHEMA })
+if (!cls) return modelBlocked('Classify', mname(modelFor('planner')))
 if (cls.blocked) {
   return blocked('BLOCKED_UNCLEAR_TASK', 'Classify', {
     DETAIL: cls.blockReason || '无法可靠分类',
     SAFE_NEXT_ACTION: '请澄清任务目标、涉及模块与验收边界后重跑。',
   })
 }
-log(`分类完成：taskType=[${cls.taskType.join(',')}], risk=${cls.riskLevel}, medical=${cls.medicalSensitive}, privacy=${cls.privacySensitive}, security=${cls.securitySensitive}`)
+if (cls.humanDecisionRequired) {
+  return pausedForHuman(cls.humanDecisionReason || '任务验收本质上需要真实人工审批（医疗专家验证 / 患者数据授权 / 伦理审查 / 版权许可 / 生产密钥 / 生产库危险操作 / 正式生产部署 / 支付 / 验证码 / 法务）。', 'Classify', { taskType: cls.taskType, riskLevel: cls.riskLevel })
+}
+log(`分类完成：taskType=[${cls.taskType.join(',')}], risk=${cls.riskLevel}, medical=${cls.medicalSensitive}, privacy=${cls.privacySensitive}, security=${cls.securitySensitive}, humanDecisionRequired=${!!cls.humanDecisionRequired}`)
 
 // ---------- PHASE 2 — EXPLORE（只读） ----------
 phase('Explore')
 const preNotes = (pre.notes || '')
 const exp = await agent(`${PROJECT_RULES}
-${MAX_RULES}
+${decisionRules()}
 [只读探索] 任务：
 """
 ${task}
@@ -805,14 +982,14 @@ Preflight 备注（AGENTS.md / .qoder/rules 是否存在）：${preNotes}
 5. 从 pyproject.toml、package.json、CI 配置、README、docs 中发现项目真实支持的测试/构建/lint/迁移/集成命令（TEST_COMMANDS）。禁止假设 npm test / ruff / mypy 一定存在。
 6. 判定 parallelSafe：仅当同时满足「无数据库前置依赖、不修改相同文件、API Contract 已冻结、无 Schema 依赖、合并顺序无语义依赖」才可为 true，并给出 parallelSafeReason。
 输出：CURRENT_STATE / RELATED_FILES / DEPENDENCIES / RISKS / EXISTING_TESTS / POTENTIAL_REGRESSIONS / TEST_COMMANDS / parallelSafe。`,
-  { label: 'explore', phase: 'Explore', model: MAX, effort: 'high', schema: EXPLORE_SCHEMA })
-if (!exp) return modelBlocked('Explore', MAX + ' (Qwen3.8-Max)')
+  { label: 'explore', phase: 'Explore', model: modelFor('explorer'), effort: 'high', schema: EXPLORE_SCHEMA })
+if (!exp) return modelBlocked('Explore', mname(modelFor('explorer')))
 log(`探索完成：${(exp.RELATED_FILES || []).length} 个相关文件，parallelSafe=${exp.parallelSafe}`)
 
 // ---------- PHASE 3 — SCOPE CHECK ----------
 phase('Scope Check')
 const scope = await agent(`${PROJECT_RULES}
-${MAX_RULES}
+${decisionRules()}
 [Scope 检查] 任务：
 """
 ${task}
@@ -825,8 +1002,8 @@ RISKS: ${j(exp.RISKS, 2000)}
 - 如果任务过大（例如"完成整个知识库/整个后台/整个项目/重构所有代码"这类 Mega Task）：atomic=false，并把它拆成多个原子子任务 recommendedTasks[]（每个含 taskId/title/objective/dependencies/acceptanceSummary），每个子任务都应在 0.5~1.5 开发日规模。
 - 如果原子：atomic=true，给出 estimatedDevDays。
 如实判断，不要为了继续执行而放宽标准。`,
-  { label: 'scope-check', phase: 'Scope Check', model: MAX, schema: SCOPE_SCHEMA })
-if (!scope) return modelBlocked('Scope Check', MAX + ' (Qwen3.8-Max)')
+  { label: 'scope-check', phase: 'Scope Check', model: modelFor('planner'), schema: SCOPE_SCHEMA })
+if (!scope) return modelBlocked('Scope Check', mname(modelFor('planner')))
 if (!scope.atomic) {
   log('任务过大：返回 NEEDS_DECOMPOSITION，本 Workflow 停止，不会实施任何代码。')
   return {
@@ -837,7 +1014,8 @@ if (!scope.atomic) {
     ESTIMATED_DEV_DAYS: scope.estimatedDevDays || null,
     RECOMMENDED_TASKS: scope.recommendedTasks || [],
     SAFE_NEXT_ACTION: '按 recommendedTasks 逐个调用本 Workflow（每次一个原子任务），Task 1 → Gate → Task 2 → Gate …',
-    MODEL_USAGE: { DECOMPOSITION: MAX + ' (Qwen3.8-Max)' },
+    MODEL_USAGE: { DECOMPOSITION: mname(modelFor('planner')) },
+    ...modeSummary(),
     GIT: baseline,
   }
 }
@@ -846,7 +1024,7 @@ log(`Scope 通过：约 ${scope.estimatedDevDays || '?'} 个开发日`)
 // ---------- PHASE 4 — TASK_SPEC ----------
 phase('Task Spec')
 const spec = await agent(`${PROJECT_RULES}
-${MAX_RULES}
+${decisionRules()}
 [生成 TASK_SPEC] 任务：
 """
 ${task}
@@ -862,8 +1040,8 @@ ${j({ CURRENT_STATE: exp.CURRENT_STATE, RELATED_FILES: exp.RELATED_FILES, DEPEND
 - 数据库结构变更必须通过 MIGRATION_REQUIREMENTS 描述（含 downgrade 要求）。
 - 将完整 TASK_SPEC JSON 写入文件 .qoder/workflow-state/<TASK_ID>.spec.json（这是你唯一允许写入的文件），并在 specPath 返回该路径。若该文件已存在（历史运行留痕），禁止覆盖：改用 .qoder/workflow-state/<TASK_ID>-<git短SHA>.spec.json（短 SHA 用 git rev-parse --short HEAD 获取）。
 TASK_SPEC 一旦进入 IMPLEMENT，实施者禁止修改。`,
-  { label: 'task-spec', phase: 'Task Spec', model: MAX, effort: 'high', schema: SPEC_SCHEMA })
-if (!spec) return modelBlocked('Task Spec', MAX + ' (Qwen3.8-Max)')
+  { label: 'task-spec', phase: 'Task Spec', model: modelFor('planner'), effort: 'high', schema: SPEC_SCHEMA })
+if (!spec) return modelBlocked('Task Spec', mname(modelFor('planner')))
 log(`TASK_SPEC 生成：${spec.TASK_ID} — ${spec.TITLE}（AC ${spec.ACCEPTANCE_CRITERIA.length} 条，落盘 ${spec.specPath}）`)
 
 // ---------- PHASE 5 — IMPLEMENT ----------
@@ -906,7 +1084,7 @@ log(`实施完成（IMPLEMENTED ≠ PASS）：修改 ${(impl.FILES_MODIFIED || [
 // ---------- D2-C：实施后工作区 Delta 校验（脚本是权威裁判，先于 Machine Gate）----------
 // 基于 Task Delta 判定：治理文件被改 / pre-existing 被改或被还原 / HEAD 变 / index 变 → 立即 BLOCK，绝不启动 Flash 修复。
 let currentSnap = await snapshotWorktree('Implement 后 Task Delta 校验', 'Implement')
-if (!currentSnap) return modelBlocked('Implement', MAX + ' (Qwen3.8-Max)')
+if (!currentSnap) return modelBlocked('Implement', mname(modelFor('snapshot')))
 let currentDelta = classifyDelta(WORKTREE_BASELINE, currentSnap, [spec.specPath])
 let allowedRepairFiles = computeAllowedRepairFiles(currentDelta, spec)
 {
@@ -944,7 +1122,7 @@ function gateRequirements() {
 // D2：Max 只读工作区快照（指纹采集）。用于 baseline 与修复前后对比。
 async function snapshotWorktree(purpose, phaseName) {
   return await agent(`${PROJECT_RULES}
-${MAX_RULES}
+${decisionRules()}
 [只读工作区快照 · ${purpose}] 你处于只读模式：禁止 Write/Edit/创建/删除任何文件，禁止任何写操作或破坏性 git 命令。
 只运行只读命令并如实报告：
 1. git rev-parse HEAD → head（完整 SHA）
@@ -955,7 +1133,7 @@ ${MAX_RULES}
 6. git ls-files --others --exclude-standard → untracked
 7. 对 staged/trackedModified/trackedDeleted/untracked 中每个仍存在的文件运行 git hash-object <file> → fingerprints[{path,hash}]；已删除文件 hash 记 "DELETED"。
 指纹用于任务前后精确对比，务必真实、禁止臆造 hash。`,
-    { label: 'worktree-snapshot', phase: phaseName || 'Preflight', model: MAX, effort: 'low', schema: WORKTREE_SCHEMA })
+    { label: 'worktree-snapshot', phase: phaseName || 'Preflight', model: modelFor('snapshot'), effort: 'low', schema: WORKTREE_SCHEMA })
 }
 
 // D2 §12/§13/§17/§18/§19：受守卫的 Flash 修复调用。
@@ -964,7 +1142,7 @@ ${MAX_RULES}
 async function guardedFlashRepair(prompt, label, allowedRepairFiles, phaseName) {
   const auth = [spec.specPath]
   const preSnap = await snapshotWorktree(`${label} 修复前快照`, phaseName || 'Repair')
-  if (!preSnap) return { modelBlocked: MAX + ' (Qwen3.8-Max)' }
+  if (!preSnap) return { modelBlocked: mname(modelFor('snapshot')) }
   const preDelta = classifyDelta(WORKTREE_BASELINE, preSnap, auth)
   const preViols = deltaViolations(preDelta)
   if (preViols.length) return { violation: preViols[0], stage: 'PRE_REPAIR_DELTA', preSnap }
@@ -977,9 +1155,16 @@ async function guardedFlashRepair(prompt, label, allowedRepairFiles, phaseName) 
   for (const c of reported) {
     const d = detectForbiddenGit(c)
     if (d) return { violation: { code: 'GOVERNANCE_POLICY_VIOLATION', tier: d.tier, subcommand: d.subcommand, command: c, detail: `Flash 在 ${label} 阶段报告执行了被禁止的 git 命令（${d.tier}: git ${d.subcommand}）：${c}。破坏性/变更类 git 一律 HARD DENY，正确做法是返回 BLOCKED。` }, stage: 'GIT_DENYLIST', result: res, preSnap }
+    const u = scanUnsafeDbCommand(c)
+    if (u) return { violation: { code: u.code, command: c, detail: u.detail }, stage: 'UNSAFE_DB_TARGET', result: res, preSnap }
+  }
+  // D3：修复Worker 也可能自报它跑过的 shell/DB 命令；顺带扫描命令文本里的破坏性 :5432 目标。
+  for (const c of (Array.isArray(res.commandsRun) ? res.commandsRun : [])) {
+    const u = scanUnsafeDbCommand(c)
+    if (u) return { violation: { code: u.code, command: c, detail: u.detail }, stage: 'UNSAFE_DB_TARGET', result: res, preSnap }
   }
   const postSnap = await snapshotWorktree(`${label} 修复后指纹校验快照`, phaseName || 'Repair')
-  if (!postSnap) return { modelBlocked: MAX + ' (Qwen3.8-Max)' }
+  if (!postSnap) return { modelBlocked: mname(modelFor('snapshot')) }
   const v = verifyRepairFingerprints(WORKTREE_BASELINE, preSnap, postSnap, allowed, auth)
   if (!v.ok) return { violation: v.violation, stage: 'POST_REPAIR_FINGERPRINT', result: res, preSnap, postSnap }
   return { result: res, preSnap, postSnap, delta: classifyDelta(WORKTREE_BASELINE, postSnap, auth), allowedRepairFiles: allowed }
@@ -1063,11 +1248,38 @@ function gateFailSummary(g) {
   return parts.join('\n---\n')
 }
 
+// D3 反作弊门禁守卫：在任何修复之前，对执行手返回的每条命令做扫描——
+// ① 是否把 required 降级为 record；② 是否指向 :5432 破坏性数据库目标。命中即返回终态 blocked()，绝不进入修复循环。
+function gateGuardViolation(g) {
+  const cmds = (g && Array.isArray(g.commands)) ? g.commands : []
+  for (const c of cmds) {
+    const u = scanUnsafeDbCommand(String((c && c.command) || ''))
+    if (u) return blocked(u.code, 'Machine Gate', {
+      TASK_ID: spec.TASK_ID,
+      DETAIL: u.detail,
+      OFFENDING_COMMAND: c.command,
+      FILES_CURRENTLY_CHANGED: (impl.FILES_MODIFIED || []).concat(impl.FILES_CREATED || []),
+      SAFE_NEXT_ACTION: '禁止对未知/生产 :5432 数据库实例执行任何破坏性操作（drop/truncate/delete/downgrade 等）。一次性测试库 :55432 不在此列。请改用可证明安全的一次性测试库或 mock 后重跑；本 Workflow 未连接、未改动任何数据库。',
+    })
+  }
+  const dg = detectRequiredDowngrade(cmds, spec)
+  if (dg) return blocked(dg.code, 'Machine Gate', {
+    TASK_ID: spec.TASK_ID,
+    GIT_TIER: dg.tier,
+    DETAIL: dg.detail,
+    GOVERNANCE_PROTECTED_PATHS: GOVERNANCE_PROTECTED_PATHS.concat([SELF_WORKFLOW_PATH]),
+    FILES_CURRENTLY_CHANGED: (impl.FILES_MODIFIED || []).concat(impl.FILES_CREATED || []),
+    SAFE_NEXT_ACTION: '执行手无权把 required 门禁降级为 record（这是 GOVERNANCE/MODEL POLICY VIOLATION）。required 失败必须进入修复或 BLOCKED，绝不能改记为 record 蒙混过关。普通 Feature Task 的目标测试/build/migration 默认全部 required。',
+  })
+  return null
+}
+
 let cycles = 0            // 全任务 Repair Cycle 计数，硬上限 3
 const attemptHistory = []
 phase('Machine Gate')
 let gate = await runMachineGate(1)
 if (!gate) return modelBlocked('Machine Gate', FLASH + ' (Qwen3.8-Flash)')
+{ const term = gateGuardViolation(gate); if (term) return term }
 let gc = gateCompute(gate)
 if (gc.blockedMissingSafeTestEnv) {
   return blocked('BLOCKED_MISSING_SAFE_TEST_ENV', 'Machine Gate', {
@@ -1111,7 +1323,7 @@ pre-existing（任务前已存在、指纹须保持不变、绝不可动/还原�
       'self-repair', allowedRepairFiles, 'Repair')
   } else {
     const rca = await agent(`${PROJECT_RULES}
-${MAX_RULES}
+${decisionRules()}
 [Root Cause Analysis] 只读分析（禁止 Write/Edit）。Flash 自修复后 Machine Gate 仍失败。
 TASK_SPEC：${spec.specPath}
 失败输出：
@@ -1119,8 +1331,8 @@ ${failText}
 修复历史：${j(attemptHistory, 2000)}
 [REPAIR_SCOPE 约束] 修复只能落在 allowedRepairFiles=${allowedRepairFiles.join(', ') || '（空）'}；禁止把修复方案指向治理文件或 pre-existing 文件（那属 BLOCKED_EXTERNAL_WORKTREE_CHANGE / BLOCKED_GOVERNANCE_CONFLICT，须交人工）。
 请阅读 git diff、相关源码与测试，输出 ROOT_CAUSE 与只针对 blocker 的 FIX_SPEC（禁止顺带其他改动）。`,
-      { label: 'rca', phase: 'Repair', model: MAX, effort: 'high', schema: RCA_SCHEMA })
-    if (!rca) return modelBlocked('Repair', MAX + ' (Qwen3.8-Max)')
+      { label: 'rca', phase: 'Repair', model: modelFor('rca'), effort: 'high', schema: RCA_SCHEMA })
+    if (!rca) return modelBlocked('Repair', mname(modelFor('rca')))
     rcaRootCause = rca.ROOT_CAUSE
     guard = await guardedFlashRepair(`${PROJECT_RULES}
 ${FLASH_RULES}
@@ -1152,6 +1364,7 @@ ${j(rca.FIX_SPEC, 8000)}
   phase('Machine Gate')
   gate = await runMachineGate(cycles + 1)
   if (!gate) return modelBlocked('Machine Gate', FLASH + ' (Qwen3.8-Flash)')
+  { const term = gateGuardViolation(gate); if (term) return term }
   gc = gateCompute(gate)
   if (gc.blockedMissingSafeTestEnv) {
     return blocked('BLOCKED_MISSING_SAFE_TEST_ENV', 'Machine Gate', {
@@ -1171,7 +1384,7 @@ function reviewPrompt(round) {
   if (cls.knowledgeTouchedExpected || cls.ragTouchedExpected) extra.push('Citation / Provenance / Data Isolation / Review Status Enforcement')
   if (cls.privacySensitive) extra.push('Privacy（数据最小化/授权/访问控制/日志脱敏/数据隔离/删除与导出路径/审计）')
   return `${PROJECT_RULES}
-${MAX_RULES}
+${decisionRules()}
 [独立 Code Review · 第 ${round} 轮] 禁止只看 Implementation Report。必须真实读取：
 - TASK_SPEC：${spec.specPath}
 - git diff（全部改动）与 changed files
@@ -1185,8 +1398,35 @@ ${MAX_RULES}
 REQUEST_CHANGES 时每个 blocker 必须含 BLOCKER_ID/LOCATION/EVIDENCE/IMPACT/REQUIRED_FIX/VERIFICATION_METHOD；另可给 nonBlockingNotes（不阻止 PASS）。`
 }
 
-let review = await agent(reviewPrompt(1), { label: 'max-review', phase: 'Max Review', model: MAX, effort: 'high', schema: REVIEW_SCHEMA })
-if (!review) return modelBlocked('Max Review', MAX + ' (Qwen3.8-Max)')
+const HIGH_RISK = isHighRisk(cls)
+let reviewInvocations = []
+
+// D3：独立审查。始终运行 Reviewer A（label 'max-review'）；HIGH Risk 追加 Reviewer B（label 'max-review-b'）
+// —— 二者是【相互独立的 qfmodel invocation】（FLASH_ONLY 下模型同为 qfmodel，但彼此不可见对方结论）。
+// 合并裁决：A 或 B 任一 REQUEST_CHANGES → 合并 REQUEST_CHANGES；全部 PASS 才算独立 Review 通过。
+async function runReviewRound(round) {
+  const A = await agent(reviewPrompt(round), { label: 'max-review', phase: 'Max Review', model: modelFor('reviewer'), effort: 'high', schema: REVIEW_SCHEMA })
+  if (!A) return { __modelBlocked: mname(modelFor('reviewer')) }
+  reviewInvocations = ['max-review']
+  if (!HIGH_RISK) return A
+  const B = await agent(`${reviewPrompt(round)}
+
+[双独立审查 · 第二审查者 FLASH_REVIEWER_B] 你是与第一审查者【相互独立】的第二次独立审查（同为 qfmodel，但是不同 invocation，看不到对方结论）。请以对抗视角复核：实现者自报的 PASS/DONE 一律不采信；重点核对安全/隐私/医疗边界、Scope 与 Task Delta、治理/pre-existing 边界、exitCode 是否真实、ACCEPTANCE_CRITERIA 是否被真实满足。你处于只读角色，禁止 Write/Edit/创建/删除文件，禁止修改任何门禁标准。`,
+    { label: 'max-review-b', phase: 'Max Review', model: modelFor('reviewerB'), effort: 'high', schema: REVIEW_SCHEMA })
+  if (!B) return { __modelBlocked: mname(modelFor('reviewerB')) }
+  reviewInvocations = ['max-review', 'max-review-b']
+  const merged = Object.assign({}, A)
+  merged.verdict = (A.verdict === 'REQUEST_CHANGES' || B.verdict === 'REQUEST_CHANGES') ? 'REQUEST_CHANGES' : 'PASS'
+  merged.blockers = (A.blockers || []).concat(B.blockers || [])
+  merged.nonBlockingNotes = (A.nonBlockingNotes || []).concat(B.nonBlockingNotes || [])
+  merged.acceptanceResults = A.acceptanceResults
+  merged.changedFilesHint = A.changedFilesHint || B.changedFilesHint
+  merged._reviewerBVerdict = B.verdict
+  return merged
+}
+
+let review = await runReviewRound(1)
+if (review && review.__modelBlocked) return modelBlocked('Max Review', review.__modelBlocked)
 let reviewRounds = 1
 
 while (review.verdict === 'REQUEST_CHANGES') {
@@ -1233,6 +1473,7 @@ TASK_SPEC 见 ${spec.specPath}。
   phase('Machine Gate')
   gate = await runMachineGate(cycles + 1)
   if (!gate) return modelBlocked('Machine Gate', FLASH + ' (Qwen3.8-Flash)')
+  { const term = gateGuardViolation(gate); if (term) return term }
   gc = gateCompute(gate)
   if (!gatePass(gate)) {
     if (cycles >= 3) {
@@ -1244,12 +1485,12 @@ TASK_SPEC 见 ${spec.specPath}。
     }
     cycles++
     const rca2 = await agent(`${PROJECT_RULES}
-${MAX_RULES}
+${decisionRules()}
 [Root Cause Analysis] 只读分析。Review FIX 后 Machine Gate 失败：
 ${gateFailSummary(gate)}
 输出 ROOT_CAUSE 与只针对 blocker 的 FIX_SPEC。`,
-      { label: 'rca', phase: 'Repair', model: MAX, effort: 'high', schema: RCA_SCHEMA })
-    if (!rca2) return modelBlocked('Repair', MAX + ' (Qwen3.8-Max)')
+      { label: 'rca', phase: 'Repair', model: modelFor('rca'), effort: 'high', schema: RCA_SCHEMA })
+    if (!rca2) return modelBlocked('Repair', mname(modelFor('rca')))
     const rf2g = await guardedFlashRepair(`${PROJECT_RULES}
 ${FLASH_RULES}
 ${FLASH_REPAIR_RULES}
@@ -1274,6 +1515,7 @@ FIX_SPEC: ${j(rca2.FIX_SPEC, 8000)}
     if (rf2g.postSnap) { currentSnap = rf2g.postSnap; currentDelta = classifyDelta(WORKTREE_BASELINE, currentSnap, [spec.specPath]); allowedRepairFiles = computeAllowedRepairFiles(currentDelta, spec) }
     gate = await runMachineGate(cycles + 1)
     if (!gate) return modelBlocked('Machine Gate', FLASH + ' (Qwen3.8-Flash)')
+    { const term = gateGuardViolation(gate); if (term) return term }
     gc = gateCompute(gate)
     if (!gatePass(gate)) {
       return blocked('BLOCKED_REPAIR_LIMIT', 'Machine Gate (post-fix)', {
@@ -1285,15 +1527,15 @@ FIX_SPEC: ${j(rca2.FIX_SPEC, 8000)}
   }
   phase('Max Review')
   reviewRounds++
-  review = await agent(reviewPrompt(reviewRounds), { label: 'max-review', phase: 'Max Review', model: MAX, effort: 'high', schema: REVIEW_SCHEMA })
-  if (!review) return modelBlocked('Max Review', MAX + ' (Qwen3.8-Max)')
+  review = await runReviewRound(reviewRounds)
+  if (review && review.__modelBlocked) return modelBlocked('Max Review', review.__modelBlocked)
 }
 log('MAX REVIEW：PASS')
 
 // ---------- PHASE 10 — VERIFY ----------
 phase('Verify')
 const ver = await agent(`${PROJECT_RULES}
-${MAX_RULES}
+${decisionRules()}
 [最终验收 VERIFY] TASK_SPEC：${spec.specPath}
 Review 结论：${j({ verdict: review.verdict, acceptanceResults: review.acceptanceResults, nonBlockingNotes: review.nonBlockingNotes || [] }, 6000)}
 Machine Gate（区分 required/record）：${j({ COMPUTED: { requiredPassed: gc.requiredPassed, recordCollectionComplete: gc.recordCollectionComplete, blockedMissingSafeTestEnv: gc.blockedMissingSafeTestEnv, baselineHealth: gc.baselineHealth }, commands: gate.commands, findings: gc.findings, skippedGates: gate.skippedGates || [] }, 6000)}
@@ -1309,9 +1551,10 @@ Machine Gate（区分 required/record）：${j({ COMPUTED: { requiredPassed: gc.
 6. 是否引入明显回归风险；
 7. ROLLBACK_PLAN 是否仍成立。
 全部满足 → TASK_PASS；否则 → TASK_FAIL（列出 reasons）。
+8. 【D3 TASK_PASS 合成判据，缺一即 TASK_FAIL】TASK_PASS = Machine Gate PASS ∧ 独立 Review PASS ∧ Verify 通过 ∧ Task Delta PASS ∧ Governance Guard PASS。独立 Review：HIGH Risk 必须 Reviewer A 与 Reviewer B【双独立 invocation】均 PASS（本轮 review 来自 ${JSON.stringify(reviewInvocations)}，_reviewerBVerdict=${review._reviewerBVerdict || 'N/A'}）；实施者（Worker）自报的 PASS/DONE/IMPLEMENTED【一律无最终验收权】，不得据此判 PASS。
 changedFiles 填 Task Delta 中本任务实际改动的文件（taskChanged）。最后给出 suggestedNextTask（下一个最有价值的原子任务建议）。`,
-  { label: 'verify', phase: 'Verify', model: MAX, effort: 'high', schema: VERIFY_SCHEMA })
-if (!ver) return modelBlocked('Verify', MAX + ' (Qwen3.8-Max)')
+  { label: 'verify', phase: 'Verify', model: modelFor('verifier'), effort: 'high', schema: VERIFY_SCHEMA })
+if (!ver) return modelBlocked('Verify', mname(modelFor('verifier')))
 
 // ---------- PHASE 11 — FINAL REPORT ----------
 phase('Report')
@@ -1323,9 +1566,24 @@ if (ver.verdict !== 'TASK_PASS') {
     attemptHistory,
     BLOCKERS: ver.reasons,
     FILES_CURRENTLY_CHANGED: ver.changedFiles || (impl.FILES_MODIFIED || []).concat(impl.FILES_CREATED || []),
-    MODEL_USAGE: { PLAN: MAX + ' (Qwen3.8-Max)', IMPLEMENT: FLASH + ' (Qwen3.8-Flash)', REVIEW: MAX + ' (Qwen3.8-Max)' },
+    MODEL_USAGE: { PLAN: mname(modelFor('planner')), IMPLEMENT: mname(modelFor('worker')), REVIEW: mname(modelFor('reviewer')) + (HIGH_RISK ? ' + FLASH_REVIEWER_B(' + mname(modelFor('reviewerB')) + ')' : '') },
     SAFE_NEXT_ACTION: '审查 Verify reasons 与 git diff；人工决定回滚或重定义任务后重跑。',
+    ...modeSummary(),
   })
+}
+
+// D3：最终 Governance Guard 复核（Task Delta 权威判定）——治理/pre-existing/HEAD/index 任一越界即 TASK_FAIL。
+{
+  const gv = deltaViolations(currentDelta)
+  if (gv.length) {
+    return blocked(gv[0].code, 'Verify', {
+      TASK_ID: spec.TASK_ID,
+      DETAIL: gv[0].detail + '（Verify 阶段最终 Governance Guard 复核，先于 TASK_PASS）',
+      GOVERNANCE_PROTECTED_PATHS: GOVERNANCE_PROTECTED_PATHS.concat([SELF_WORKFLOW_PATH]),
+      FILES_CURRENTLY_CHANGED: currentDelta.taskChanged,
+      SAFE_NEXT_ACTION: '最终验收发现治理/pre-existing/HEAD/index 边界被破坏，判 TASK_FAIL。编排器未执行任何还原命令；请人工核查工作区，治理变更须走人工授权的治理流程。',
+    })
+  }
 }
 
 return {
@@ -1334,9 +1592,14 @@ return {
   TASK_ID: spec.TASK_ID,
   TASK_TITLE: spec.TITLE,
   MODEL_USAGE: {
-    PLAN: MAX + ' (Qwen3.8-Max)',
-    IMPLEMENT: FLASH + ' (Qwen3.8-Flash)',
-    REVIEW: MAX + ' (Qwen3.8-Max)',
+    PLAN: mname(modelFor('planner')),
+    EXPLORER: mname(modelFor('explorer')),
+    IMPLEMENT: mname(modelFor('worker')),
+    MACHINE_GATE: mname(modelFor('gate')),
+    REVIEW: mname(modelFor('reviewer')) + (HIGH_RISK ? ' + FLASH_REVIEWER_B(' + mname(modelFor('reviewerB')) + ')' : '（single，非 HIGH Risk）'),
+    VERIFY: mname(modelFor('verifier')),
+    RCA: mname(modelFor('rca')),
+    SNAPSHOT: mname(modelFor('snapshot')),
   },
   FILES_CHANGED: ver.changedFiles || (impl.FILES_MODIFIED || []).concat(impl.FILES_CREATED || []),
   TESTS_RUN: (gate.commands || []).map(c => `[${c.kind || 'required'}] ${c.command}`),
@@ -1366,6 +1629,24 @@ return {
   PARALLEL_SAFE_REASON: exp.parallelSafeReason || '',
   SPEC_PATH: spec.specPath,
   IMPLEMENTATION_REPORT: impl,
+  // ---- D3 FLASH_ONLY 交付证明（角色分离 + 独立验收公式 + 反自验收）----
+  HIGH_RISK: HIGH_RISK,
+  REVIEW_INVOCATIONS: reviewInvocations,
+  WORKER_SELF_REPORT: {
+    workerReportedStatus: impl.status,
+    finalAuthority: 'NONE —— 实施者(FLASH_WORKER)自报 IMPLEMENTED/PASS/DONE 一律无最终验收权；PASS 由下列合成判据决定。',
+  },
+  TASK_PASS_FORMULA: {
+    MACHINE_GATE_PASS: gc.machinePass,
+    INDEPENDENT_FLASH_REVIEW_PASS: review.verdict === 'PASS',
+    INDEPENDENT_REVIEW_INVOCATIONS: reviewInvocations,
+    DOUBLE_REVIEW_REQUIRED: HIGH_RISK,
+    FLASH_VERIFY_PASS: ver.verdict === 'TASK_PASS',
+    TASK_DELTA_PASS: deltaViolations(currentDelta).length === 0,
+    GOVERNANCE_GUARD_PASS: deltaViolations(currentDelta).length === 0 && !currentDelta.headChanged && (currentDelta.stagedAppeared || []).length === 0,
+    ALL_CLAUSES_TRUE: gc.machinePass && review.verdict === 'PASS' && ver.verdict === 'TASK_PASS' && deltaViolations(currentDelta).length === 0,
+  },
+  ...modeSummary(),
   GOVERNANCE_D2: {
     WORKTREE_BASELINE_HEAD: WORKTREE_BASELINE.head,
     TASK_DELTA: { taskChanged: currentDelta.taskChanged, taskGovernance: currentDelta.taskGovernance, preExistingUnchanged: currentDelta.preExistingUnchanged, externalChangedDuringTask: currentDelta.externalChangedDuringTask, preExistingReverted: currentDelta.preExistingReverted, headChanged: currentDelta.headChanged, stagedAppeared: currentDelta.stagedAppeared },
@@ -1374,7 +1655,7 @@ return {
     DESTRUCTIVE_GIT_HARD_DENY: GIT_HARD_DENY_SUBCOMMANDS,
     FLASH_FORBIDDEN_GIT_MUTATING: GIT_MUTATING_SUBCOMMANDS,
     SCOPE_JUDGE: 'SCRIPT_TASK_DELTA (baseline↔fingerprint snapshot), not raw git status',
-    DEFENSE_LAYERS: ['prompt(FLASH_REPAIR_RULES)', 'orchestrator-precheck(SELF_REPAIR_ELIGIBILITY/REPAIR_SCOPE)', 'command-denylist(gitCommandsRun scan, bypass-aware)', 'post-repair-fingerprint-verify', 'immediate-BLOCK-on-violation'],
+    DEFENSE_LAYERS: ['prompt(FLASH_REPAIR_RULES)', 'orchestrator-precheck(SELF_REPAIR_ELIGIBILITY/REPAIR_SCOPE)', 'command-denylist(gitCommandsRun scan, bypass-aware)', 'post-repair-fingerprint-verify', 'D3-gate-anti-cheat(required-downgrade + unsafe-:5432 scan)', 'immediate-BLOCK-on-violation'],
     TOOL_LEVEL_HARD_BLOCK_AVAILABLE: false,
   },
   GIT: baseline,

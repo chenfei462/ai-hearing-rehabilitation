@@ -11,6 +11,21 @@ PASS 必须同时满足，缺一不可：
 - 修复循环 ≤3 轮；超限 BLOCKED_REPAIR_LIMIT 交人工。
 - 无安全测试环境 → BLOCKED_MISSING_SAFE_TEST_ENV，禁止打生产。
 
+### D3 FLASH_ONLY_DEGRADED_MODE 下的 Task Gate（人工授权降级，门禁不降低）
+
+当 `EXECUTION_MODE='FLASH_ONLY'`（Max 配额不可用）时，决策角色由**相互独立的 `qfmodel` invocation** 承担，
+上述三关**判据等价保留**，且更明确要求"谁都不能给自己验收"：
+
+1. **Machine Gate PASS**：同上，脚本按真实 `exitCode` 计算；FLASH_WORKER 自报 `allPassed/PASS/DONE` **无最终验收权**。
+   执行手**禁止**把 TASK_SPEC 必跑项（MANDATORY/REGRESSION）或 `[GATE-REQUIRED]` 命令降级为 `record` → 违者 `GOVERNANCE_POLICY_VIOLATION`；
+   **禁止**对 `:5432`（UNKNOWN/可能生产实例，不误伤一次性测试库 `:55432`）执行 drop/truncate/downgrade 等破坏操作 → `BLOCKED_UNSAFE_DATABASE_TARGET`。
+2. **独立 Flash Review PASS**：由独立于 Worker 的 FLASH_REVIEWER 判定，只许 PASS/REQUEST_CHANGES。**HIGH Risk**（安全/认证/RBAC/IDOR/隐私/健康数据/语音数据/医疗安全/敏感迁移/发布配置）必须由 FLASH_REVIEWER A **与** FLASH_REVIEWER B 两个彼此不可见结论的独立 invocation **均 PASS**。
+3. **Flash Verify TASK_PASS**：独立 Verifier 抽查重跑 1~2 条关键命令核实 exitCode、核对 Task Delta、治理文件未被改动。
+
+合成判据写入 `TASK_PASS_FORMULA`：`MACHINE_GATE_PASS ∧ INDEPENDENT_FLASH_REVIEW_PASS ∧ FLASH_VERIFY_PASS ∧ TASK_DELTA_PASS ∧ GOVERNANCE_GUARD_PASS`（HIGH Risk 追加 A+B 双审）。任一条不成立即非 PASS。
+
+- **HUMAN_REQUIRED**：Classify 判定验收本质需真实人工审批（医疗专家验证/患者数据授权/伦理/版权/生产密钥/生产库危险操作/正式生产部署/支付/真实验证码/法务）→ `PAUSED_FOR_HUMAN`，绝不自动批准，不改任何文件。
+
 ## Milestone Gate（每个里程碑）
 
 - 前置：该里程碑全部 Task 状态为 TASK_PASS（以 Workflow 输出/spec 留痕为准，不以文档 `[x]` 为准）。
@@ -36,6 +51,10 @@ PASS 必须同时满足，缺一不可：
 11. 回滚就绪（上一版本镜像 + 迁移向后兼容 + runbook 回滚章节可执行）
 
 详见 `docs/workflow/RELEASE_CRITERIA.md`。
+
+> **D3 终态拆分**：Release Gate 结果分列 `ENGINEERING_RELEASE_READY: YES/NO`（仅按上述工程门禁判定）与
+> `REAL_PRODUCTION_APPROVED`（**无真实人工/授权主体批准时恒为 NO**）。FLASH_ONLY 降级模式绝不把"工程门禁通过"
+> 冒充"已获生产批准"；正式生产部署属 HUMAN_REQUIRED。
 
 ## 证据纪律
 
