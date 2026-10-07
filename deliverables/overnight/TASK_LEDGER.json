@@ -2,11 +2,11 @@
   "goalStartedAt": "2026-10-06T19:03:00Z",
   "goalObjective": "Autonomous Delivery Orchestrator: M0 -> M0 Gate -> ... -> M10 -> M10 Gate -> Release Gate -> PROJECT_READY (no fake completion; stop at PAUSED_FOR_HUMAN or BLOCKED if unsafe).",
   "currentMilestone": "M0",
-  "currentTask": "M0-005 (BLOCKED — governance defect, not committed)",
+  "currentTask": "M0-006 (BLOCKED — F-20 executed instance #2, deliverable untracked & uncommitted; M0-007/M0-008 withheld, no new information per machineProof)",
   "goalStatus": "PAUSED_FOR_HUMAN",
-  "lastSafeCommit": "1800704",
-  "currentHead": "1800704",
-  "headPointerNote": "1800704 is the ledger seal commit recording the M0-005 BLOCK and these corrections; the last task-side deliverable commit is f73cb01 (M0-003 FULL re-run, child of governance D5 c61bfd3). A follow-up pointer-update commit will sit on top and changes no task verdict.",
+  "lastSafeCommit": "1a62703",
+  "currentHead": "1a62703",
+  "headPointerNote": "HEAD 1a62703（\"chore(overnight): record F-20 candidate repair C, declined unattended\"）。ledger 此前记录的 1800704 已过期（其后有 3c21eb2 / 0b9bfcc / 1a62703 三次纯指针/记录提交）。任务侧最后一次交付提交仍是 a78b10f（M0-004）；M0-005/M0-006 均无任务侧提交。本次 seal 只改 deliverables/overnight/** 记录文件，不改任何任务判据。",
   "branch": "feature/m0-baseline",
   "modelPolicy": {
     "allowed": [
@@ -123,6 +123,104 @@
       "committed": false,
       "commitReason": "TASK_PASS_FORMULA not satisfied (no MACHINE_GATE_PASS / no Max Review / no Max Verify verdict for this run); deliverable retained untracked as evidence, NOT staged",
       "independentReproduction": "Max Verify re-ran the full chain: postgres CI-parity trio CMD6_EXIT=1 with 4 failed, 8 passed, 20 errors in 16.78s (worker 17.04s) — bit-exact; sqlite control 31 passed exit 0; cleanup exit 0; residue 0; :5432 grep 0 matches; protected md5 unchanged"
+    },
+    {
+      "taskId": "M0-006",
+      "title": "安全基线（只读审查，不修复）",
+      "runId": "wf_6b00bd56-a7c",
+      "workflowTaskId": "wf-d8654705-bb7",
+      "executionMode": "FULL",
+      "attempts": 0,
+      "workflowStatus": "BLOCKED",
+      "blockReason": "GOVERNANCE_POLICY_VIOLATION",
+      "gitTier": "REQUIRED_DOWNGRADE",
+      "failedPhase": "Machine Gate",
+      "reachedPhases": "Preflight → Classify(risk=high, security/privacy/medical=true, humanDecisionRequired=false) → Explore(退化, 见 F-21) → Scope(1 开发日, atomic=true) → TASK_SPEC(qmodel_38max, AC 10 条, 落盘 m0-006-security-baseline.spec.json) → Implement(qfmodel, 新建 1 文件) → D4 Task Delta(证据=VALID_DETERMINISTIC) → Machine Gate(此处 BLOCK)",
+      "neverReached": "Max Review / Reviewer B / Max Verify — 无 REVIEW/VERIFY 判据，故 TASK_PASS_FORMULA 无从成立",
+      "blockDetailVerbatim": "执行手把 TASK_SPEC 必跑项 '[GATE-RECORD] cd backend && venv312/Scripts/python.exe -m pytest -q -p no:cacheprovider（全量后端测试基线健康度采集；非零退出属既有基线发现（M0-002 已记录 DEGRADED 项），写入 findings 与 PROJECT_BASELINE_HEALTH，不使本 Task MACHINE_FAIL、不触发修复；recordStatus=EXECUTED_AND_RECORDED）' 记为 record（kind=record），属动态降级，禁止。",
+      "rootCause": "F-20（第二次真实执行实例）；非执行手违规、非实施质量问题",
+      "gateSubmission": {
+        "note": "executor 自报 allPassed:true 按政策不予采信；下表为 Workflow 记录的真实 exitCode，且 BLOCK 由脚本计算而非自报",
+        "commands": [
+          {
+            "i": 0,
+            "kind": "required",
+            "exitCode": 0,
+            "purpose": "交付物存在且非空（97758 字节）"
+          },
+          {
+            "i": 1,
+            "kind": "required",
+            "exitCode": 0,
+            "purpose": "11 项必备关键词全命中"
+          },
+          {
+            "i": 2,
+            "kind": "required",
+            "exitCode": 0,
+            "purpose": "交付物不含疑似 Secret 真实值（反向匹配）"
+          },
+          {
+            "i": 3,
+            "kind": "required",
+            "exitCode": 0,
+            "purpose": "test -z \"$(git diff --name-only HEAD -- backend frontend docs/workflow .github .qoder/rules .qoder/workflows .gitignore AGENTS.md)\" — 受保护路径零改动"
+          },
+          {
+            "i": 4,
+            "kind": "required",
+            "exitCode": 0,
+            "purpose": "pytest tests/test_safety.py tests/test_security.py tests/test_role_permissions.py -q → 10 passed"
+          },
+          {
+            "i": 5,
+            "kind": "required",
+            "exitCode": 0,
+            "purpose": "git status --porcelain Scope 守护"
+          },
+          {
+            "i": 6,
+            "kind": "record",
+            "exitCode": 1,
+            "purpose": "全量后端 pytest 基线健康度采集（EXECUTED_AND_RECORDED）"
+          },
+          {
+            "i": 7,
+            "kind": "record",
+            "exitCode": 1,
+            "purpose": "ruff check app/ 基线健康度采集（EXECUTED_AND_RECORDED）"
+          },
+          {
+            "i": 8,
+            "kind": "required",
+            "exitCode": 0,
+            "purpose": "集成子集（CI-parity）"
+          }
+        ],
+        "skippedGates": "无（required/record 全部真实运行）",
+        "trippedBy": "guard 对 #6/#7 的 record 命中 REGRESSION_TESTS[0]/[1]"
+      },
+      "artifact": {
+        "path": "deliverables/baseline/SECURITY_BASELINE.md",
+        "bytes": 97758,
+        "lines": 592,
+        "sha256": "72fd898f4b5add01ad8dc13e4ffc5c81c67b69033ea1012dc036d008461d34f7",
+        "md5": "f4720b6866089f36e06052577233b22f",
+        "scope": "ALLOWED_WRITE_PATHS=[\"deliverables/baseline/SECURITY_BASELINE.md\"]，唯一新建文件，零代码/零配置/零迁移改动",
+        "contentVerdict": "质量独立评价（Orchestrator 取证，非 Workflow 判据）：12 章；§1 端点×认证×归属矩阵 37 行（与 Scope、Worker、Orchestrator 三方独立计数一致）；§3 Secret 全仓扫描（不摘录口令）；§6 安全测试真实性双口径并写入 F-19\"验证不成立\"；§9 分级 35 条（P0×7=SB-01…SB-06+SB-31 / P1×17 / P2×11）；§10 DB 零接触声明 + E1-E13 命令留痕；§12 列 14 项 missing_evidence（H-1…H-14）并规定\"未取证条目不得记 OK\"。反向纠错一处：§5 原文\"音频仅在内存中送 ASR\"不准确——asr_gateway 使用 delete=False 临时文件确会落盘（asr_gateway.py:104-107/185-187/260-262 在 finally 中 unlink，但清理无测试），措辞待修正。"
+      },
+      "committed": false,
+      "commitReason": "TASK_PASS_FORMULA 未成立（无 MACHINE_GATE_PASS、无独立 Review、无 Verify 判据）；交付物保留为未跟踪证据，NOT staged。与 M0-005 同一处置。",
+      "fullModeFidelity": "ACTIVE_EXECUTION_MODE=FULL；task-spec 与 D4 取证 invocation resolvedModel=qmodel_38max，implement 与 machine-gate resolvedModel=qfmodel（由 task-*.json 独立核实，非仅脚本自述）。ATTEMPTS=0，未触发 FLASH_ONLY fallback，未做任何模型替换。",
+      "taskDelta": "D4 取证（exitCode 0, purpose=Implement 后 Task Delta 校验, filesWritten=[]）：本任务改动 1 项（SECURITY_BASELINE.md）；pre-existing 未变 2 项不计入本任务；retry-owned 0；目录单元变化 0；治理/HEAD/index 无违规。Orchestrator 独立重算 baseline↔post 全部 SHA-256 与字节数，逐项相等（INTEGRATION_BASELINE.md 29672/56ad8639…、qgraphflow graph.json 34972/5f12d3d4…、index.html 794348/2bd127b7…，tree 单元 9eb05078…）⇒ UNCHANGED，无外部改动。",
+      "dbSafety": ":5432 全程零接触（Orchestrator 复核 netstat：0.0.0.0/[::]:5432 LISTENING PID 6892，与 M0-002 NB-01 同一 PID；本 Chain 未建立任何连接、未执行 SQL/DDL/DML、未运行 alembic、未对该端口作任何操作）。本次未创建任何容器。",
+      "environmentResidueObserved": "docker ps 实测仍 Up 25h 的历史一次性容器：aiear-m0004-pg-test（pgvector/pgvector:pg15, :55432）、dresslens-postgres（pg16, :15432）、dresslens-redis（:16379）、dresslens-minio（:9000-9001）。PID 24764/32340 即这两个非 5432 端口监听者。仅记录，未停止/未删除（停止他人会话持有的容器属破坏性操作，交人工决定）。",
+      "usage": {
+        "agents": 11,
+        "toolCalls": 234,
+        "durationMs": 3530706,
+        "failures": []
+      }
     }
   ],
   "skippedTasks": [],
@@ -172,22 +270,24 @@
         "M0-004"
       ],
       "pri": "P0",
-      "status": "READY",
-      "note": "deps satisfied (M0-002 + M0-004 both TASK_PASS); unblocks M0-007"
+      "status": "BLOCKED",
+      "note": "deps satisfied but blocked by F-20 (executed instance #1); blocked pending FIX-GOV-001"
     },
     "M0-006": {
       "deps": [
         "M0-002"
       ],
       "pri": "P0",
-      "status": "READY"
+      "status": "BLOCKED",
+      "note": "deps satisfied (M0-002 TASK_PASS); executed in FULL mode at ~59 min, BLOCKED at Machine Gate by F-20 (executed instance #2); deliverable complete & high quality but uncommitted; never reached Max Review/Verify"
     },
     "M0-007": {
       "deps": [
         "M0-005"
       ],
       "pri": "P0",
-      "status": "BACKLOG"
+      "status": "BLOCKED",
+      "note": "blockedBy M0-005 (BLOCKED) + own record-tier spec shape already machine-proven to self-trip REQUIRED_DOWNGRADE"
     },
     "M0-008": {
       "deps": [
@@ -195,8 +295,8 @@
         "M0-004"
       ],
       "pri": "P0",
-      "status": "READY",
-      "note": "deps satisfied (M0-003 + M0-004 both TASK_PASS)"
+      "status": "BLOCKED",
+      "note": "deps satisfied (M0-003 + M0-004) but NOT launched: docker-build record shape is covered by blockedTasks[M0-005].machineProof (replicated guard -> BLOCKED). Launching would repeat a known wall at ~40-60 min/run with zero new information."
     }
   },
   "criticalPath": "M0-001 -> M0-004 -> KB-001 -> KB-002 -> KB-003 -> KB-004 -> ING-001 -> ING-005 -> ING-007 -> ING-008 -> ING-009 -> RAG-001 -> RAG-003 -> RAG-006 -> RAG-007 -> RAG-008 -> RAG-010 -> UI-001 -> EVAL-005 -> OPS-004",
@@ -269,7 +369,9 @@
       "summary": "runbook venv drift (docs reference venv, local uses backend/.venv / venv312)",
       "status": "OPEN",
       "disposition": "Doc drift; resolve per §70/§111 if it blocks safe ops.",
-      "severity": "P2"
+      "severity": "P2",
+      "amendedAt": "2026-10-07T21:05Z",
+      "amendment": "M0-006 实测补充：真实测试环境 = backend/venv312（Python 3.12.10 / pytest 9.1.1），backend/.venv 不存在，但 AGENTS.md §9 与 .qoder/rules/80-testing.md 的命令基线都写 venv `.venv`（治理文档债，夜间不可修）；backend/venv（Py3.14）非测试环境。另：`docker compose` 在本目录因非 ASCII 工作目录名无法推导 project name（`docker compose config --quiet` exit 1 \"project name must not be empty\"），加 `-p <name>` 即 exit 0 并可列出 db/redis/backend/frontend（= SB-34）；npm registry 今日可达（npm ping PONG 902ms exit 0）——此前记录的 \"npm egress blocked\" 属过期结论，不得再作为阻塞理由。"
     },
     "F-17": {
       "summary": "M0 Exit says 8 baseline docs; MILESTONES.md deliverables list names 7",
@@ -296,10 +398,131 @@
     },
     "F-20": {
       "summary": "Workflow governance defect: anti-downgrade guard and Gate Schema are mutually unsatisfiable for baseline/audit tasks, and the guard message misattributes planner-authored tiers to executor tampering",
-      "status": "OPEN",
+      "status": "OPEN-EXECUTED-TWICE",
       "severity": "P1-BLOCKING",
-      "disposition": "REQUIRES HUMAN/Max GOVERNANCE PHASE — .qoder/workflows/** is Flash-forbidden and the Night Chain forbids auto-fixing governance defects at night. Two candidate repairs offered, neither applied: (A) guard reads the tier annotation from the spec string instead of assuming mandatory==required; (B) add a distinct EVIDENCE_ONLY/RECORD_ONLY command list in the SPEC contract so record items are not listed in MANDATORY_TESTS.",
-      "candidateRepairs_C": "C (evaluated and DECLINED unattended): keep the guard untouched and author the TASK_SPEC so MANDATORY_TESTS/REGRESSION_TESTS contain only genuinely must-pass commands, moving baseline probes (full pytest/ruff/docker pull/migration availability) out of those arrays into ACCEPTANCE_CRITERIA + record-tier gate commands. Mechanically viable — retry-ownership preconditions were verified satisfiable (prior spec EXPECTED_FILES/ALLOWED_WRITE_PATHS contain the artifact; priorRunSha256 56ad8639...8def confirmed 64-hex; journal.jsonl#L18 of run wf_bd5d9d4f-2c7 records Worker IMPLEMENTED/FILES_CREATED for it). Declined because it silently redefines the semantics of MANDATORY_TESTS from \"must be executed\" (:1450/:1492) to \"must pass\", relocating enforcement of \"probe truly executed\" from a machine-checkable array into AC prose + Review judgment. That is a gate-shape change, i.e. exactly the governance decision the Night Chain reserves for a human (\"governance defects found at night must NOT be auto-fixed\"), so choosing it at 03:00 unattended would be circumvention, not compliance."
+      "disposition": "UNCHANGED + ESCALATED: FIX-GOV-001 (repair A or B) stays NOT_STARTED, owner = Max governance phase / human. .qoder/workflows/** is Flash-forbidden and the Night Chain forbids auto-fixing governance defects at night. Repair C remains evaluated-and-declined (see candidateRepairs_C). Two executed instances now replace prediction with evidence.",
+      "candidateRepairs_C": "C (evaluated and DECLINED unattended): keep the guard untouched and author the TASK_SPEC so MANDATORY_TESTS/REGRESSION_TESTS contain only genuinely must-pass commands, moving baseline probes (full pytest/ruff/docker pull/migration availability) out of those arrays into ACCEPTANCE_CRITERIA + record-tier gate commands. Mechanically viable — retry-ownership preconditions were verified satisfiable (prior spec EXPECTED_FILES/ALLOWED_WRITE_PATHS contain the artifact; priorRunSha256 56ad8639...8def confirmed 64-hex; journal.jsonl#L18 of run wf_bd5d9d4f-2c7 records Worker IMPLEMENTED/FILES_CREATED for it). Declined because it silently redefines the semantics of MANDATORY_TESTS from \"must be executed\" (:1450/:1492) to \"must pass\", relocating enforcement of \"probe truly executed\" from a machine-checkable array into AC prose + Review judgment. That is a gate-shape change, i.e. exactly the governance decision the Night Chain reserves for a human (\"governance defects found at night must NOT be auto-fixed\"), so choosing it at 03:00 unattended would be circumvention, not compliance.",
+      "executedInstances": [
+        {
+          "taskId": "M0-005",
+          "runId": "wf_bd5d9d4f-2c7",
+          "executionMode": "FULL",
+          "trippedOn": "REGRESSION_TESTS record-tier entry (full pytest / alembic pull measurements authored as record by the Max Task Spec itself)",
+          "result": "BLOCKED / GOVERNANCE_POLICY_VIOLATION / GIT_TIER=REQUIRED_DOWNGRADE at Machine Gate",
+          "note": "first executed instance; also proven by verbatim guard replication against 4 spec shapes"
+        },
+        {
+          "taskId": "M0-006",
+          "runId": "wf_6b00bd56-a7c",
+          "workflowTaskId": "wf-d8654705-bb7",
+          "executionMode": "FULL",
+          "trippedOn": "[GATE-RECORD] cd backend && venv312/Scripts/python.exe -m pytest -q -p no:cacheprovider",
+          "detailVerbatim": "执行手把 TASK_SPEC 必跑项 '[GATE-RECORD] cd backend && venv312/Scripts/python.exe -m pytest -q -p no:cacheprovider（全量后端测试基线健康度采集；非零退出属既有基线发现（M0-002 已记录 DEGRADED 项），写入 findings 与 PROJECT_BASELINE_HEALTH，不使本 Task MACHINE_FAIL、不触发修复；recordStatus=EXECUTED_AND_RECORDED）' 记为 record（kind=record），属动态降级，禁止。",
+          "result": "BLOCKED / GOVERNANCE_POLICY_VIOLATION / GIT_TIER=REQUIRED_DOWNGRADE at Machine Gate; ATTEMPTS=0; FAILED_PHASE=Machine Gate (never reached Max Review / Max Verify)",
+          "honestSubmissionProof": {
+            "required": "6 commands, all exitCode 0 (artifact non-empty; 11-keyword section check; deliverable secret scan; zero-diff on protected paths; safety+security+role_permissions 10 passed; scope guard)",
+            "record": "2 commands EXECUTED with exitCode 1 (full pytest, ruff check app/) — reported truthfully, recordStatus=EXECUTED_AND_RECORDED",
+            "integrationRequired": "exitCode 0",
+            "skippedGates": "none (\"无…required/record 门禁均已真实运行\")",
+            "executorSelfReport": "allPassed:true (untrusted by policy; irrelevant — the script computed the block)",
+            "conclusion": "The executor did NOT tamper. It executed every command and reported every red exit truthfully. The guard therefore punished the honest submission, in FULL mode, on a Max-authored record tier."
+          }
+        }
+      ],
+      "incentiveInversion": {
+        "statement": "The guard is incentive-inverted for baseline/audit tasks. detectRequiredDowngrade builds its `must` set from MANDATORY_TESTS ∪ REGRESSION_TESTS verbatim strings and trips on any kind=record command matching one of them (project-feature-delivery.js:727-743), while the Gate Schema requires red baseline measurements to be kind=record (:1798-1799). Listing a red probe and recording it truthfully ⇒ BLOCK. Omitting the red probe from those arrays entirely ⇒ no match ⇒ nothing to trip. Honest recording fails; silence passes.",
+        "proofBasis": "Derived deterministically from the guard source (substring set built only from MANDATORY∪REGRESSION, trip condition cmd===m || cmd.includes(m) || m.includes(cmd)), plus two executed instances. The \"omit and pass\" branch was NOT executed — it is a code-level consequence, stated as such, not as observed output."
+      },
+      "misattributionReproduced": "DETAIL again attributes a planner-authored tier to the executor (\"执行手把…记为 record…属动态降级，禁止\"). In FULL mode the tier was written by the qmodel_38max Task Spec (m0-006-security-baseline.spec.json REGRESSION_TESTS[0]/[1] are literally prefixed [GATE-RECORD])."
+    },
+    "F-21": {
+      "summary": "Explore 阶段的产物未被任何校验即被接受：M0-006 run wf_6b00bd56-a7c 的 Explore invocation（journal.jsonl idx 17, agentId aworkflow-subagent-db2a1cf5fe9224a0）返回 5/7 字段为字面量 \"TEST\" 占位符，TEST_COMMANDS 五类全为空数组，RELATED_FILES 仅 1 个文件（backend/app/api/deps.py）；其 rawResult.content 记录了一次畸形标签重试（\"The closing tag for RELATED_FILES was malformed. Retrying with correct syntax.\"）。Workflow 未做任何占位符/空值/文件数合理性检查，直接输出日志\"探索完成：1 个相关文件，parallelSafe=true\"并继续推进。",
+      "status": "OPEN",
+      "severity": "P2-GOVERNANCE-OBSERVABILITY",
+      "evidence": [
+        "journal.jsonl idx 17 verbatim: {\"CURRENT_STATE\":\"TEST\",\"DEPENDENCIES\":\"TEST\",\"EXISTING_TESTS\":\"TEST\",\"POTENTIAL_REGRESSIONS\":\"TEST\",\"RELATED_FILES\":[\".../backend/app/api/deps.py\"],\"RISKS\":\"TEST\",\"TEST_COMMANDS\":{\"backend\":[],\"frontend\":[],\"integration\":[],\"lint\":[],\"migration\":[]},\"parallelSafe\":true,\"parallelSafeReason\":\"TEST\"}",
+        "output.json logs: \"探索完成：1 个相关文件，parallelSafe=true\" — 对一个覆盖 8 个路由模块 / 37 端点 / Secret / CORS / 日志脱敏的安全审计任务，1 个相关文件的信号从未被质疑",
+        "damage bounded（同一 run 内后续阶段独立复核）：Scope（idx 20）独立枚举 8 routers / 37 endpoints（health 2 / pronunciation 4 / metrics 3 / report 4 / auth 5 / training 6 / hardware 9 / dialogue 4）；Worker（idx 26）以 grep -rEc 独立计数得到同一 37 与同一分布；Goal Orchestrator 亦独立测得同一数字。三处一致 ⇒ 本任务的 TASK_SPEC 未被 Explore 的退化输出污染。",
+        "对照：M0-004/M0-005/M0-006 三个 run 中仅 M0-006 出现该形态，说明是偶发的结构化输出退化，而非稳定的契约缺失被每次触发。"
+      ],
+      "impact": "Explore 是 Scope 与 TASK_SPEC 的上游输入。退化的 Explore 若未被后续阶段独立覆盖，会把\"1 个相关文件 / 空测试命令\"传导成 SPEC 的取证盲区，而 Workflow 会照常记录\"探索完成\"。当前无任何机器判据能区分\"探索过且只有 1 个文件\"与\"探索失败但填了占位符\"。",
+      "disposition": "REQUIRES HUMAN/Max GOVERNANCE PHASE：在 Explore 之后加契约校验（拒绝字面量占位符、要求 TEST_COMMANDS 非空或显式声明 skip 理由、对 risk=high + security=true 任务设 RELATED_FILES 下限）。属 .qoder/workflows/** 治理变更，夜间禁止自行修复；与 FIX-GOV-001 同批处理。"
+    },
+    "F-22": {
+      "summary": "治理文档与代码真相不符：.qoder/rules/20-architecture.md 冻结决策 #6 与 .qoder/rules/70-medical-safety.md \"Safety Policy\" 均声称\"安全关键词统一在 app/core/safety.py（已存在）\"。实测 safety.py 只有以参数接收词表的通用匹配器，词表本身分散在三处独立维护。",
+      "status": "OPEN",
+      "severity": "P1-GOVERNANCE-DOC-DIVERGENCE",
+      "evidence": [
+        "backend/app/core/safety.py:6（find_safety_keyword(text, keywords: Iterable[str])）、:15（contains_safety_keyword）— 无内置统一词表，只接收调用方传入的 keywords",
+        "backend/app/core/config.py:143-148 — SAFETY_KEYWORDS: list[str] 实际宿主在 config（\"自杀/自残/死亡/遗书/…/医疗建议/用药/剂量/手术\"）",
+        "backend/app/ai/llm_gateway.py:224 — 输出安全检查内硬编码第二份独立词表 medical_patterns = [\"建议你吃\",\"应该服用\",\"药物治疗\",\"手术建议\"]（不引用 safety.py 也不引用 SAFETY_KEYWORDS）",
+        "交叉引用：交付物 deliverables/baseline/SECURITY_BASELINE.md §9 SB-08（P1，\"输出安全词表在网关内硬编码，未复用 core/safety.py（ARCH-04 重犯）\"），与本项同一事实的两个侧面（代码侧 = SB-08；治理文档侧 = 本项）"
+      ],
+      "impact": "两处后果：(a) 代码侧词表必然随演进漂移，剂量/调机/programming 类输出无法被网关侧检测（SB-08）；(b) 治理侧误导——后续任何按 20-architecture.md #6 \"已统一\" 假设行事的 Agent/审查者会把 ARCH-04 当作已修复，而架构债报告本身也标注 ARCH-04\"疑似已修复\"。",
+      "disposition": "两个动作，均 HUMAN/Max 治理阶段：(1) 代码收口 = SAFE-004 / ARCH-04（统一 Safety Policy 入口，复用 core/safety.py）；(2) 治理文档修正 = 把 20-architecture.md #6 与 ARCH-04 现状改为\"匹配器已存在、词表未统一\"。夜间不得自动改 .qoder/rules/**（治理文件保护）。"
+    },
+    "SEC-SB01": {
+      "summary": "跨用户响应缓存泄露健康数据（缓存型 IDOR）— Orchestrator 独立读源码复核成立",
+      "artifactRef": "deliverables/baseline/SECURITY_BASELINE.md §9 SB-01（P0）",
+      "evidence": [
+        "backend/app/middleware/performance.py:111-131 _make_cache_key：key_parts=[path, str(query_params)]，仅当 request.headers[\"Authorization\"] 以 \"bearer \" 开头时才 verify_token 取 sub 追加 user_id；Cookie 会话无该头 ⇒ key = \"cache:\" + md5(path|query)",
+        "backend/app/api/deps.py:16-20：先取 Bearer，无则回落 request.cookies[\"access_token\"] ⇒ 浏览器主用路径确实无 Authorization 头（这就是泄露的成因链）",
+        "backend/app/middleware/performance.py:44-52 CACHEABLE_PATHS 含 /api/report/summary、/api/report/levels、/api/training/levels、/api/dialogue/scenarios、/api/health；:61 前缀匹配；:64-76 命中即直接返回缓存体；:54 DEFAULT_TTL=60"
+      ],
+      "impact": "任一登录用户在 60s TTL 内可命中他人写入的报告/级别分布（正确率、依从率、级别 = D 类健康数据）缓存条目。同时违反 30-backend.md\"缓存 key 必须含用户标识（历史 S6 教训）\"与 90-quality-gates 的 IDOR 判据。",
+      "status": "OPEN-RECORDED-NOT-FIXED",
+      "severity": "P0",
+      "priorityNote": "建议列为晨间第一批修复之一（见 HD-N-07）：修复面小（key 必含 user 标识 / 非 Bearer 路径禁缓存），风险面为跨患者数据泄露。"
+    },
+    "SEC-SB03": {
+      "summary": "CI 触发分支与仓库实际分支不符 ⇒ 全部质量/安全回归从未被 CI 执行",
+      "artifactRef": "deliverables/baseline/SECURITY_BASELINE.md §9 SB-03（P0）",
+      "evidence": [
+        ".github/workflows/ci.yml:4-7 push.branches=[main, develop]、pull_request.branches=[main]",
+        "git branch -a 实测：master、feature/m0-baseline、auditory-rehab-optimization（无 main、无 develop）；10-project.md 声明主分支=master"
+      ],
+      "impact": "后端全测/postgres 集成/前端 lint+build+E2E/Docker build 全部不触发；RELEASE_CRITERIA G5/C 系列在 CI 口径无有效证据。所有历史 \"CI 绿\" 记忆均不可作为证据。",
+      "status": "OPEN-RECORDED-NOT-FIXED",
+      "severity": "P0",
+      "priorityNote": ".github/** 为治理路径，夜间禁改（HD-N-07 首个动作，改 master/develop 触发矩阵并补一次真实 CI 运行证据）。"
+    },
+    "SEC-SB06": {
+      "summary": "硬件 9 个端点仅认证、无归属校验、无角色区分，可越权驱动他人设备",
+      "artifactRef": "deliverables/baseline/SECURITY_BASELINE.md §9 SB-06（P0）",
+      "evidence": [
+        "backend/app/api/hardware.py:65/82/103/124/147/198/219/241/280 全部仅 Depends(get_current_user)，无设备-用户绑定校验；models/user.py 无设备归属关系",
+        "参数无界 hardware.py:54、:59-60；广播 :270；该 router 已在 backend/app/main.py:131 挂载（即线上可达，非死代码）",
+        "backend/tests 中零覆盖（grep -rl \"/api/hardware\" backend/tests/*.py → 无命中）"
+      ],
+      "impact": "任意登录用户可查询/连接/断连/驱动任意康复站外设（LED/蜂鸣器/振动/OLED 文本），属可用性 + 患者人身安全边界；对老年/耳蜗用户设备侧执行器无参数上界尤其危险。",
+      "status": "OPEN-RECORDED-NOT-FIXED",
+      "severity": "P0",
+      "priorityNote": "硬件域按 10-project.md 为\"非 MVP\"，但已挂载即已暴露；处置选项（下线该 router / 补归属模型 / 加参数上界）属人工决策，非夜间可自动决定。"
+    },
+    "SEC-SB31": {
+      "summary": "应用启动无条件 create_all + seed（无 ENVIRONMENT/DEBUG 守卫），默认连接串指向身份未知实例 ⇒ 一条 uvicorn 命令即可污染真实库",
+      "artifactRef": "deliverables/baseline/SECURITY_BASELINE.md §9 SB-31（P0）",
+      "evidence": [
+        "backend/app/main.py:40-49 lifespan 内 await init_database()（:46）+ await seed_data()（:49），两者均无 if settings.DEBUG / ENVIRONMENT 判定",
+        "backend/app/db/init_db.py:12-15 engine.begin() + Base.metadata.create_all（直接建表，绕过 alembic 口径）；:18-27 seed 幂等守卫只看 ItemBank 是否为空",
+        "默认连接串 backend/app/core/config.py:41 → localhost:5432/cochlear_rehab；本机 :5432 实测 0.0.0.0/[::] LISTENING PID 6892（= SB-28，绑定全网卡的未知实例）"
+      ],
+      "impact": "与 Night Chain 的 UNKNOWN_DATABASE_INSTANCE 规则直接冲突：任何人在未显式设 DATABASE_URL 的机器上启动服务，即对一个身份未知、绑定 0.0.0.0 的实例执行 DDL + 写入（含 13800000001/13800000002 演示账号）。这也是本 Chain 全程禁止 `uvicorn app.main:app`、禁止 alembic 默认 URL、只用一次性 :55432 容器的原因。",
+      "status": "OPEN-RECORDED-NOT-FIXED",
+      "severity": "P0",
+      "priorityNote": "最高优先级危险项（写库面）。修复前不得做任何\"启动一次看看\"的冒烟验证。"
+    },
+    "F-23": {
+      "summary": "夜间账本目录被 .gitignore 忽略，仅靠\"早先 force-add 后成为 tracked\"侥幸存活：.gitignore:73 `deliverables/*` 只配了 :74 `!deliverables/baseline/` 一条例外，无 `!deliverables/overnight/`。实测 `git ls-files deliverables/overnight/` 只有 GOAL_PROGRESS.md 与 TASK_LEDGER.json 两个既有文件；`git add -- <该目录下新文件>` 会命中 \"The following paths are ignored by one of your .gitignore files: deliverables/overnight\"（本轮 21:08Z 实测复现，两个已跟踪文件因 tracked 身份仍成功 stage）。",
+      "status": "OPEN",
+      "severity": "P3-GOVERNANCE-IGNORE-TRAP",
+      "evidence": [
+        ".gitignore:72-74（注释即\"例外：deliverables/baseline/ 是 M0 正式基线产物目录，允许提交（治理决定 2026-10-07）\"）",
+        "git add 输出：ignored paths = deliverables/overnight（本会话实测）",
+        "git ls-files：deliverables/overnight/{GOAL_PROGRESS.md,TASK_LEDGER.json} 二者为 tracked ⇒ 修改可 stage；同目录任何新文件默认不可 stage"
+      ],
+      "impact": "两个后果：(a) 若夜间链日后新增第三个记录文件（如分里程碑的 gate 证据索引），会被静默忽略、不报错、不入库，晨间 review 会以为\"已提交\"；(b) 反向确认了一件好事：M0 交付物目录 `deliverables/baseline/` 在白名单内，因此 HD-N-08 的\"guard 修复后补审提交\"不存在 ignore 障碍，只欠 TASK_PASS 判据。",
+      "disposition": "单行治理改动（加 `!deliverables/overnight/`，或把账本移入已白名单目录）。`.gitignore` 属治理保护路径 → 夜间不得自改，交人工/Max 治理阶段（可与 HD-N-01/HD-N-04 同批）。"
     }
   },
   "humanDecisionsRequired": [
@@ -332,6 +555,20 @@
       "id": "HD-N-06",
       "decision": "M2 Entry needs approved KB ADR + pgvector-capable image; M3 Entry needs human-confirmed licensing; any real production deploy/publish/SMS/secrets remains HUMAN_REQUIRED",
       "blocks": "anything beyond M0"
+    },
+    {
+      "id": "HD-N-07",
+      "decision": "批准把 M0-006 交付物里 Orchestrator 独立复核成立的 4 条安全 P0（SB-01 跨用户缓存 IDOR / SB-31 启动无条件建表+写种子且默认连未知实例 / SB-03 CI 触发分支不符 / SB-06 硬件端点无归属校验）排为 M0 之后的首批修复任务（建议 SEC-011→SEC-012→CI-001→SEC-002），并决定 SB-06/SB-32 的硬件暴露面处置方式（下线 router vs 补设备归属模型）",
+      "blocks": "真实安全修复排期；本 Chain 无权新建/改代码、也无权改 .github/** 与 .qoder/rules/**",
+      "evidence": "findings[\"SEC-SB01\"]/[\"SEC-SB31\"]/[\"SEC-SB03\"]/[\"SEC-SB06\"]（全部含 Orchestrator 亲验的文件:行号）+ deliverables/baseline/SECURITY_BASELINE.md §9",
+      "raisedAt": "2026-10-07T21:05Z"
+    },
+    {
+      "id": "HD-N-08",
+      "decision": "认可 M0-005/M0-006 两份未跟踪交付物（INTEGRATION_BASELINE.md 29672B、SECURITY_BASELINE.md 97758B）在 F-20 修复后以\"内容不重跑即复用\"的方式补审提交，还是要求 guard 修复后整任务重跑（约 40~60 分钟/任务，内容会重新生成）",
+      "blocks": "夜间产出物是否成为正式基线；M0 Milestone Gate 的证据来源",
+      "rationale": "两份文档均由 FULL 模式 Max SPEC + qfmodel 实施产出、D4 Task Delta 干净、Orchestrator 已逐条取证；唯一失败原因是治理脚本自身的 F-20 矛盾，与内容质量无关。但按 90-quality-gates，缺 MACHINE_GATE_PASS/Review/Verify 判据即不得记 TASK_PASS —— 因此它们现在是\"证据\"，不是\"通过的任务\"。",
+      "raisedAt": "2026-10-07T21:05Z"
     }
   ],
   "pendingFixTasks": {
@@ -410,13 +647,29 @@
       "blockReason": "GOVERNANCE_POLICY_VIOLATION",
       "failedPhase": "Machine Gate",
       "kind": "SPEC-INTERNAL CONTRADICTION vs GUARD (not executor downgrade)"
+    },
+    {
+      "taskId": "M0-006",
+      "runId": "wf_6b00bd56-a7c",
+      "attempts": 0,
+      "blockReason": "GOVERNANCE_POLICY_VIOLATION",
+      "failedPhase": "Machine Gate",
+      "kind": "SPEC-INTERNAL CONTRADICTION vs GUARD（第二次执行实例；非执行手降级）",
+      "note": "Max Task Spec 自身把全量 pytest/ruff 的红基线写成 [GATE-RECORD]，Gate Schema 亦要求红基线用 kind=record；guard 按 MANDATORY∪REGRESSION 子串匹配判降级 ⇒ 任何诚实的 record 提交都必然 BLOCK。",
+      "filesChangedByFlash": [
+        "deliverables/baseline/SECURITY_BASELINE.md（新建，未跟踪）"
+      ],
+      "gitWritesByFlash": "none（HEAD 仍 1a62703，staging 空，无破坏性 git 命令）"
     }
   ],
   "notes": {
-    "resumePrecondition": "Do NOT relaunch M0-005/006/007/008 until F-20 is repaired in .qoder/workflows/project-feature-delivery.js (HD-N-01 / FIX-GOV-001). Machine-proven that every baseline record-tier spec shape self-trips REQUIRED_DOWNGRADE, so a relaunch repeats a known wall at ~40 min/run. Required order: human fixes guard -> M0-005 -> M0-006 -> M0-007/M0-008 -> M0 Milestone Gate (Exit also needs HD-N-04 governance write of FIX-* rows into docs/workflow/TASK_CATALOG.md). Option C is available to the human but was not exercised unattended.",
+    "resumePrecondition": "Do NOT relaunch M0-005/006/007/008 until F-20 is repaired in .qoder/workflows/project-feature-delivery.js (HD-N-01 / FIX-GOV-001). Evidence upgraded from prediction to EXECUTION: M0-005 (wf_bd5d9d4f-2c7) and M0-006 (wf_6b00bd56-a7c) both ran the full chain in FULL mode and both were blocked at Machine Gate on a Max-authored record tier, with the executor reporting every red exit truthfully. Required order: human/Max fixes guard → M0-005 → M0-006 → M0-007/M0-008 → M0 Milestone Gate (Exit also needs HD-N-04 governance write of FIX-* rows into docs/workflow/TASK_CATALOG.md + F-01/F-02/F-19 decisions). Repair C remains available to the human but was again NOT exercised unattended (M0-006 could have been steered into an all-required-green shape by dropping the two red baselines from REGRESSION_TESTS — that is circumvention of a known defect, not delivery).",
     "dbSafety": "backend/alembic.ini:5 default sqlalchemy.url points to postgresql://...@localhost:5432/cochlear_rehab (the UNKNOWN listener). Any migration test MUST override the URL to a Goal-created isolated non-5432 container; NEVER touch 5432.",
     "dockerAvailable": "Docker 29.5.2 / Compose v5.1.4 confirmed available for §32-35 isolated test container.",
-    "serialPolicy": "Overnight default serial (§18); progress files committed before Workflow launch and updated only after TASK_PASS (§116/§117)."
+    "serialPolicy": "Overnight default serial (§18); progress files committed before Workflow launch and updated only after TASK_PASS (§116/§117).",
+    "engineeringReleaseReady": "NO — M0 未过 Gate（4 个 P0 任务 BLOCKED），M1..M5 未启动；criticalPath 首环 M0-001→M0-004 之后的 M0 收口即断。",
+    "realProductionApproved": "NO — 无任何真实人工/授权主体批准；正式生产部署属 HUMAN_REQUIRED，夜间不自动批准。",
+    "bookkeepingIgnore": "夜间账本（deliverables/overnight/**）在 .gitignore 的 `deliverables/*` 之下且无例外；提交账本必须显式 `git add -- <已跟踪的两个文件路径>`，新增记录文件须先由人工加 `!deliverables/overnight/` 例外，否则会被静默忽略（见 findings.F-23）。"
   },
-  "pausedAt": "2026-10-07T19:35Z"
+  "pausedAt": "2026-10-07T21:05Z"
 }
