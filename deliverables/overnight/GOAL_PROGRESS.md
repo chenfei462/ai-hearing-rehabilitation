@@ -5,7 +5,7 @@
 
 - Goal 启动时间：2026-10-06T19:03Z
 - 当前分支：`feature/m0-baseline`
-- 当前 HEAD：`f73cb01`（= M0-003 在 FULL 模式重跑的交付物 commit，其父为 `c61bfd3` 治理 D5 恢复 FULL；M0-005 **未提交**，见下）
+- 当前 HEAD：`1800704`（夜间账本 seal 提交；其上无未提交 Task 判定，仅账本自身）→ 任务侧最后一个安全提交 = `f73cb01`（M0-003 FULL 重跑交付物，父为治理 `c61bfd3` D5 恢复 FULL）；M0-005 **未提交**，见下
 - 当前 Milestone：**M0 — Repository Truth & Baseline**
 - Goal 状态：**PAUSED_FOR_HUMAN**（2026-10-07T19:41Z 起）
 - 暂停根因：**F-20（P1-BLOCKING 治理缺陷）** — Workflow 反降级守卫 `detectRequiredDowngrade`（`.qoder/workflows/project-feature-delivery.js:727-743`）与 Gate 契约（同文件 `:1798-1799`「基线采集类命令必须 `kind=record`」）**结构性互斥**。修复需改治理保护路径 → Night Chain 禁止夜间自动修复治理缺陷。
@@ -129,7 +129,7 @@ Workflow：run `wf_bd5d9d4f-2c7`（workflowTaskId `wf-2f194400-ed3`），`execut
 
 ### 树安全状态（暂停时）
 
-HEAD `f73cb01`；staging 为空；工作树仅 `M deliverables/overnight/*`（Orchestrator 账本）+ 两个未跟踪项（M0-005 证据、pre-existing qgraphflow 指纹未变）；无 Workflow 运行；无 `aiear-m0005-*` 残留容器；治理文件与 `*.spec.json` 零改动。
+HEAD `f73cb01`（账本 seal 后 `1800704`）；staging 为空；工作树仅 `M deliverables/overnight/*`（Orchestrator 账本）+ 两个未跟踪项（M0-005 证据、pre-existing qgraphflow 指纹未变）；无 Workflow 运行；无 `aiear-m0005-*` 残留容器；治理文件与 `*.spec.json` 零改动。
 
 ## Open Findings（M0）
 

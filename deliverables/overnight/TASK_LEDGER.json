@@ -4,8 +4,9 @@
   "currentMilestone": "M0",
   "currentTask": "M0-005 (BLOCKED — governance defect, not committed)",
   "goalStatus": "PAUSED_FOR_HUMAN",
-  "lastSafeCommit": "f73cb01",
-  "currentHead": "f73cb01",
+  "lastSafeCommit": "1800704",
+  "currentHead": "1800704",
+  "headPointerNote": "1800704 is the ledger seal commit recording the M0-005 BLOCK and these corrections; the last task-side deliverable commit is f73cb01 (M0-003 FULL re-run, child of governance D5 c61bfd3). A follow-up pointer-update commit will sit on top and changes no task verdict.",
   "branch": "feature/m0-baseline",
   "modelPolicy": {
     "allowed": [
