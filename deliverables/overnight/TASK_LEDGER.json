@@ -2,10 +2,10 @@
   "goalStartedAt": "2026-10-06T19:03:00Z",
   "goalObjective": "Autonomous Delivery Orchestrator: M0 -> M0 Gate -> ... -> M10 -> M10 Gate -> Release Gate -> PROJECT_READY (no fake completion; stop at PAUSED_FOR_HUMAN or BLOCKED if unsafe).",
   "currentMilestone": "M0",
-  "currentTask": "M0-004",
+  "currentTask": "M0-005",
   "goalStatus": "IN_PROGRESS",
-  "lastSafeCommit": "7e027c7",
-  "currentHead": "7e027c7",
+  "lastSafeCommit": "a78b10f",
+  "currentHead": "a78b10f",
   "branch": "feature/m0-baseline",
   "modelPolicy": {
     "allowed": ["qmodel_38max", "qfmodel"],
@@ -48,6 +48,24 @@
       "projectBaselineHealth": "DEGRADED",
       "modelUsage": { "PLAN": "qmodel_38max", "IMPLEMENT": "qfmodel", "REVIEW": "qmodel_38max" },
       "findings": ["F-01 chunk>1000kB vendor-charts 1129.69kB echarts", "F-02 package.json vs lockfile version drift (in semver)", "F-03 40-frontend.md:36 says 5 test.tsx but 6 vitest files", "F-04 local Windows+Node24 != CI ubuntu+Node20", "F-05 thin coverage 10 tests/6 files, 1 e2e spec"]
+    },
+    {
+      "id": "M0-004",
+      "title": "API/DB/迁移基线审计",
+      "status": "TASK_PASS",
+      "commit": "a78b10f",
+      "deliverable": "deliverables/baseline/DB_API_BASELINE.md",
+      "gateHealth": "PASS",
+      "projectBaselineHealth": "DEGRADED",
+      "modelUsage": { "PLAN": "qmodel_38max", "IMPLEMENT": "qfmodel", "REVIEW": "qmodel_38max" },
+      "repairCyclesUsed": 0,
+      "specConflictRelaunches": 2,
+      "acTotal": 9,
+      "acMet": 9,
+      "apiRoutesInventoried": 37,
+      "migrationTruthRecorded": "upgrade 001 exit 0 / downgrade base exit 0 / upgrade head exit 1 (TypeError@002_seed_items.py:55, F-15); post-fail current=base not 001 (F-16)",
+      "findings": ["F-15 002_seed_items.py:55 op.execute 2-positional-arg incompatible with alembic 1.13.1 -> upgrade head exit 1 (TypeError), head unreachable; deferred to FIX-M0-004-001", "F-16 env.py:26-29 single begin_transaction (no transaction_per_migration) -> failed upgrade head rolls whole chain back to base (current=base, not 001)", "F-01 pytest baseline 1 failed/231 passed/33 warnings, no NEW failures (test_middleware.py:34 assert 401==200)", "F-13 adaptive RNG intermittent, NOT reproduced this round (not-reproduced != fixed)", "ENV-DRIFT local Py3.12.10/alembic1.13.1/pytest9.1.1 vs CI Py3.11/pytest8.x"],
+      "note": "Read-only audit; zero code/schema/API/frontend change. TASK_PASS verified by Goal Orchestrator (Max Verify): independent spot-check re-ran 'alembic current' on isolated :55432 -> exit 0 / base, confirming F-16 and no false report; qgraphflow fingerprints unchanged. Two SPEC_CONFLICT relaunches (ATTEMPTS=0 each, NOT repair cycles per §126) + one transient BLOCKED_MODEL_UNAVAILABLE (flash probe) all resolved without model switch."
     }
   ],
   "blockedTasks": [],
@@ -57,18 +75,19 @@
   "taskCommits": {
     "M0-001": "abc6a78",
     "M0-002": "7be3c50",
-    "M0-003": "2ab8ad5"
+    "M0-003": "2ab8ad5",
+    "M0-004": "a78b10f"
   },
   "milestoneGateResults": {},
   "m0Dag": {
     "M0-001": { "deps": [], "pri": "P0", "status": "TASK_PASS" },
     "M0-002": { "deps": ["M0-001"], "pri": "P0", "status": "TASK_PASS" },
     "M0-003": { "deps": ["M0-001"], "pri": "P0", "status": "TASK_PASS", "criticalPath": false },
-    "M0-004": { "deps": ["M0-001"], "pri": "P0", "status": "IN_PROGRESS", "criticalPath": true, "note": "SPEC_CONFLICT (run wf_881c57ca-678, ATTEMPTS=0) resolved by Max decision A+C+D; relaunching with corrected read-only-audit TASK_SPEC." },
-    "M0-005": { "deps": ["M0-002", "M0-004"], "pri": "P0", "status": "BACKLOG" },
+    "M0-004": { "deps": ["M0-001"], "pri": "P0", "status": "TASK_PASS", "criticalPath": true, "commit": "a78b10f", "note": "TASK_PASS via relaunch #3 (run wf_bcb74f36-ae9). Two SPEC_CONFLICT relaunches (false-premise; then revision-token 001_init_tables->001) + one transient BLOCKED_MODEL_UNAVAILABLE, all resolved by Max re-decision without model switch; ATTEMPTS=0, REPAIR_CYCLES_USED=0. Deliverable DB_API_BASELINE.md (388 lines, 9/9 AC met). Findings F-15/F-16 recorded, not fixed (read-only audit)." },
+    "M0-005": { "deps": ["M0-002", "M0-004"], "pri": "P0", "status": "READY", "note": "deps satisfied (M0-002 + M0-004 both TASK_PASS); unblocks M0-007" },
     "M0-006": { "deps": ["M0-002"], "pri": "P0", "status": "READY" },
     "M0-007": { "deps": ["M0-005"], "pri": "P0", "status": "BACKLOG" },
-    "M0-008": { "deps": ["M0-003", "M0-004"], "pri": "P0", "status": "BACKLOG" }
+    "M0-008": { "deps": ["M0-003", "M0-004"], "pri": "P0", "status": "READY", "note": "deps satisfied (M0-003 + M0-004 both TASK_PASS)" }
   },
   "criticalPath": "M0-001 -> M0-004 -> KB-001 -> KB-002 -> KB-003 -> KB-004 -> ING-001 -> ING-005 -> ING-007 -> ING-008 -> ING-009 -> RAG-001 -> RAG-003 -> RAG-006 -> RAG-007 -> RAG-008 -> RAG-010 -> UI-001 -> EVAL-005 -> OPS-004",
   "findings": {
@@ -76,6 +95,7 @@
     "F-02": { "summary": "full ruff 291 findings vs CI selected-rules clean", "status": "OPEN", "disposition": "No auto mass-reformat per §108; resolve lint policy via catalog ARCH task.", "severity": "P2" },
     "F-08": { "summary": "safe Postgres migration test env missing", "status": "NOT_CLOSED_ROOT_CAUSE_IDENTIFIED", "disposition": "Isolated non-5432 test env (§32-35) was successfully created for M0-004 (container aiear-m0004-pg-test @ :55432), so the env gap is mitigated; but running the migration triple there exposed F-15 (002_seed_items.py is alembic-1.13.1-incompatible). F-08 closure now depends on FIX-M0-004-001.", "severity": "P1" },
     "F-15": { "summary": "backend/alembic/versions/002_seed_items.py:55-58 calls op.execute(sa.text(...), item) with a 2nd positional arg; alembic 1.13.1 Operations.execute signature is (self, sqltext, *, execution_options=None) -> raises TypeError: execute() takes 2 positional arguments but 3 were given. So 001->002 chain cannot reach head; item_bank seed (19 rows) is never applied via migration. Root cause was latent because there is NO repo-wide alembic execution path (zero hits in CI/compose/deploy/scripts/runbook/Dockerfile); real table creation uses Base.metadata.create_all (app/core/database.py:42, app/db/init_db.py:15, tests/conftest.py:68). Verified on isolated :55432 postgres 15.18: upgrade 001 exit 0 (8 tables + alembic_version), downgrade base exit 0 (clean), upgrade head exit 1 (TypeError at 002 line 55).", "status": "OPEN", "disposition": "Recorded by M0-004 read-only audit; NOT fixed in M0-004 (002_seed_items.py is out of the audit's forbidden-to-change scope). Requires separate FIX-M0-004-001 before M2 Knowledge Core migrations rely on the alembic chain. Candidate fix: op.get_bind().execute(sa.text(...), item) or sa.text(...).bindparams(**item); also review 002 seed idempotency + wide DELETE downgrade per 50-database rules.", "severity": "P1", "blocksMilestone": "M2 (not M0/M1); on M0 critical path only as a recorded finding" },
+    "F-16": { "summary": "backend/alembic/env.py:26-29 wraps the whole online run_migrations() in a SINGLE context.begin_transaction() and does NOT set transaction_per_migration=True. Consequence: when 'upgrade head' fails at 002 (F-15 TypeError), the rollback spans the entire transaction, so the already-applied 001 DDL + alembic_version write are rolled back too -> DB ends at base (current=base), NOT at 001. Verified on isolated :55432 (Goal Orchestrator independent Max-Verify spot-check: alembic current exit 0, no revision line = base).", "status": "OPEN", "disposition": "Recorded by M0-004 read-only audit (DB_API_BASELINE.md §1.6); NOT fixed (env.py out of audit scope). Severity P2 (Flash suggested P2; Max confirms P2: no product-runtime impact, but determines how the Release Gate 'migration up/down/up' evidence chain is read and how FIX-M0-004-001 acceptance is designed). Evaluate together with F-15 in FIX-M0-004-001: after fixing the 002 signature, decide whether to introduce transaction_per_migration=True so a failing step does not roll back prior committed steps.", "severity": "P2", "discoveredBy": "M0-004 relaunch #3", "relatedFinding": "F-15", "followUp": "FIX-M0-004-001" },
     "F-11": { "summary": "integration/security/performance evidence gap", "status": "OPEN", "disposition": "Addressed by M0-005/M0-006/M0-007 baseline tasks.", "severity": "P1" },
     "F-13": { "summary": "adaptive engine RNG nondeterministic in tests", "status": "OPEN", "disposition": "Per §106 resolve via catalog/Fix mechanism if a deterministic gate needs it; never treat a single green run as fixed.", "severity": "P2" },
     "COV-GAP": { "summary": "backend coverage ~61%", "status": "OPEN", "disposition": "Per §109 threshold must be defined by formal OPS/Quality task; no self-invented 80/90%.", "severity": "P2" },
@@ -86,8 +106,8 @@
   "humanDecisionsRequired": [],
   "pendingFixTasks": {
     "FIX-M0-004-001": {
-      "source": "M0-004 audit finding F-15",
-      "objective": "Repair backend/alembic/versions/002_seed_items.py so the 001->002 alembic chain reaches head under alembic 1.13.1 (op.execute 2-positional-arg incompatibility), and review seed idempotency + wide DELETE downgrade per 50-database rules.",
+      "source": "M0-004 audit findings F-15 (002 op.execute signature) + F-16 (env.py transaction granularity)",
+      "objective": "Repair backend/alembic/versions/002_seed_items.py so the 001->002 alembic chain reaches head under alembic 1.13.1 (op.execute 2-positional-arg incompatibility, F-15); AND decide env.py transaction granularity (F-16: whether to set transaction_per_migration=True so a failing step does not roll back prior committed steps); and review seed idempotency + wide DELETE downgrade per 50-database rules. Acceptance = on an isolated non-5432 test DB, upgrade head -> downgrade base -> re-upgrade head all truly exit 0, making the Release Gate 'migration up/down/up' criterion hold.",
       "severity": "P1",
       "mustRunBefore": "M2 Knowledge Core migrations (KB-001+) that rely on the alembic chain",
       "notOnM0CriticalPath": true,
@@ -109,6 +129,39 @@
       "resolution": "RELAUNCH corrected TASK_SPEC (new SHA-suffixed spec.json per AGENTS.md §3 immutability); ATTEMPTS=0 relaunch is NOT a repair cycle per §126.",
       "filesChangedByFlash": [],
       "gitWritesByFlash": "none (HEAD still 7e027c7, worktree clean except pre-existing qgraphflow, fingerprint UNCHANGED)"
+    },
+    {
+      "taskId": "M0-004",
+      "runId": "wf-5f1ac58d-72f (relaunch #2 attempt, run wf_bcb74f36-ae9)",
+      "attempts": 0,
+      "blockReason": "BLOCKED_MODEL_UNAVAILABLE",
+      "failedPhase": "Preflight",
+      "unavailableModel": "qfmodel (Qwen3.8-Flash)",
+      "detail": "probe:flash errored ('Sorry, something went wrong. Please try again.'); probe:max had succeeded. Workflow correctly REFUSED to fall back to another model (model policy §5). ATTEMPTS=0, FILES_CURRENTLY_CHANGED=[], no files touched, HEAD c5546e1, worktree clean.",
+      "resolution": "Treated as TRANSIENT (retryable-flavored error text; probe:max green moments earlier). Goal Orchestrator did ONE resume-retry (resumeFromRunId wf_bcb74f36-ae9, replaying cached probe:max). NO model switch, no Workflow/governance edit. Retry succeeded -> Flash responded (agents_error 0). Model-availability concern resolved; no PAUSED_FOR_HUMAN needed on this axis."
+    },
+    {
+      "taskId": "M0-004",
+      "runId": "wf_bcb74f36-ae9 (relaunch #2, SPEC_CONFLICT)",
+      "attempts": 0,
+      "blockReason": "SPEC_CONFLICT",
+      "failedPhase": "Implement",
+      "conflict": "Max's relaunch-2 TASK_SPEC froze migration step1 as 'upgrade 001_init_tables' (expected exit 0 + current 'revision=001_init_tables'). But 001_init_tables/002_seed_items are FILENAMES, not alembic revision tokens; real revision ids are '001'/'002' (001_init_tables.py:11 revision='001'; 002_seed_items.py:11 revision='002', down_revision='001'). Flash ran it -> 'Can't locate revision identified by 001_init_tables' / exitCode=127; alembic heads -> '002 (head)'. AC-03 literal criterion unsatisfiable under any command. Flash correctly STOPPED (no token substitution, no spec/code edit). DB untouched (current empty=base exit 0), tracked zero-change, no credential leak, container still Up.",
+      "maxDecision": "Option A (Max independently re-verified source 001_init_tables.py:11 / 002_seed_items.py:11). Corrected step1 token 'upgrade 001_init_tables' -> 'upgrade 001' and AC-03 current expectation 'revision=001_init_tables' -> 'revision=001'. 'downgrade base'/'upgrade head' are valid alembic keywords, unchanged. AC-05 (upgrade head exit1/TypeError@002, F-15) unaffected. ALSO hardened all migration ACs to M0 truth philosophy (§71): PASS = real exitCode + revision before/after truthfully recorded against isolated :55432; expected values are GUIDANCE not hard assertions (prevents a third conflict).",
+      "resolution": "RELAUNCH #3 corrected TASK_SPEC (new SHA-suffixed spec m0-004-db-api-baseline-c5546e199e14.spec.json, no overwrite per AGENTS.md §3); ATTEMPTS=0 relaunch NOT a repair cycle per §126. Resumed from wf_bcb74f36-ae9 (cached green probes) -> TASK_PASS.",
+      "filesChangedByFlash": [],
+      "gitWritesByFlash": "none (HEAD still c5546e1, DB at base, tracked zero-change, qgraphflow fingerprint UNCHANGED)"
+    },
+    {
+      "taskId": "M0-004",
+      "runId": "wf_bcb74f36-ae9 (relaunch #3 / resume)",
+      "attempts": 0,
+      "blockReason": null,
+      "result": "TASK_PASS",
+      "failedPhase": null,
+      "detail": "Full chain: Preflight(cached probes) -> Classify(backend/migration/documentation, risk medium, security true, medical false, privacy false) -> Explore(24 files, parallelSafe false) -> Scope(~1 dev-day) -> TASK_SPEC(9 ACs) -> Implement(1 new file) -> Task Delta clean -> MACHINE_PASS(required 7/7, record 6/6, blockedMissingSafeTestEnv false) -> MAX REVIEW PASS(round 1) -> Max Verify(Goal Orchestrator independent spot-check). AC-01..AC-09 all met. REPAIR_CYCLES_USED=0, ATTEMPT_HISTORY=[]. PROJECT_BASELINE_HEALTH=DEGRADED (§71 M0 legal).",
+      "deliverableCommit": "a78b10f",
+      "newFindings": ["F-16 (env.py single-transaction rollback -> current=base)"]
     }
   ],
   "notes": {
