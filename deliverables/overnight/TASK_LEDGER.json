@@ -409,6 +409,7 @@
     }
   ],
   "notes": {
+    "resumePrecondition": "Do NOT relaunch M0-005/006/007/008 until F-20 is repaired in .qoder/workflows/project-feature-delivery.js (HD-N-01 / FIX-GOV-001). Machine-proven that every baseline record-tier spec shape self-trips REQUIRED_DOWNGRADE, so a relaunch repeats a known wall at ~40 min/run. Required order: human fixes guard -> M0-005 -> M0-006 -> M0-007/M0-008 -> M0 Milestone Gate (Exit also needs HD-N-04 governance write of FIX-* rows into docs/workflow/TASK_CATALOG.md).",
     "dbSafety": "backend/alembic.ini:5 default sqlalchemy.url points to postgresql://...@localhost:5432/cochlear_rehab (the UNKNOWN listener). Any migration test MUST override the URL to a Goal-created isolated non-5432 container; NEVER touch 5432.",
     "dockerAvailable": "Docker 29.5.2 / Compose v5.1.4 confirmed available for §32-35 isolated test container.",
     "serialPolicy": "Overnight default serial (§18); progress files committed before Workflow launch and updated only after TASK_PASS (§116/§117)."

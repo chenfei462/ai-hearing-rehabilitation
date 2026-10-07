@@ -1,5 +1,7 @@
 # GOAL_PROGRESS — Autonomous Delivery Orchestrator
 
+> **⛔ 续跑前置条件（勿跳过）**：M0-005/006/007/008 **禁止在未修复 F-20 前重启** —— Workflow 守卫与 Gate 契约互斥（HD-N-01 / `FIX-GOV-001`），重启必以 `GOVERNANCE_POLICY_VIOLATION / REQUIRED_DOWNGRADE` 再次撞墙（每次约 40 分钟）。唯一正确顺序：人工修 `.qoder/workflows/project-feature-delivery.js` → 重跑 M0-005 → M0-006 → M0-007/M0-008 → M0 Milestone Gate（Exit 还需 HD-N-04 治理写 Catalog）。
+
 > 人类可读进度日志。每完成一个 Task 更新一次。禁止记录任何 Secret 真实值。
 > 机器可读状态见同目录 `TASK_LEDGER.json`。
 
