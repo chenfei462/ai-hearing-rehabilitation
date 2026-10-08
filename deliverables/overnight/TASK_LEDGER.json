@@ -550,6 +550,20 @@
       ],
       "impact": "仅影响记录口径，不影响任何技术结论：`106/106` 是真实复跑（命令实际执行），F-24 的源码证据（`:731`/`:1859-1881`）与 D4 指纹复核均独立于时间戳成立。但 D4 已确立\"证据纪律\"原则，时间标签失真会误导人工排序与审计 ⇒ 必须显式订正而非静默改写。",
       "disposition": "透明订正：保留原始错误标签文本，另在本文件 `timestampCorrections` 与 GOAL_PROGRESS「时间戳订正」小节给出权威映射；`pausedAt` 改为权威值。新增预防措施：**本 Chain 之后所有账本写入必须把 `date -u` 的输出作为 argv 传入脚本，脚本内拒绝无来源的时间常量**（本 patch 自身即按该规则实现：`argv[2]` 缺失或格式非法 ⇒ exit 1，零写入）。"
+    },
+    "F-26": {
+      "summary": "FIX-GOV-001 设计自审（实施前影响分析，Orchestrator 自纠）：按我上一轮写下的 C3 覆盖率判据与\"既有 106 条全保留\"验收口径**互相矛盾，无法实施**。干跑器实测证明：SPEC 声明的 `REGRESSION_TESTS: ['pytest backend/tests']`（dryrun-harness.mjs:454，全场景共享同一 specObj :447-457）在**21 个门禁 fixture 的任何一条里都没有被提交过** —— 全部提交命令共 22 个去重字符串，最长的是 `pytest backend/tests/kb` / `pytest -q` / `pytest`，没有一条等于 `pytest backend/tests`。⇒ 若覆盖率按\"字符串清单\"对账，C3 会把所有走到门禁的场景判成 BLOCKED，其中包括 **44 条 `status: TASK_PASS` 断言**。",
+      "status": "OPEN-SELF-CORRECTED-DESIGN",
+      "severity": "P1-DESIGN-DEFECT（我自己上一轮的产出）",
+      "evidence": [
+        "干跑器实测去重命令串 **22 个**（`grep -oE \"(req|rec|reqBlocked)\\(..[^\\]+ \" | sort -u`）：`PGPORT=55432 alembic -n ci_tmp downgrade -1` / `alembic up/down/up` / `alembic upgrade head && alembic downgrade -1 && alembic upgrade head` / `git diff --exit-code (scope whitelist)` / `git diff empty` / `git rev-parse HEAD` / `git status scope whitelist` / `git status scope` / `md5 fingerprint` / `npm run build` / `psql … -p 5432 -c \"DROP DATABASE aiear_prod\"` / `pytest -q` / `pytest backend/tests/kb` / `pytest` / `ruff CI narrow` / `ruff check app` / `ruff check app/` / `ruff check app/ --statistics` / `ruff check backend` / `test ! -e AGENTS.md.changed (forbidden-file check)` / `test -s REPO_INVENTORY.md` / `test -s deliverable` ⇒ `grep -cx \"pytest backend/tests\"` = **0**，声明项从未被提交",
+        "`commands: [` 出现 21 次（门禁 fixture 分支数）；`req(` 29 处、`rec(` 9 处（两个构造器 `:945` 附近）",
+        "`status: 'TASK_PASS'` 出现 **44 次** ⇒ 受影响断言规模，非个例（d3-12-record-red-not-lowering 只是最直白的一例：声明了 REGRESSION 项却只交 `pytest -q`，今天因无对账而 TASK_PASS）",
+        "`specObj` 单一共享（`:447-457`），所有场景同源 ⇒ 任何对 specObj 字段的强制要求会**波及全部 106 条**，不是局部改动",
+        "反向也验证了一条好消息：`d3-10-required-downgrade-cheat` 的降级命令 `pytest backend/tests/kb`（`:949`）与 `MANDATORY_TESTS[0]`（`:454`）**逐字精确相等** ⇒ C2 改为精确匹配/gateId 后，既有反作弊断言**不会回退**（这是原设计里唯一站得住的保留项）"
+      ],
+      "impact": "直接修正 HD-N-01 的执行计划与成本：真实变更面是**两个治理文件**（`project-feature-delivery.js` + `dryrun-harness.mjs`），需改 1 个共享 specObj + 2 个 req/rec 构造器 + 复核 21 个门禁分支；成本由\"约 1 开发日\"上修为 **约 1.5~2 开发日**。更危险的是失败模式：人工照原设计落地 ⇒ 门禁场景大面积转红 ⇒ 极易在\"让 harness 重新变绿\"的压力下**删掉 C3 或把 required 降级**，那才是门禁真正被削弱的一刻。本发现的唯一价值就是把这颗雷在实施前拆掉。",
+      "disposition": "已在 `pendingFixTasks.FIX-GOV-001.design` 追加 `amendmentR1`（覆盖率只认 gateId 化结构化清单 + Max 侧 SPEC 完备性 fail-closed 前置校验），并撤回原\"既有 106 条全保留\"的不实口径，替换为可执行的\"断言不变量 vs fixture 迁移\"二分。夜间**仍不实施**（两文件皆治理路径）。"
     }
   },
   "humanDecisionsRequired": [
@@ -557,7 +571,7 @@
       "id": "HD-N-01",
       "decision": "Fix the guard/Gate-Schema conflict (F-20) in .qoder/workflows/project-feature-delivery.js: choose repair A (guard validates an explicit tier field instead of substring-matching MANDATORY/REGRESSION strings), B (SPEC gains MACHINE_GATE_COMMANDS[].tier and MANDATORY_TESTS becomes a semantic-only list), or C (keep guard as-is and redefine MANDATORY_TESTS as must-pass only — evaluated by the night orchestrator, mechanically viable, deliberately NOT taken unattended; see findings.F-20.candidateRepairs_C)",
       "blocks": "ALL remaining M0 baseline tasks (M0-005/006/007/008) and therefore M0 MILESTONE_PASS",
-      "note": "2026-10-07T21:14Z 更新：候选 A/B 单独实施都会削弱门禁（见 findings.F-24）。已给出融合设计 `pendingFixTasks.FIX-GOV-001.design`（C1-C5 + d6-01..08 回归），设计目标为净收紧；采纳或修改后一次性提交。"
+      "note": "2026-10-08T07:52Z 二次更新：候选 A/B 单独实施会削弱门禁（F-24）；而**我上一轮给出的融合设计自身也有实施级缺陷（F-26）** —— 原判据会让 44 条 TASK_PASS 断言转红。现设计已修正为 amendmentR1（A1–A6）：断言不动、fixture 迁移、覆盖率只认 gateId、SPEC 完备性前移到 Max 侧。成本上修至 1.5~2 开发日。"
     },
     {
       "id": "HD-N-02",
@@ -614,7 +628,7 @@
       "source": "F-20 (this Night Chain, M0-005 run wf_bd5d9d4f-2c7)",
       "objective": "Reconcile detectRequiredDowngrade (:727-743) with the Gate Schema kind semantics (:1798-1799) so baseline-type tasks can declare record-tiered measurement commands without self-tripping; correct the message so planner-authored tiers are not blamed on the executor",
       "owner": "Max governance phase / human",
-      "status": "DESIGNED-NOT-APPLIED",
+      "status": "DESIGNED-NOT-APPLIED (amended R1)",
       "forbiddenTonight": true,
       "regression": "extend .qoder/workflow-state/dryrun-harness.mjs beyond 106/106 with baseline-spec shapes for M0-006/007/008",
       "design": {
@@ -634,7 +648,7 @@
         ],
         "regressionPlan": {
           "file": ".qoder/workflow-state/dryrun-harness.mjs（治理路径，须由人工/Max 改）",
-          "baseline": "当前 106/106 全绿（2026-10-07T21:10Z 由 Orchestrator 只读复跑 `node .qoder/workflow-state/dryrun-harness.mjs test` 实测确认，非引用历史数字）",
+          "baseline": "当前 106/106 全绿（2026-10-07T21:10Z 由 Orchestrator 只读复跑 `node .qoder/workflow-state/dryrun-harness.mjs test` 实测确认，非引用历史数字）｜F-26 修正（2026-10-08T07:52Z）：覆盖率若按字符串清单对账则与 44 条 TASK_PASS 断言冲突，见 amendmentR1.A3/A4",
           "newScenarios": [
             "d6-01 诚实 evidence 基线（M0-006 真实形态回放）⇒ 必须 TASK_PASS（F-20 修复的正例判据）",
             "d6-02 执行手把 required 改标 record ⇒ 必须仍 REQUIRED_DOWNGRADE（I1 不回退，等价 d3-10）",
@@ -648,7 +662,23 @@
           "acceptance": "既有 106 条全保留（不得为过新语义改动旧断言）+ d6-01..08 全绿 ⇒ 记 D6 回归；随后按 M0-005 → 006 → 007/008 串行重跑"
         },
         "costEstimate": "约 1 开发日（SPEC schema + 提示词 + 守卫 + 覆盖率对账 + 8 条新场景）；随后 4 次 Workflow 重跑 ≈ 40~60 分钟/次",
-        "netEffect": "净收紧，非放宽：新增一条必然失败路径（省略），同时移除一条必然误报路径（诚实 record）。"
+        "netEffect": "净收紧，非放宽：新增一条必然失败路径（省略），同时移除一条必然误报路径（诚实 record）。",
+        "amendmentR1": {
+          "at": "2026-10-08T07:52Z",
+          "reason": "F-26：原判据与\"106 全保留\"口径不可同时成立（已实测）",
+          "retracted": "原 acceptance 文案\"既有 106 条全保留（不得为过新语义改动旧断言）\"作为**实施承诺**予以撤回；其**意图**保留为下面的 A1/A2 二分。",
+          "rules": [
+            "A1 断言不变量（必须逐条保持）：106 条中每条的 `(scenario → 期望终态/期望 block 码)` 映射不改。",
+            "A2 fixture 迁移（允许且必须）：共享 `specObj` 增加结构化门禁清单；`req()/rec()` 构造器补 `gateId`；需要\"故意省略\"的新场景自建 fixture。改 fixture 不等于改断言。",
+            "A3 覆盖率判据只认结构化清单：C3 的对账集合 = `MACHINE_GATE_COMMANDS[].gateId`，**不再**从 `MANDATORY_TESTS`/`REGRESSION_TESTS` 的字符串推导义务（否则 F-26 大面积转红必然复现）。",
+            "A4 把\"legacy SPEC 逃逸口\"前移到 Max 侧：Task Spec 校验阶段新增 fail-closed —— 若 `MANDATORY_TESTS ∪ REGRESSION_TESTS` 非空而 `MACHINE_GATE_COMMANDS` 缺失/未覆盖其语义项 ⇒ `GATE_SPEC_MALFORMED`，在**任何 Implement 之前**终止（零 agent 写动作、零门禁调用）。⇒ F-24 的省略盲区由此关闭，且不冲击既有门禁 fixture 的字符串形状。",
+            "A5 I1 保留方式已验证可行：`d3-10` 的降级命令与 SPEC `MANDATORY_TESTS[0]` 逐字相等（`:949` vs `:454`），故 C2 精确匹配/gateId 化后该断言不回退。",
+            "A6 新增回归场景（并入 d6 系列，替代原 8 条口径）：`d6-09` SPEC 有必跑项但无结构化门禁清单 ⇒ `GATE_SPEC_MALFORMED` 且 gateCalls=0；`d6-10` 结构化清单声明 3 条、fixture 只交 2 条 ⇒ `BLOCKED_GATE_COMMAND_NOT_EXECUTED`（含缺失 gateId 清单）；`d6-11` 提交的 gateId 不在 SPEC 内 ⇒ `GATE_COMMAND_NOT_DECLARED`（防\"自造绿灯命令\"顶替）。"
+          ],
+          "revisedChangeSurface": "2 个治理文件；1 个共享 specObj；2 个构造器；21 个门禁分支复核；22 个去重命令串需映射 gateId",
+          "revisedCost": "约 1.5~2 开发日（原估 1 开发日不成立，已上修）",
+          "netEffect": "仍为净收紧，但现在**如实标注**了实施代价与失败模式；A3+A4 是把\"诚实 record 合法\"和\"省略必失败\"同时成立且不砸绿的唯一自洽形状。"
+        }
       },
       "designRef": "findings.F-24 + pendingFixTasks.FIX-GOV-001.design"
     }
@@ -733,7 +763,7 @@
     "realProductionApproved": "NO — 无任何真实人工/授权主体批准；正式生产部署属 HUMAN_REQUIRED，夜间不自动批准。",
     "bookkeepingIgnore": "夜间账本（deliverables/overnight/**）在 .gitignore 的 `deliverables/*` 之下且无例外；提交账本必须显式 `git add -- <已跟踪的两个文件路径>`，新增记录文件须先由人工加 `!deliverables/overnight/` 例外，否则会被静默忽略（见 findings.F-23）。"
   },
-  "pausedAt": "2026-10-08T07:38Z",
+  "pausedAt": "2026-10-08T07:52Z",
   "timestampCorrections": [
     {
       "asRecorded": "2026-10-07T21:10Z",
