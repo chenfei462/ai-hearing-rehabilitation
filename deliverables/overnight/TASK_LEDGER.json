@@ -523,13 +523,28 @@
       ],
       "impact": "两个后果：(a) 若夜间链日后新增第三个记录文件（如分里程碑的 gate 证据索引），会被静默忽略、不报错、不入库，晨间 review 会以为\"已提交\"；(b) 反向确认了一件好事：M0 交付物目录 `deliverables/baseline/` 在白名单内，因此 HD-N-08 的\"guard 修复后补审提交\"不存在 ignore 障碍，只欠 TASK_PASS 判据。",
       "disposition": "单行治理改动（加 `!deliverables/overnight/`，或把账本移入已白名单目录）。`.gitignore` 属治理保护路径 → 夜间不得自改，交人工/Max 治理阶段（可与 HD-N-01/HD-N-04 同批）。"
+    },
+    "F-24": {
+      "summary": "门禁缺少\"SPEC↔提交覆盖率\"校验：gateGuardViolation(:1859-1881) 只遍历执行手提交的 commands[]，detectRequiredDowngrade(:727-743) 同样只检查\"已提交的条目\"。SPEC 的 MANDATORY_TESTS/REGRESSION_TESTS 里声明了但根本没被提交的命令，机器无法察觉。⇒ 最省事的作弊不是降级，而是**沉默省略**：只交几条绿色命令 + 自报 allPassed:true，红基线不出现在数组里，守卫无物可判。",
+      "status": "OPEN",
+      "severity": "P1-BLOCKING-COUPLING",
+      "evidence": [
+        ".qoder/workflows/project-feature-delivery.js:1859-1881 — 全函数仅 (a) 逐条 scanUnsafeDbCommand、(b) detectRequiredDowngrade(cmds, spec)；无任何\"每条 SPEC 声明项必须出现在 cmds 中\"的对账",
+        ":731 `for (const c of cmds)` — 遍历方向是\"提交→SPEC\"，缺席项天然不被检查；`:741` 的 `must` 集合只用于匹配已提交的 record 项",
+        "回归覆盖核查：`.qoder/workflow-state/dryrun-harness.mjs` 中与降级相关的场景仅 1 条 —— `:177 d3-10-required-downgrade-cheat`（改标 kind 的作弊）；grep 无\"省略/漏提交/coverage/missing mandatory\"类场景 ⇒ 该作弊形态无测试",
+        "本轮反证（诚实执行样本，非违规）：M0-006 提交 9 条 = SPEC 6 required + 2 record + 1 required 集成，逐项可映射，`skippedGates` 写\"无\"，因此本次**没有**发生省略；缺陷是\"无人能拦住省略\"，不是\"已发生省略\"",
+        "附带发现：`:741` 的匹配是双向包含 `cmd === m || cmd.indexOf(m) >= 0 || m.indexOf(cmd) >= 0`，其中 `m.indexOf(cmd)` 会把\"是某必跑项前缀\"的独立命令误判为同一条（例：record 的 `ruff check app/` 命中 required 的 `ruff check app/ --output-format=json`）⇒ 假阳性面比 F-20 描述更广"
+      ],
+      "impact": "与 F-20 是一枚硬币的两面，并且**决定 F-20 的正确修法**：若只做最小修复（守卫不再看字符串、改为\"相信 SPEC 声明的 tier\"），则 SPEC↔提交之间将完全没有任何机器对账，省略成为零成本作弊，门禁反而被削弱 —— 违反 Night Chain\"不得放宽任何 Gate\"。因此 FIX-GOV-001 必须与覆盖率校验同批落地。",
+      "disposition": "与 FIX-GOV-001 合并为**一个**治理变更（见 pendingFixTasks.FIX-GOV-001.design），设计目标为\"净收紧\"：既让诚实的 record 合法，又把\"沉默省略\"从盲区变成硬失败。夜间不实施（`.qoder/workflows/**` + `dryrun-harness.mjs` 均为治理路径）。"
     }
   },
   "humanDecisionsRequired": [
     {
       "id": "HD-N-01",
       "decision": "Fix the guard/Gate-Schema conflict (F-20) in .qoder/workflows/project-feature-delivery.js: choose repair A (guard validates an explicit tier field instead of substring-matching MANDATORY/REGRESSION strings), B (SPEC gains MACHINE_GATE_COMMANDS[].tier and MANDATORY_TESTS becomes a semantic-only list), or C (keep guard as-is and redefine MANDATORY_TESTS as must-pass only — evaluated by the night orchestrator, mechanically viable, deliberately NOT taken unattended; see findings.F-20.candidateRepairs_C)",
-      "blocks": "ALL remaining M0 baseline tasks (M0-005/006/007/008) and therefore M0 MILESTONE_PASS"
+      "blocks": "ALL remaining M0 baseline tasks (M0-005/006/007/008) and therefore M0 MILESTONE_PASS",
+      "note": "2026-10-07T21:14Z 更新：候选 A/B 单独实施都会削弱门禁（见 findings.F-24）。已给出融合设计 `pendingFixTasks.FIX-GOV-001.design`（C1-C5 + d6-01..08 回归），设计目标为净收紧；采纳或修改后一次性提交。"
     },
     {
       "id": "HD-N-02",
@@ -586,9 +601,43 @@
       "source": "F-20 (this Night Chain, M0-005 run wf_bd5d9d4f-2c7)",
       "objective": "Reconcile detectRequiredDowngrade (:727-743) with the Gate Schema kind semantics (:1798-1799) so baseline-type tasks can declare record-tiered measurement commands without self-tripping; correct the message so planner-authored tiers are not blamed on the executor",
       "owner": "Max governance phase / human",
-      "status": "NOT_STARTED",
+      "status": "DESIGNED-NOT-APPLIED",
       "forbiddenTonight": true,
-      "regression": "extend .qoder/workflow-state/dryrun-harness.mjs beyond 106/106 with baseline-spec shapes for M0-006/007/008"
+      "regression": "extend .qoder/workflow-state/dryrun-harness.mjs beyond 106/106 with baseline-spec shapes for M0-006/007/008",
+      "design": {
+        "proposedBy": "Night Chain Orchestrator (2026-10-07T21:14Z) — 仅设计，未实施，供 HD-N-01 一键采纳或修改",
+        "invariantKept": [
+          "I1 执行手不得把 SPEC 声明为 required 的命令改标 record（d3-10 的既有性质必须原样保留）",
+          "I2 执行手不得省略 SPEC 声明的任何门禁项（新增，当前为盲区 = F-24）",
+          "I3 门禁 PASS/FAIL 由脚本按真实 exitCode 计算，不看自报 allPassed（不变）",
+          "I4 required 失败进入修复循环、record 失败只记基线健康度（DEGRADED 合法终态，不变）"
+        ],
+        "changes": [
+          "C1 SPEC 显式声明层级：TASK_SPEC_SCHEMA(:876-883) 将 MANDATORY_TESTS/REGRESSION_TESTS 的条目由 string 升级为 {command, tier:\"required\"|\"evidence\", purpose, gateId?}（或并存：新字段 MACHINE_GATE_COMMANDS[]，MANDATORY/REGRESSION 保留为语义清单）。Task Spec 提示词 :1446/:1450/:1557-1558 同步；由 Max 撰写 tier，执行手无权改。",
+          "C2 守卫改为按 gateId/归一化命令做**精确**查表：submitted kind=record 而 SPEC tier=required ⇒ REQUIRED_DOWNGRADE（保留 I1）。删除双向包含匹配，改 `normalize(cmd)===normalize(specCmd)`（或 gateId 相等），消除 F-24 附带发现的 `m.indexOf(cmd)` 假阳性。",
+          "C3 新增覆盖率对账（I2）：SPEC 每条 tier=required 命令必须在提交中出现且 exitCode 参与计算；每条 tier=evidence 命令必须出现且 recordStatus=EXECUTED_AND_RECORDED。任一缺席 ⇒ 新终态 `BLOCKED_GATE_COMMAND_NOT_EXECUTED`（fail-closed，不进修复循环，列出缺失清单）。",
+          "C4 归因文案修正：DETAIL 按\"tier 的作者\"归因 —— SPEC 自己写 evidence 却报降级 ⇒ 不再指责执行手，改报 `GATE_SPEC_TIER_CONFLICT`（内部矛盾，交 SPEC 复审）；SPEC 写 required 而提交 record ⇒ 才用现有\"执行手动态降级\"文案。两次误归因（M0-005/M0-006）由此消除。",
+          "C5 HIGH Risk 不变：双独立 Review + Verify 抽查重跑（00-model-policy §4）照旧；`[GATE-REQUIRED]` 前缀检查保留为纵深防御（不替代 C1-C3）。"
+        ],
+        "regressionPlan": {
+          "file": ".qoder/workflow-state/dryrun-harness.mjs（治理路径，须由人工/Max 改）",
+          "baseline": "当前 106/106 全绿（2026-10-07T21:10Z 由 Orchestrator 只读复跑 `node .qoder/workflow-state/dryrun-harness.mjs test` 实测确认，非引用历史数字）",
+          "newScenarios": [
+            "d6-01 诚实 evidence 基线（M0-006 真实形态回放）⇒ 必须 TASK_PASS（F-20 修复的正例判据）",
+            "d6-02 执行手把 required 改标 record ⇒ 必须仍 REQUIRED_DOWNGRADE（I1 不回退，等价 d3-10）",
+            "d6-03 执行手省略一条 required ⇒ 必须 BLOCKED_GATE_COMMAND_NOT_EXECUTED（I2）",
+            "d6-04 执行手省略一条 evidence（红基线不提交）⇒ 必须 BLOCKED_GATE_COMMAND_NOT_EXECUTED（把 F-20 反向激励的逃逸口本身变成硬失败）",
+            "d6-05 record 命令是某 required 条目的前缀 ⇒ 不得 BLOCK（C2 假阳性回归）",
+            "d6-06 M0-005 三命令形态回放 ⇒ TASK_PASS",
+            "d6-07 M0-007/M0-008 形态（perf / docker-build）⇒ 不得自撞",
+            "d6-08 SPEC 内部矛盾（同一条目既 required 又 evidence）⇒ GATE_SPEC_TIER_CONFLICT，不进入修复循环"
+          ],
+          "acceptance": "既有 106 条全保留（不得为过新语义改动旧断言）+ d6-01..08 全绿 ⇒ 记 D6 回归；随后按 M0-005 → 006 → 007/008 串行重跑"
+        },
+        "costEstimate": "约 1 开发日（SPEC schema + 提示词 + 守卫 + 覆盖率对账 + 8 条新场景）；随后 4 次 Workflow 重跑 ≈ 40~60 分钟/次",
+        "netEffect": "净收紧，非放宽：新增一条必然失败路径（省略），同时移除一条必然误报路径（诚实 record）。"
+      },
+      "designRef": "findings.F-24 + pendingFixTasks.FIX-GOV-001.design"
     }
   },
   "specConflictLog": [
@@ -671,5 +720,5 @@
     "realProductionApproved": "NO — 无任何真实人工/授权主体批准；正式生产部署属 HUMAN_REQUIRED，夜间不自动批准。",
     "bookkeepingIgnore": "夜间账本（deliverables/overnight/**）在 .gitignore 的 `deliverables/*` 之下且无例外；提交账本必须显式 `git add -- <已跟踪的两个文件路径>`，新增记录文件须先由人工加 `!deliverables/overnight/` 例外，否则会被静默忽略（见 findings.F-23）。"
   },
-  "pausedAt": "2026-10-07T21:05Z"
+  "pausedAt": "2026-10-07T21:14Z"
 }

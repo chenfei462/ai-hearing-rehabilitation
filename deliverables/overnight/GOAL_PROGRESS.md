@@ -1,16 +1,18 @@
 # GOAL_PROGRESS — Autonomous Delivery Orchestrator
 
 > **⛔ 续跑前置条件（勿跳过）**：M0-005/006/007/008 **禁止在未修复 F-20 前重启** —— Workflow 守卫与 Gate 契约互斥（HD-N-01 / `FIX-GOV-001`），重启必以 `GOVERNANCE_POLICY_VIOLATION / REQUIRED_DOWNGRADE` 再次撞墙（每次约 40 分钟）。唯一正确顺序：人工修 `.qoder/workflows/project-feature-delivery.js` → 重跑 M0-005 → M0-006 → M0-007/M0-008 → M0 Milestone Gate（Exit 还需 HD-N-04 治理写 Catalog）。
+>
+> **⚠️ 修法约束（21:14Z 新增，来自 F-24）**：HD-N-01 的候选 **A 或 B 单独实施会削弱门禁** —— 它们移除误报的同时也移除了 SPEC↔提交之间唯一的字符串对账，使"沉默省略红基线"成为零成本作弊。必须采纳 `TASK_LEDGER.json → pendingFixTasks.FIX-GOV-001.design` 的**融合设计（C1–C5 + 回归 d6-01..d6-08）**，其净效果为"收紧"而非"放宽"。
 
 > 人类可读进度日志。每完成一个 Task 更新一次。禁止记录任何 Secret 真实值。
 > 机器可读状态见同目录 `TASK_LEDGER.json`。
 
 - Goal 启动时间：2026-10-06T19:03Z
 - 当前分支：`feature/m0-baseline`
-- 当前 HEAD：`1a62703`（夜间账本记录提交，其上链为 `1800704`→`3c21eb2`→`0b9bfcc`→`1a62703`，全部为纯账本/指针提交，不改任何任务判定）→ 任务侧最后一个安全交付提交 = `a78b10f`（M0-004）；M0-005 与 M0-006 均 **未提交**，见下
+- 当前 HEAD：**账本/进度字段按约定记录"本 seal commit 的父提交"**（详见 `TASK_LEDGER.json.headPointerNote`），因此本行数字恒比 `git log -1` 落后一个账本提交 —— 这是记录口径而非漂移，最新提交请以 `git log --oneline -1` 为准。最近两个账本提交：`39c7432`（M0-006 BLOCKED 封印，F-21..F-23 + 四条安全 P0）→ 其父 `1a62703`（候选 C 撤回）。任务侧最后一个安全交付提交 = **`a78b10f`（M0-004 TASK_PASS）**；M0-005 与 M0-006 均 **未提交**，见下。
 - 当前 Milestone：**M0 — Repository Truth & Baseline**
 - Goal 状态：**PAUSED_FOR_HUMAN**（2026-10-07T19:41Z 起）
-- 暂停根因：**F-20（P1-BLOCKING 治理缺陷，已真实执行两次确证）** — Workflow 反降级守卫 `detectRequiredDowngrade`（`.qoder/workflows/project-feature-delivery.js:727-743`）与 Gate 契约（同文件 `:1798-1799`「基线采集类命令必须 `kind=record`」）**结构性互斥**。M0-005（`wf_bd5d9d4f-2c7`）与 M0-006（`wf_6b00bd56-a7c`）两次 FULL 模式全程执行均 BLOCK 于 Machine Gate，两次都是 Max 亲写的 `record` 层被归因给执行手。修复需改治理保护路径 → Night Chain 禁止夜间自动修复治理缺陷。
+- 暂停根因：**F-20（P1-BLOCKING 治理缺陷，已真实执行两次确证）** — Workflow 反降级守卫 `detectRequiredDowngrade`（`.qoder/workflows/project-feature-delivery.js:727-743`）与 Gate 契约（同文件 `:1798-1799`「基线采集类命令必须 `kind=record`」）**结构性互斥**。M0-005（`wf_bd5d9d4f-2c7`）与 M0-006（`wf_6b00bd56-a7c`）两次 FULL 模式全程执行均 BLOCK 于 Machine Gate，两次都是 Max 亲写的 `record` 层被归因给执行手。修复需改治理保护路径 → Night Chain 禁止夜间自动修复治理缺陷。配套登记 **F-24（P1-BLOCKING-COUPLING）**：守卫同样缺少"SPEC↔提交覆盖率"对账，此缺陷**决定 F-20 的正确修法** → 融合设计见「FIX-GOV-001 融合设计」附录。
 - 模型政策：仅 `qmodel_38max`(Max) / `qfmodel`(Flash)；执行器 `.qoder/workflows/project-feature-delivery.js`；**全程无违规、无 fallback、无换模型**。
 - 串行策略（§18）：夜间默认串行；进度文件在 Workflow 启动前提交，仅在 TASK_PASS 后更新（§116/§117）。
 
@@ -155,17 +157,48 @@ HEAD `1a62703`；staging 为空；工作树仅 `M deliverables/overnight/*`（Or
 | SEC-SB03 | CI 触发分支与仓库分支不符：`.github/workflows/ci.yml:4-7` `push: [main, develop]` / `pull_request: [main]`，实有分支 `master`/`feature/m0-baseline`/`auditory-rehab-optimization`（无 `main`）；`10-project.md` 主分支=master | **Orchestrator 亲验成立**。P0：后端全测/集成/前端 lint+build+E2E/Docker build 全部不触发，`RELEASE_CRITERIA` G5 无从成立，历史"CI 绿"记忆不可作证据。`.github/**` 属治理路径 → 夜间禁改 → HD-N-07 |
 | SEC-SB06 | 硬件 9 端点仅认证、无归属校验、无角色区分：`api/hardware.py:65/82/103/124/147/198/219/241/280` 全部仅 `Depends(get_current_user)`；无设备-用户绑定模型；参数无界（`:54`、`:59-60`）、广播（`:270`）；已在 `main.py:131` 挂载（线上可达，非死代码）；`backend/tests` 零覆盖 | **Orchestrator 亲验成立**。P0：任意登录用户可查询/连接/驱动任意康复站外设（LED/蜂鸣器/振动/OLED），属可用性 + 患者人身安全边界。硬件按 `10-project.md` 为非 MVP，但已挂载即已暴露；处置（下线 router / 补归属模型 / 加上界）属人工决策 → HD-N-07 |
 | F-23 | **账本 ignore 陷阱**：`.gitignore:73 deliverables/*` 只有 `:74 !deliverables/baseline/` 一条例外，无 `!deliverables/overnight/`。`deliverables/overnight/{GOAL_PROGRESS.md,TASK_LEDGER.json}` 因早先 force-add 已是 tracked，故修改可 stage（21:08Z 实测 `git add` 仍打印 "ignored paths: deliverables/overnight" 但两文件照常进入 index）；**同目录任何新记录文件会被静默忽略** | OPEN，P3-GOVERNANCE；`.gitignore` 属治理保护路径 → 夜间不改，交人工与 HD-N-01/HD-N-04 同批。反向确认：`deliverables/baseline/` 在白名单内 ⇒ HD-N-08 的"补审提交"无 ignore 障碍，只欠 TASK_PASS 判据 |
+| F-24 | **门禁覆盖率盲区（决定 F-20 的正确修法）**：`gateGuardViolation(:1859-1881)` 只做 (a) 逐条 `scanUnsafeDbCommand` 与 (b) `detectRequiredDowngrade(cmds, spec)`；`detectRequiredDowngrade(:731)` 的遍历方向是 `for (const c of cmds)` —— **"提交→SPEC"，SPEC 声明了但根本没提交的命令天然无从检查**。⇒ 最省事的作弊不是改标 `record`（d3-10 已覆盖），而是**沉默省略**：只交若干绿色命令 + 自报 `allPassed:true`，红基线不出现在数组里，守卫无物可判。回归核查：`dryrun-harness.mjs` 与降级相关的场景仅 `:177 d3-10-required-downgrade-cheat` 一条，无"省略/漏提交"类场景 ⇒ 该形态无测试。本轮为**反证而非案发**：M0-006 提交 9 条可逐项映射到 SPEC 的 6 required + 2 record + 1 required 集成、`skippedGates` 写"无"，未发生省略；缺陷是"无人能拦住省略"。附带：`:741` 双向包含匹配里的 `m.indexOf(cmd)` 会把"是某必跑项前缀"的独立命令误判为同一条（record 的 `ruff check app/` 命中 required 的 `ruff check app/ --output-format=json`）⇒ 假阳性面比 F-20 原描述更广 | OPEN，**P1-BLOCKING-COUPLING**；夜间不实施（`.qoder/workflows/**` 与 `dryrun-harness.mjs` 均治理路径）；与 F-20 **合并为一个治理变更** → HD-N-01 + `FIX-GOV-001`（设计见下方「FIX-GOV-001 融合设计」附录） |
 | F-13 | adaptive RNG 非确定性 | §106 按 Catalog/Fix 机制解决；单次 green 不算修复 |
 | COV-GAP | 后端覆盖率 ~61% | §109 阈值须由正式 OPS/Quality 任务定义，禁止自创 |
 | NB-01 | localhost:5432 未知 PostgreSQL listener | §31 视为 UNKNOWN_DATABASE_INSTANCE，永不连接/变更 |
 | NB-03 | httpx deprecation | §110 按 P1/P2 分类；禁止自动大版本升级 |
 | ENV-F03 | runbook venv 漂移 | §70/§111 文档漂移，阻塞安全操作时再处理 |
 
+## FIX-GOV-001 融合设计（HD-N-01 可直接采纳；夜间仅设计，**未改任何治理文件**）
+
+> 机器可执行副本见 `TASK_LEDGER.json → pendingFixTasks.FIX-GOV-001.design`（status=`DESIGNED-NOT-APPLIED`）。
+> 动机：F-20 造成**误报**（诚实 record 必 BLOCK），F-24 是同一枚硬币背面的**漏报**（沉默省略无从发现）。只修 F-20 = 净放宽，违反 Night Chain"不得放宽任何 Gate"，故必须同批落地。
+
+**必须保持的不变量**
+
+| # | 不变量 |
+|---|---|
+| I1 | 执行手不得把 SPEC 声明为 required 的命令改标 record（`d3-10` 的既有性质，原样保留） |
+| I2 | 执行手不得省略 SPEC 声明的任何门禁项（**新增**，当前为盲区 = F-24） |
+| I3 | 门禁 PASS/FAIL 由脚本按真实 `exitCode` 计算，不看自报 `allPassed`（不变） |
+| I4 | required 失败进修复循环、record 失败只记基线健康度（`DEGRADED` 合法终态，不变） |
+
+**变更（全部落在治理路径，须人工/Max 执行）**
+
+- **C1 SPEC 显式声明层级**：`TASK_SPEC_SCHEMA(:876-883)` 将 `MANDATORY_TESTS`/`REGRESSION_TESTS` 条目由 `string` 升级为 `{command, tier:"required"\|"evidence", purpose, gateId?}`（或并存：新增 `MACHINE_GATE_COMMANDS[]`，原数组退为语义清单）。Task Spec 提示词 `:1446/:1450/:1557-1558` 同步。**tier 由 Max 撰写，执行手无权改。**
+- **C2 精确查表替代双向包含**：submitted `kind=record` 而 SPEC `tier=required` ⇒ `REQUIRED_DOWNGRADE`（保 I1）；匹配改 `normalize(cmd)===normalize(specCmd)` 或 `gateId` 相等，删除 `:741` 的 `m.indexOf(cmd)` 以消除 F-24 附带假阳性。
+- **C3 覆盖率对账（保 I2，本设计的核心新增）**：SPEC 每条 `tier=required` 命令必须在提交中出现且 `exitCode` 参与计算；每条 `tier=evidence` 命令必须出现且 `recordStatus=EXECUTED_AND_RECORDED`。任一缺席 ⇒ 新终态 **`BLOCKED_GATE_COMMAND_NOT_EXECUTED`**（fail-closed，不进 3 轮修复预算，输出缺失清单）。
+- **C4 按 tier 作者归因**：SPEC 自己写 `evidence` 却报降级 ⇒ 不再指责执行手，改报 `GATE_SPEC_TIER_CONFLICT`（SPEC 内部矛盾，交复审）；只有 SPEC 写 `required` 而提交 `record` 才用现有"执行手动态降级"文案。M0-005/M0-006 两次误归因由此消除。
+- **C5 HIGH Risk 不降级**：双独立 Review + Verify 抽查重跑（`00-model-policy.md` §4）照旧；`[GATE-REQUIRED]` 前缀检查保留为纵深防御，不替代 C1–C3。
+
+**回归计划**（文件 `.qoder/workflow-state/dryrun-harness.mjs`，治理路径）
+
+- 基线：`106/106`（21:10Z 由 Orchestrator 只读复跑实测，非引用历史数字）。既有 106 条**全保留**，不得为过新语义改动旧断言。
+- 新增 8 条：`d6-01` 诚实 evidence 基线回放 ⇒ TASK_PASS；`d6-02` required 改标 record ⇒ 仍 REQUIRED_DOWNGRADE；`d6-03` 省略一条 required ⇒ BLOCKED_GATE_COMMAND_NOT_EXECUTED；`d6-04` 省略一条 evidence（红基线不提交）⇒ 同上；`d6-05` record 命令是某 required 条目前缀 ⇒ 不得 BLOCK；`d6-06` M0-005 三命令形态 ⇒ TASK_PASS；`d6-07` M0-007/008 形态（perf / docker-build）⇒ 不得自撞；`d6-08` SPEC 内部矛盾 ⇒ GATE_SPEC_TIER_CONFLICT，不进修复循环。
+- 验收：106 + d6-01..08 全绿 ⇒ 记 D6 回归，随后按 **M0-005 → 006 → 007/008** 串行重跑（约 40~60 分钟/次）。
+
+**成本与净效果**：约 1 开发日（SPEC schema + 3 处提示词 + 守卫 + 覆盖率对账 + 8 场景）。净效果 = **净收紧**：新增一条必然失败路径（省略），移除一条必然误报路径（诚实 record）。
+
 ## Human Decisions Required（HD-N-01 … HD-N-08，夜间一律不自动批准）
 
 | ID | 需人工决策 | 阻塞范围 |
 |---|---|---|
-| HD-N-01 | 修复 F-20：`.qoder/workflows/project-feature-delivery.js` 守卫（`:727-743`）与 Gate 契约（`:1798-1799`）互斥；三选一：**A** 守卫改为校验显式 tier 字段（不做字符串包含匹配）；**B** SPEC 增 `MACHINE_GATE_COMMANDS[].tier`，`MANDATORY_TESTS` 退为语义清单；**C** 保持守卫不动、把 `MANDATORY_TESTS` 语义从"必须执行"改为"必须通过"，基线探针移出该数组、仅由 ACCEPTANCE_CRITERIA + Review 约束 | **M0 全部剩余基线 Task（005/006/007/008）→ M0 MILESTONE_PASS** |
+| HD-N-01 | 修复 F-20：`.qoder/workflows/project-feature-delivery.js` 守卫（`:727-743`）与 Gate 契约（`:1798-1799`）互斥；三选一：**A** 守卫改为校验显式 tier 字段（不做字符串包含匹配）；**B** SPEC 增 `MACHINE_GATE_COMMANDS[].tier`，`MANDATORY_TESTS` 退为语义清单；**C** 保持守卫不动、把 `MANDATORY_TESTS` 语义从"必须执行"改为"必须通过"，基线探针移出该数组、仅由 ACCEPTANCE_CRITERIA + Review 约束。**21:14Z 更新**：A/B **单独**实施会削弱门禁 —— 省略成为零成本作弊（F-24），C 单独实施亦不可取；建议采纳上节**融合设计 C1–C5 + 回归 d6-01..d6-08**（含 A/B 的 tier 字段，另加 C3 覆盖率对账与 C4 归因修正） | **M0 全部剩余基线 Task（005/006/007/008）→ M0 MILESTONE_PASS** |
 | HD-N-02 | 追认或否决 `deliverables/baseline/INTEGRATION_BASELINE.md`（未跟踪，sha256 `56ad8639…8def`，非 TASK_PASS）作为 M0-005 记录 | M0-005 收尾 |
 | HD-N-03 | 授权 FIX-INT-01/02 Scope（测试引擎/loop 生命周期 + dev 依赖 pin）以恢复 CI 同款集成 green | `TODO.md:40 集成测试通过`；CI postgres job 可信度 |
 | HD-N-04 | 批准向 `docs/workflow/TASK_CATALOG.md` 插入 FIX-* 行（治理写操作，无人值守期间越界） | M0 Exit 条款"P0 存量缺陷清单产出并插入 FIX-* 任务" |
@@ -196,3 +229,6 @@ HEAD `1a62703`；staging 为空；工作树仅 `M deliverables/overnight/*`（Or
   **拒绝两条捷径**：(1) 不把 M0-008 拿去撞已知墙——`blockedTasks[M0-005].machineProof` 已覆盖 docker-build 形态，再跑一次只多花 60 分钟与零新信息；(2) 不重写 SPEC 把红基线移出 `REGRESSION_TESTS` 以绕开守卫（候选 C）——那是利用缺陷形状规避，非交付。
   **独立事实锚点（不采信脚本自述）**：`resolvedModel` 逐 invocation 核实 FULL 保真（task-spec/D4 取证 = `qmodel_38max`，implement/machine-gate = `qfmodel`，无第三模型、无 fallback）；baseline↔post 全部 SHA-256 与字节数由 Orchestrator 自行重算，逐项相等（无外部改动、无虚假 Delta）。新登记 **F-21**（Explore 退化输出无校验）、**F-22**（治理文档 #6 与代码真相不符 = SB-08/ARCH-04 侧面）、**SEC-SB01 / SEC-SB31 / SEC-SB03 / SEC-SB06**（四条 P0 均由 Orchestrator 读到 `文件:行号` 级亲验成立，其中 SB-01 跨用户缓存 IDOR 与 SB-31 启动无条件建表+写种子为先前任何基线文档均未记录的新增发现）；ENV-F03 追加实测（真实 venv=`backend/venv312`，`.venv` 不存在但 AGENTS.md §9 与 `80-testing.md` 均引用它；compose 需 `-p`；npm 今日可达——旧的"egress blocked"结论作废）。撤回两项拟新增发现（MILESTONES 8-vs-7 = F-17 重复；venv 文档漂移 = ENV-F03 重复）。
   树安全：HEAD `1a62703`、staging 空、治理文件与 `*.spec.json` 零改动、qgraphflow 未跟踪内容指纹复核未变（`tree 9eb05078…`、graph.json `5f12d3d4…`、index.html `2bd127b7…`）。**`:5432` 全程零接触**（仅只读 `netstat` 观测：`0.0.0.0`/`[::]:5432` LISTENING PID 6892，与 NB-01 同一 PID）；本次未创建任何容器；历史一次性容器 `aiear-m0004-pg-test`(:55432)、`dresslens-postgres`(:15432)、`dresslens-redis`(:16379)、`dresslens-minio`(:9000-9001) 仍 Up 25h，**只记录不处置**（停止他方会话持有的容器属破坏性操作，交人工）。无 push/merge/rebase/tag/publish。新增 **HD-N-07**（安全 P0 排期 + 硬件暴露面处置）与 **HD-N-08**（两份未跟踪基线交付物复用/重跑的追认）。M0 DAG 现状：001-004 TASK_PASS；005/006 BLOCKED(F-20)；007 被 005 阻塞；008 依 F-20 机器证据不予启动 ⇒ **M0 MILESTONE_PASS 不可达，ENGINEERING_RELEASE_READY = NO，REAL_PRODUCTION_APPROVED = NO**。终点维持：**PAUSED_FOR_HUMAN**。
+- 2026-10-07T21:14Z — **暂停期内的增值工作（只读 + 账本，零治理改动）**：不引用历史数字，实测复跑 `node .qoder/workflow-state/dryrun-harness.mjs test` ⇒ `REGRESSION: 106/106 passed`。据此复核守卫源码 `:727-743` 与 `gateGuardViolation(:1859-1881)`，发现 **F-24**：守卫遍历方向为"提交→SPEC"（`for (const c of cmds)`），SPEC 声明却未提交的门禁项无从被察觉 ⇒ 最省事的作弊是**沉默省略**而非改标 record；`dryrun-harness.mjs` 内降级相关场景仅 `:177 d3-10-required-downgrade-cheat` 一条，该形态**无测试**。同时记录 `:741` 双向包含中 `m.indexOf(cmd)` 的前缀假阳性。**本轮为反证而非案发**：M0-006 提交 9 条逐项可映射 SPEC、`skippedGates` 写"无"，未发生省略。
+  F-24 直接改变 F-20 的修法结论：**候选 A 或 B 单独实施 = 净放宽**（移除误报同时移除唯一对账），违反 Night Chain"不得放宽任何 Gate"。故产出**融合设计** `pendingFixTasks.FIX-GOV-001.design`（status `NOT_STARTED` → `DESIGNED-NOT-APPLIED`）：不变量 I1–I4 + 变更 C1（SPEC 显式 tier，由 Max 撰写）/C2（精确查表替代双向包含）/C3（**新增覆盖率对账 ⇒ `BLOCKED_GATE_COMMAND_NOT_EXECUTED`**，fail-closed 不占修复预算）/C4（按 tier 作者归因 ⇒ `GATE_SPEC_TIER_CONFLICT`，消除两次误归因）/C5（HIGH Risk 双审不变），回归计划 = 现有 106 条全保留 + 新增 `d6-01..d6-08`，净效果"收紧"。**仅设计，未实施**：`.qoder/workflows/**` 与 `dryrun-harness.mjs` 均为治理保护路径，Night Chain 禁止夜间自动修治理缺陷 → 仍归 HD-N-01。
+  同步更新：横幅"续跑前置条件"新增修法约束（A/B 单独实施不可采纳）、暂停根因补 F-24、HEAD 行改为**不随每次账本提交而失真的口径**（记录 seal 的父提交，实际以 `git log -1` 为准）、HD-N-01 待决项改写为"采纳融合设计"。树安全：本次仅改 `deliverables/overnight/{TASK_LEDGER.json,GOAL_PROGRESS.md}` 两个已跟踪账本文件（findings 22→23）；`.qoder/**` 治理文件与 `*.spec.json` **零改动**；两份基线交付物继续**保持未跟踪**；`docs/qgraphflow/dialogue-turn-sequence/` 未触碰；**`:5432` 零接触**、未创建任何容器、无破坏性 git 操作；无 push/merge/rebase/tag/publish。终点维持：**PAUSED_FOR_HUMAN**（HD-N-01 … HD-N-08 待人工）。
