@@ -2,7 +2,7 @@
 
 > **⛔ 续跑前置条件（勿跳过）**：M0-005/006/007/008 **禁止在未修复 F-20 前重启** —— Workflow 守卫与 Gate 契约互斥（HD-N-01 / `FIX-GOV-001`），重启必以 `GOVERNANCE_POLICY_VIOLATION / REQUIRED_DOWNGRADE` 再次撞墙（每次约 40 分钟）。唯一正确顺序：人工修 `.qoder/workflows/project-feature-delivery.js` → 重跑 M0-005 → M0-006 → M0-007/M0-008 → M0 Milestone Gate（Exit 还需 HD-N-04 治理写 Catalog）。
 >
-> **⚠️ 修法约束（21:14Z 新增，来自 F-24）**：HD-N-01 的候选 **A 或 B 单独实施会削弱门禁** —— 它们移除误报的同时也移除了 SPEC↔提交之间唯一的字符串对账，使"沉默省略红基线"成为零成本作弊。必须采纳 `TASK_LEDGER.json → pendingFixTasks.FIX-GOV-001.design` 的**融合设计（C1–C5 + 回归 d6-01..d6-08）**，其净效果为"收紧"而非"放宽"。
+> **⚠️ 修法约束（标签 `21:14Z` 系陈旧时间戳，权威为 `2026-10-08T06:31Z`；见「时间戳订正」/F-25）新增，来自 F-24**：HD-N-01 的候选 **A 或 B 单独实施会削弱门禁** —— 它们移除误报的同时也移除了 SPEC↔提交之间唯一的字符串对账，使"沉默省略红基线"成为零成本作弊。必须采纳 `TASK_LEDGER.json → pendingFixTasks.FIX-GOV-001.design` 的**融合设计（C1–C5 + 回归 d6-01..d6-08）**，其净效果为"收紧"而非"放宽"。
 
 > 人类可读进度日志。每完成一个 Task 更新一次。禁止记录任何 Secret 真实值。
 > 机器可读状态见同目录 `TASK_LEDGER.json`。
@@ -157,12 +157,42 @@ HEAD `1a62703`；staging 为空；工作树仅 `M deliverables/overnight/*`（Or
 | SEC-SB03 | CI 触发分支与仓库分支不符：`.github/workflows/ci.yml:4-7` `push: [main, develop]` / `pull_request: [main]`，实有分支 `master`/`feature/m0-baseline`/`auditory-rehab-optimization`（无 `main`）；`10-project.md` 主分支=master | **Orchestrator 亲验成立**。P0：后端全测/集成/前端 lint+build+E2E/Docker build 全部不触发，`RELEASE_CRITERIA` G5 无从成立，历史"CI 绿"记忆不可作证据。`.github/**` 属治理路径 → 夜间禁改 → HD-N-07 |
 | SEC-SB06 | 硬件 9 端点仅认证、无归属校验、无角色区分：`api/hardware.py:65/82/103/124/147/198/219/241/280` 全部仅 `Depends(get_current_user)`；无设备-用户绑定模型；参数无界（`:54`、`:59-60`）、广播（`:270`）；已在 `main.py:131` 挂载（线上可达，非死代码）；`backend/tests` 零覆盖 | **Orchestrator 亲验成立**。P0：任意登录用户可查询/连接/驱动任意康复站外设（LED/蜂鸣器/振动/OLED），属可用性 + 患者人身安全边界。硬件按 `10-project.md` 为非 MVP，但已挂载即已暴露；处置（下线 router / 补归属模型 / 加上界）属人工决策 → HD-N-07 |
 | F-23 | **账本 ignore 陷阱**：`.gitignore:73 deliverables/*` 只有 `:74 !deliverables/baseline/` 一条例外，无 `!deliverables/overnight/`。`deliverables/overnight/{GOAL_PROGRESS.md,TASK_LEDGER.json}` 因早先 force-add 已是 tracked，故修改可 stage（21:08Z 实测 `git add` 仍打印 "ignored paths: deliverables/overnight" 但两文件照常进入 index）；**同目录任何新记录文件会被静默忽略** | OPEN，P3-GOVERNANCE；`.gitignore` 属治理保护路径 → 夜间不改，交人工与 HD-N-01/HD-N-04 同批。反向确认：`deliverables/baseline/` 在白名单内 ⇒ HD-N-08 的"补审提交"无 ignore 障碍，只欠 TASK_PASS 判据 |
-| F-24 | **门禁覆盖率盲区（决定 F-20 的正确修法）**：`gateGuardViolation(:1859-1881)` 只做 (a) 逐条 `scanUnsafeDbCommand` 与 (b) `detectRequiredDowngrade(cmds, spec)`；`detectRequiredDowngrade(:731)` 的遍历方向是 `for (const c of cmds)` —— **"提交→SPEC"，SPEC 声明了但根本没提交的命令天然无从检查**。⇒ 最省事的作弊不是改标 `record`（d3-10 已覆盖），而是**沉默省略**：只交若干绿色命令 + 自报 `allPassed:true`，红基线不出现在数组里，守卫无物可判。回归核查：`dryrun-harness.mjs` 与降级相关的场景仅 `:177 d3-10-required-downgrade-cheat` 一条，无"省略/漏提交"类场景 ⇒ 该形态无测试。本轮为**反证而非案发**：M0-006 提交 9 条可逐项映射到 SPEC 的 6 required + 2 record + 1 required 集成、`skippedGates` 写"无"，未发生省略；缺陷是"无人能拦住省略"。附带：`:741` 双向包含匹配里的 `m.indexOf(cmd)` 会把"是某必跑项前缀"的独立命令误判为同一条（record 的 `ruff check app/` 命中 required 的 `ruff check app/ --output-format=json`）⇒ 假阳性面比 F-20 原描述更广 | OPEN，**P1-BLOCKING-COUPLING**；夜间不实施（`.qoder/workflows/**` 与 `dryrun-harness.mjs` 均治理路径）；与 F-20 **合并为一个治理变更** → HD-N-01 + `FIX-GOV-001`（设计见下方「FIX-GOV-001 融合设计」附录） |
+| F-24 | **门禁覆盖率盲区（决定 F-20 的正确修法）**：`gateGuardViolation(:1859-1881)` 只做 (a) 逐条 `scanUnsafeDbCommand` 与 (b) `detectRequiredDowngrade(cmds, spec)`；`detectRequiredDowngrade(:731)` 的遍历方向是 `for (const c of cmds)` —— **"提交→SPEC"，SPEC 声明了但根本没提交的命令天然无从检查**。⇒ 最省事的作弊不是改标 `record`（d3-10 已覆盖），而是**沉默省略**：只交若干绿色命令 + 自报 `allPassed:true`，红基线不出现在数组里，守卫无物可判。回归核查：`dryrun-harness.mjs` 与降级相关的场景仅 `:177 d3-10-required-downgrade-cheat` 一条，无"省略/漏提交"类场景 ⇒ 该形态无测试。本轮为**反证而非案发**：M0-006 提交 9 条可逐项映射到 SPEC 的 6 required + 2 record + 1 required 集成、`skippedGates` 写"无"，未发生省略；缺陷是"无人能拦住省略"。附带：`:741` 双向包含匹配里的 `m.indexOf(cmd)` 会把"是某必跑项前缀"的独立命令误判为同一条（record 的 `ruff check app/` 命中 required 的 `ruff check app/ --output-format=json`）⇒ 假阳性面比 F-20 原描述更广 | OPEN，**P1-BLOCKING-COUPLING**；夜间不实施（`.qoder/workflows/**` 与 `dryrun-harness.mjs` 均治理路径）；与 F-20 **合并为一个治理变更** → HD-N-01 + `FIX-GOV-001`（设计见下方「FIX-GOV-001 融合设计」附录）。发现时间标签 `21:14Z` 为陈旧戳，权威 `2026-10-08T06:31Z`（F-25） |
+| F-25 | **Orchestrator 自报记账缺陷（时间戳）**：F-24 / `FIX-GOV-001.design` / `pausedAt` 及本文件对应条目原标 `2026-10-07T21:10Z / 21:14Z`，权威证据显示实际产生于 `2026-10-08T06:31Z–06:37Z`。根因：写盘时复用上一窗口的陈旧 `NOW` 常量而未重新读钟（`patch-ledger3.mjs` 内硬编码 `const NOW = '2026-10-07T21:14Z'`） | OPEN-SELF-REPORTED，**P2-PROCESS-BOOKKEEPING**（非代码缺陷）。证据：`patch-ledger3.mjs` mtime `2026-10-08 15:31:08 +0900` ⇒ `06:31:08Z`；`git log %cI` `6c47d57 = 15:36:55+09:00` ⇒ `06:36:55Z`；对照 `39c7432 = 06:09:33+09:00` ⇒ `21:09:33Z`（与同批 21:05Z 标签自洽 ⇒ 异常仅限最近一批）。**技术结论不受影响**（`106/106` 为真实复跑、源码行号证据与 SHA-256 指纹独立于时间戳）。处置：透明订正（保留原文 + `TASK_LEDGER.json.timestampCorrections`）；预防措施 = 此后所有账本写入必须由脚本 `argv` 接收 `date -u` 输出，缺戳即 exit 1 零写入（`patch-ledger4.mjs` 已实装并自测：传 `no-stamp` ⇒ `REFUSING`，未写盘） |
 | F-13 | adaptive RNG 非确定性 | §106 按 Catalog/Fix 机制解决；单次 green 不算修复 |
 | COV-GAP | 后端覆盖率 ~61% | §109 阈值须由正式 OPS/Quality 任务定义，禁止自创 |
 | NB-01 | localhost:5432 未知 PostgreSQL listener | §31 视为 UNKNOWN_DATABASE_INSTANCE，永不连接/变更 |
 | NB-03 | httpx deprecation | §110 按 P1/P2 分类；禁止自动大版本升级 |
 | ENV-F03 | runbook venv 漂移 | §70/§111 文档漂移，阻塞安全操作时再处理 |
+
+## 时间戳订正（F-25，透明改写：保留原标签，另给权威映射）
+
+机器可执行副本见 `TASK_LEDGER.json → timestampCorrections`。异常仅限最近一批标签；M0-004/M0-005/M0-006 三批的标签与各自 commit `%cI` 自洽，无需订正。
+
+| 原标签 | 权威时间 | 条目 | 依据 |
+|---|---|---|---|
+| `2026-10-07T21:10Z` | `2026-10-08T06:2xZ` | dryrun-harness 复跑 `106/106` | 命令**确实执行**，输出有效；仅标签错 |
+| `2026-10-07T21:14Z` | `2026-10-08T06:31Z`（写盘）/ `06:37Z`（提交 `6c47d57`） | F-24、`FIX-GOV-001.design`、`pausedAt`、本文件相关行 | `stat` mtime + `git log %cI` |
+| `2026-10-07T21:05Z` | 不变（≈ `21:09:33Z` 提交 `39c7432`） | M0-006 封印批次（F-21..F-23 + 四条 SEC P0） | 无需订正 |
+
+**预防措施（本轮起生效，已机器化）**：所有账本写入脚本必须从 `argv` 接收 `date -u` 输出，格式非法 ⇒ **写动作之前** exit 1、零写入。`patch-ledger4.mjs` 已按此实现并自测（传 `no-stamp` 被拒）。
+
+## 七条 P0 的 Orchestrator 独立核验（`2026-10-08T07:38Z`，全程只读）
+
+副本见 `TASK_LEDGER.json → p0IndependentVerification`。口径：**"报告声称" ≠ "Orchestrator 亲验"**，二者分开计数。
+
+| P0 | 结论 | 要点 |
+|---|---|---|
+| SB-01 跨用户缓存 IDOR | **CONFIRMED**（前批亲验） | `performance.py:44-52/54/61/64-76/:111-131` + `deps.py:16-20` |
+| SB-02 安全用例未达断言层 | **派生成立**，H-10 直测**本轮不可闭** | 依赖 M0-005 实测 + Max Verify 亲跑；`conftest.py:65` session-scoped engine、`:60-64` StaticPool 掩盖 |
+| SB-03 CI 分支不符 | **CONFIRMED**（前批亲验） | `ci.yml:4-7` 监听 `main`/`develop` |
+| SB-04 医疗安全架构缺失 | **CONFIRMED-强化**（本批亲验） | 全后端对 `emergency\|转诊\|急症\|心理危机\|自杀\|risk_taxonom\|query_classif` **仅 1 处命中** = `config.py:144`（危机词在 `SAFETY_KEYWORDS` 内）；`app/models/` 对 `safety_event\|audit` **零命中**。命中后的实际响应 = 通用拒答（`llm_gateway.py:256-258`「让我们聊点别的吧」/ `dialogue_service.py:160`「我们继续练习日常对话吧！」），且该轮 `user_text` 原样写入 `DialogueTurn`（`:163-167`）⇒ **危机披露得到"继续练习对话"，并落 D 类库而无标记、无审计、因 SB-11 无删除路径而不可清除**。§70 的 Emergency Route / Risk Taxonomy / Query Classifier / Safety Event+Audit **四项均无载体**。文案属 HUMAN_REQUIRED（H-9），**Orchestrator 不代拟** |
+| SB-05 输入安全只检最后一条 | **CONFIRMED，并诚实收窄活跃面**（本批亲验） | `_check_safety_input`（`:205-215`）调用点仅 `:251-252`(chat) 与 `:317-318`(chat_stream)，均传 `messages[-1]`；服务层 `dialogue_service.py:159` 同。活跃链路 `dialogue_orchestrator.py:82/:148 → chat() → _build_messages :202`（未检历史整体注入 prompt）。**但 `chat_stream` 在 `app/` 内无任何调用方**（无 `StreamingResponse`/`event-stream`）⇒ 第二调用点为**死代码**，不计活跃缺陷；同处 `:352` 在拦截分支 `yield {"error": …}` 与签名 `AsyncGenerator[str, None]` 冲突，属**接通流式端点后**才成立的潜在契约破坏，本次**不单独计缺陷** |
+| SB-06 硬件端点无归属校验 | **CONFIRMED**（前批亲验） | `hardware.py:65…280` 仅 `get_current_user`；`main.py:131` 已挂载 |
+| SB-31 启动无条件建表+写种子 | **CONFIRMED**（前批亲验） | `main.py:46/49`、`init_db.py:14-15/:23-27/:162/:199`、`config.py:41` |
+
+**计数**：亲验成立 **6/7**（SB-01/03/04/05/06/31）；SB-02 派生成立。
+**去重纪律**：另核查两处"疑似新缺陷"，确认**已在交付物内**故不重复登记 —— 无急症应急路径 = `SECURITY_BASELINE.md:422` + SB-04；无医疗安全评测集（`tests/test_safety.py:4-9` 仅 1 条关键词用例，`tests/` 内对 `自杀|emergency|转诊|急症` **零命中**）= `:428` + SB-20。拟新增的同号发现**撤回**。
 
 ## FIX-GOV-001 融合设计（HD-N-01 可直接采纳；夜间仅设计，**未改任何治理文件**）
 
@@ -211,6 +241,7 @@ HEAD `1a62703`；staging 为空；工作树仅 `M deliverables/overnight/*`（Or
 
 - `GOAL_STATUS` = **PAUSED_FOR_HUMAN**（真实阻塞：F-20 治理缺陷；非模型不可用、非配额、非环境）。
 - `ENGINEERING_RELEASE_READY` = **NO**（M0 未 MILESTONE_PASS，M1+ 未启动；Release Gate 11 项证据均未采集）。
+  - `07:38Z` 追加环境事实：Docker 守护进程当前不可达 ⇒ 第 **9**（Docker build）与第 **10**（部署冒烟）项证据此刻**客观不可采**，与"未采集"并列记录；H-10 同因不可闭。已拒绝擅自启动 Docker（`:5432` 未知实例可能被 restart 策略复活）。
 - `REAL_PRODUCTION_APPROVED` = **NO**（无真实人工批准，per D3 §8 恒 NO —— 这一项 NO 不属缺陷）。
 - 未达成目标**不伪造**：不以放宽 Gate、降级 required、skip 测试、自动切 FLASH_ONLY、改判据的方式换取"看起来通过"。
 
@@ -229,6 +260,12 @@ HEAD `1a62703`；staging 为空；工作树仅 `M deliverables/overnight/*`（Or
   **拒绝两条捷径**：(1) 不把 M0-008 拿去撞已知墙——`blockedTasks[M0-005].machineProof` 已覆盖 docker-build 形态，再跑一次只多花 60 分钟与零新信息；(2) 不重写 SPEC 把红基线移出 `REGRESSION_TESTS` 以绕开守卫（候选 C）——那是利用缺陷形状规避，非交付。
   **独立事实锚点（不采信脚本自述）**：`resolvedModel` 逐 invocation 核实 FULL 保真（task-spec/D4 取证 = `qmodel_38max`，implement/machine-gate = `qfmodel`，无第三模型、无 fallback）；baseline↔post 全部 SHA-256 与字节数由 Orchestrator 自行重算，逐项相等（无外部改动、无虚假 Delta）。新登记 **F-21**（Explore 退化输出无校验）、**F-22**（治理文档 #6 与代码真相不符 = SB-08/ARCH-04 侧面）、**SEC-SB01 / SEC-SB31 / SEC-SB03 / SEC-SB06**（四条 P0 均由 Orchestrator 读到 `文件:行号` 级亲验成立，其中 SB-01 跨用户缓存 IDOR 与 SB-31 启动无条件建表+写种子为先前任何基线文档均未记录的新增发现）；ENV-F03 追加实测（真实 venv=`backend/venv312`，`.venv` 不存在但 AGENTS.md §9 与 `80-testing.md` 均引用它；compose 需 `-p`；npm 今日可达——旧的"egress blocked"结论作废）。撤回两项拟新增发现（MILESTONES 8-vs-7 = F-17 重复；venv 文档漂移 = ENV-F03 重复）。
   树安全：HEAD `1a62703`、staging 空、治理文件与 `*.spec.json` 零改动、qgraphflow 未跟踪内容指纹复核未变（`tree 9eb05078…`、graph.json `5f12d3d4…`、index.html `2bd127b7…`）。**`:5432` 全程零接触**（仅只读 `netstat` 观测：`0.0.0.0`/`[::]:5432` LISTENING PID 6892，与 NB-01 同一 PID）；本次未创建任何容器；历史一次性容器 `aiear-m0004-pg-test`(:55432)、`dresslens-postgres`(:15432)、`dresslens-redis`(:16379)、`dresslens-minio`(:9000-9001) 仍 Up 25h，**只记录不处置**（停止他方会话持有的容器属破坏性操作，交人工）。无 push/merge/rebase/tag/publish。新增 **HD-N-07**（安全 P0 排期 + 硬件暴露面处置）与 **HD-N-08**（两份未跟踪基线交付物复用/重跑的追认）。M0 DAG 现状：001-004 TASK_PASS；005/006 BLOCKED(F-20)；007 被 005 阻塞；008 依 F-20 机器证据不予启动 ⇒ **M0 MILESTONE_PASS 不可达，ENGINEERING_RELEASE_READY = NO，REAL_PRODUCTION_APPROVED = NO**。终点维持：**PAUSED_FOR_HUMAN**。
-- 2026-10-07T21:14Z — **暂停期内的增值工作（只读 + 账本，零治理改动）**：不引用历史数字，实测复跑 `node .qoder/workflow-state/dryrun-harness.mjs test` ⇒ `REGRESSION: 106/106 passed`。据此复核守卫源码 `:727-743` 与 `gateGuardViolation(:1859-1881)`，发现 **F-24**：守卫遍历方向为"提交→SPEC"（`for (const c of cmds)`），SPEC 声明却未提交的门禁项无从被察觉 ⇒ 最省事的作弊是**沉默省略**而非改标 record；`dryrun-harness.mjs` 内降级相关场景仅 `:177 d3-10-required-downgrade-cheat` 一条，该形态**无测试**。同时记录 `:741` 双向包含中 `m.indexOf(cmd)` 的前缀假阳性。**本轮为反证而非案发**：M0-006 提交 9 条逐项可映射 SPEC、`skippedGates` 写"无"，未发生省略。
+- ~~2026-10-07T21:14Z~~ **权威时间 2026-10-08T06:31Z（写盘）/ 06:37Z（提交 `6c47d57`）** — 订正依据 `stat` mtime 与 `git log --format=%cI`，见 F-25。**暂停期内的增值工作（只读 + 账本，零治理改动）**：不引用历史数字，实测复跑 `node .qoder/workflow-state/dryrun-harness.mjs test` ⇒ `REGRESSION: 106/106 passed`。据此复核守卫源码 `:727-743` 与 `gateGuardViolation(:1859-1881)`，发现 **F-24**：守卫遍历方向为"提交→SPEC"（`for (const c of cmds)`），SPEC 声明却未提交的门禁项无从被察觉 ⇒ 最省事的作弊是**沉默省略**而非改标 record；`dryrun-harness.mjs` 内降级相关场景仅 `:177 d3-10-required-downgrade-cheat` 一条，该形态**无测试**。同时记录 `:741` 双向包含中 `m.indexOf(cmd)` 的前缀假阳性。**本轮为反证而非案发**：M0-006 提交 9 条逐项可映射 SPEC、`skippedGates` 写"无"，未发生省略。
   F-24 直接改变 F-20 的修法结论：**候选 A 或 B 单独实施 = 净放宽**（移除误报同时移除唯一对账），违反 Night Chain"不得放宽任何 Gate"。故产出**融合设计** `pendingFixTasks.FIX-GOV-001.design`（status `NOT_STARTED` → `DESIGNED-NOT-APPLIED`）：不变量 I1–I4 + 变更 C1（SPEC 显式 tier，由 Max 撰写）/C2（精确查表替代双向包含）/C3（**新增覆盖率对账 ⇒ `BLOCKED_GATE_COMMAND_NOT_EXECUTED`**，fail-closed 不占修复预算）/C4（按 tier 作者归因 ⇒ `GATE_SPEC_TIER_CONFLICT`，消除两次误归因）/C5（HIGH Risk 双审不变），回归计划 = 现有 106 条全保留 + 新增 `d6-01..d6-08`，净效果"收紧"。**仅设计，未实施**：`.qoder/workflows/**` 与 `dryrun-harness.mjs` 均为治理保护路径，Night Chain 禁止夜间自动修治理缺陷 → 仍归 HD-N-01。
   同步更新：横幅"续跑前置条件"新增修法约束（A/B 单独实施不可采纳）、暂停根因补 F-24、HEAD 行改为**不随每次账本提交而失真的口径**（记录 seal 的父提交，实际以 `git log -1` 为准）、HD-N-01 待决项改写为"采纳融合设计"。树安全：本次仅改 `deliverables/overnight/{TASK_LEDGER.json,GOAL_PROGRESS.md}` 两个已跟踪账本文件（findings 22→23）；`.qoder/**` 治理文件与 `*.spec.json` **零改动**；两份基线交付物继续**保持未跟踪**；`docs/qgraphflow/dialogue-turn-sequence/` 未触碰；**`:5432` 零接触**、未创建任何容器、无破坏性 git 操作；无 push/merge/rebase/tag/publish。终点维持：**PAUSED_FOR_HUMAN**（HD-N-01 … HD-N-08 待人工）。
+- 2026-10-08T07:38Z（`date -u` 权威值，经脚本 `argv` 传入；提交时间以 `git log %cI` 为准）— **第二批暂停期增值：七条 P0 独立核验 + 自报记账缺陷 F-25**。
+  (1) **P0 亲验补齐**：静态只读取证 SB-04 与 SB-05（前批已亲验 SB-01/03/06/31），累计**亲验成立 6/7**。SB-04 得到比报告更具体的形态：危机词只存在于 `config.py:144`，命中后响应是"继续练习日常对话"式通用拒答，且 `user_text` 原样入库、`app/models` 无 safety_event/audit ⇒ §70 要求的四项安全架构组件**均无载体**（文案本身 H-9 属 HUMAN_REQUIRED，未代拟）。SB-05 反向**收窄**：`chat_stream` 在 `app/` 内零调用方 ⇒ 其 `:317-318` 检查点与 `:352` 的 `yield {"error": …}` 类型破坏均为**潜在而非活跃**，据实记录、不夸大。
+  (2) **去重**：两处疑似新缺陷经核对已在交付物内（`SECURITY_BASELINE.md:422`/`:428` + SB-04/SB-20），**撤回**拟新增同号发现；`tests/` 对 `自杀|emergency|转诊|急症` 零命中的事实归入既有 SB-20。
+  (3) **自报 F-25（P2-PROCESS，Orchestrator 自身记账缺陷）**：上一批的 `21:10Z/21:14Z` 标签与权威证据不符（`patch-ledger3.mjs` mtime `06:31:08Z`、`6c47d57 %cI = 06:36:55Z`），根因是复用陈旧 `NOW` 常量。技术结论不受影响（`106/106` 为真实执行、行号与 SHA-256 证据独立）。处置 = **透明订正**（原文保留 + `timestampCorrections` 映射 + 新增「时间戳订正」小节），并把预防措施机器化：账本写入必须由 `argv` 接收 `date -u`，缺戳 exit 1 零写入（`patch-ledger4.mjs` 实装并自测拒绝 `no-stamp`）。
+  (4) **环境真相更新**：`docker info` 现失败（Docker Desktop 守护进程未运行，`npipe …dockerDesktopLinuxEngine`）。⇒ **H-10 此刻不可闭**，Release Gate 第 9/10 项（Docker build、部署冒烟）证据亦不可采；已在 `notes.dockerAvailable` 记录前后状态。**决策：不擅自启动 Docker Desktop** —— restart=always 可能自动复活身份未知的 `:5432` 相关实例（SB-28/SB-31 危险面）与他方会话的 `dresslens-*`，且拉起机器级服务不属本 Chain 授权。
+  树安全：本次仅改 `deliverables/overnight/{TASK_LEDGER.json,GOAL_PROGRESS.md}`（findings 23→24，新增 `p0IndependentVerification`/`timestampCorrections`）；`.qoder/**` 治理文件与 `*.spec.json` **零改动**；`:5432` 零接触；**本批未运行任何 DB/容器/网络命令**（仅 `docker info` 只读探测，失败即止）；两份基线交付物继续未跟踪；qgraphflow 未触碰；无 push/merge/rebase/tag。终点维持：**PAUSED_FOR_HUMAN**。

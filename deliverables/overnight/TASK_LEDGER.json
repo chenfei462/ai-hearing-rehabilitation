@@ -537,6 +537,19 @@
       ],
       "impact": "与 F-20 是一枚硬币的两面，并且**决定 F-20 的正确修法**：若只做最小修复（守卫不再看字符串、改为\"相信 SPEC 声明的 tier\"），则 SPEC↔提交之间将完全没有任何机器对账，省略成为零成本作弊，门禁反而被削弱 —— 违反 Night Chain\"不得放宽任何 Gate\"。因此 FIX-GOV-001 必须与覆盖率校验同批落地。",
       "disposition": "与 FIX-GOV-001 合并为**一个**治理变更（见 pendingFixTasks.FIX-GOV-001.design），设计目标为\"净收紧\"：既让诚实的 record 合法，又把\"沉默省略\"从盲区变成硬失败。夜间不实施（`.qoder/workflows/**` + `dryrun-harness.mjs` 均为治理路径）。"
+    },
+    "F-25": {
+      "summary": "Orchestrator 记账时间戳缺陷（自报，非代码缺陷）：`findings.F-24` / `pendingFixTasks.FIX-GOV-001.design` / `pausedAt` 及其在 GOAL_PROGRESS.md 中的对应条目被标注为 `2026-10-07T21:10Z / 21:14Z`，而权威证据显示它们实际产生于 `2026-10-08T06:31Z–06:37Z`。根因：写盘时**复用了上一窗口的陈旧 NOW 常量而未重新读钟**（`patch-ledger3.mjs` 内 `const NOW = '2026-10-07T21:14Z'` 为硬编码）。",
+      "status": "OPEN-SELF-REPORTED",
+      "severity": "P2-PROCESS-BOOKKEEPING",
+      "evidence": [
+        "`stat` mtime：`.qoder/sessions/a77db379-…/patch-ledger3.mjs = 2026-10-08 15:31:08 +0900` ⇒ `2026-10-08T06:31:08Z`（本机时区 +09:00，`date +%z` 实测）",
+        "`git log --format=%cI`：`6c47d57 = 2026-10-08T15:36:55+09:00` ⇒ `06:36:55Z`（承载 F-24/设计的提交）；`39c7432 = 2026-10-08T06:09:33+09:00` ⇒ `2026-10-07T21:09:33Z`（M0-006 封印，其 21:05Z 标注与之一致 ⇒ 异常仅限最近一批标签）",
+        "`deliverables/baseline/SECURITY_BASELINE.md` mtime = `2026-10-08 05:47:46 +0900` ⇒ `2026-10-07T20:47:46Z`，与 M0-006 run 时间轴自洽 ⇒ 被污染的标签不含 M0-006 交付物本身",
+        "两次提交之间墙钟差 ≈ 9 h 27 m（主机休眠/空闲），故陈旧标签造成的**顺序失真**是真实的：按原标签阅读会把 F-24 误认为发生在 M0-006 封印之前"
+      ],
+      "impact": "仅影响记录口径，不影响任何技术结论：`106/106` 是真实复跑（命令实际执行），F-24 的源码证据（`:731`/`:1859-1881`）与 D4 指纹复核均独立于时间戳成立。但 D4 已确立\"证据纪律\"原则，时间标签失真会误导人工排序与审计 ⇒ 必须显式订正而非静默改写。",
+      "disposition": "透明订正：保留原始错误标签文本，另在本文件 `timestampCorrections` 与 GOAL_PROGRESS「时间戳订正」小节给出权威映射；`pausedAt` 改为权威值。新增预防措施：**本 Chain 之后所有账本写入必须把 `date -u` 的输出作为 argv 传入脚本，脚本内拒绝无来源的时间常量**（本 patch 自身即按该规则实现：`argv[2]` 缺失或格式非法 ⇒ exit 1，零写入）。"
     }
   },
   "humanDecisionsRequired": [
@@ -714,11 +727,89 @@
   "notes": {
     "resumePrecondition": "Do NOT relaunch M0-005/006/007/008 until F-20 is repaired in .qoder/workflows/project-feature-delivery.js (HD-N-01 / FIX-GOV-001). Evidence upgraded from prediction to EXECUTION: M0-005 (wf_bd5d9d4f-2c7) and M0-006 (wf_6b00bd56-a7c) both ran the full chain in FULL mode and both were blocked at Machine Gate on a Max-authored record tier, with the executor reporting every red exit truthfully. Required order: human/Max fixes guard → M0-005 → M0-006 → M0-007/M0-008 → M0 Milestone Gate (Exit also needs HD-N-04 governance write of FIX-* rows into docs/workflow/TASK_CATALOG.md + F-01/F-02/F-19 decisions). Repair C remains available to the human but was again NOT exercised unattended (M0-006 could have been steered into an all-required-green shape by dropping the two red baselines from REGRESSION_TESTS — that is circumvention of a known defect, not delivery).",
     "dbSafety": "backend/alembic.ini:5 default sqlalchemy.url points to postgresql://...@localhost:5432/cochlear_rehab (the UNKNOWN listener). Any migration test MUST override the URL to a Goal-created isolated non-5432 container; NEVER touch 5432.",
-    "dockerAvailable": "Docker 29.5.2 / Compose v5.1.4 confirmed available for §32-35 isolated test container.",
+    "dockerAvailable": "Docker 29.5.2 / Compose v5.1.4 曾于 M0-004/M0-005/M0-006 批次确认可用（隔离容器 :55432/:55433/:26379）。2026-10-08T07:38Z 复测：`docker info` **失败** —— `failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`（Docker Desktop 守护进程当前未运行）。⇒ H-10（postgres 口径 13 条安全用例直测）此刻不可闭；`ENGINEERING_RELEASE_READY` 的 Docker build/部署冒烟两项证据同样不可采。**决策：不擅自启动 Docker Desktop。** 理由：(1) 带 restart=always 的既有容器可能在启动时被自动复活，其中包括身份未知的 `:5432` 相关实例（SB-28/SB-31 危险面）与他方会话持有的 `dresslens-*`；(2) 拉起机器级服务不属本 Chain 授权范围，属需人工确认的环境变更。本 Chain 全程未因本次观测对 :5432 做任何连接或变更。",
     "serialPolicy": "Overnight default serial (§18); progress files committed before Workflow launch and updated only after TASK_PASS (§116/§117).",
     "engineeringReleaseReady": "NO — M0 未过 Gate（4 个 P0 任务 BLOCKED），M1..M5 未启动；criticalPath 首环 M0-001→M0-004 之后的 M0 收口即断。",
     "realProductionApproved": "NO — 无任何真实人工/授权主体批准；正式生产部署属 HUMAN_REQUIRED，夜间不自动批准。",
     "bookkeepingIgnore": "夜间账本（deliverables/overnight/**）在 .gitignore 的 `deliverables/*` 之下且无例外；提交账本必须显式 `git add -- <已跟踪的两个文件路径>`，新增记录文件须先由人工加 `!deliverables/overnight/` 例外，否则会被静默忽略（见 findings.F-23）。"
   },
-  "pausedAt": "2026-10-07T21:14Z"
+  "pausedAt": "2026-10-08T07:38Z",
+  "timestampCorrections": [
+    {
+      "asRecorded": "2026-10-07T21:10Z",
+      "authoritative": "2026-10-08T06:2xZ",
+      "item": "dryrun-harness 复跑（REGRESSION: 106/106 passed）",
+      "method": "本次真实执行，命令输出有效；仅时间标签错误",
+      "evidence": "git log %cI 6c47d57=06:36:55Z；mtime patch-ledger3.mjs=06:31:08Z"
+    },
+    {
+      "asRecorded": "2026-10-07T21:14Z",
+      "authoritative": "2026-10-08T06:31Z（写盘）/ 06:37Z（提交 6c47d57）",
+      "item": "findings.F-24 + pendingFixTasks.FIX-GOV-001.design + GOAL_PROGRESS 横幅/表行/日志条目",
+      "method": "内容有效，标签陈旧",
+      "evidence": "同上"
+    },
+    {
+      "asRecorded": "2026-10-07T21:05Z",
+      "authoritative": "2026-10-07T21:05Z（与提交 39c7432=21:09:33Z 自洽）",
+      "item": "M0-006 BLOCKED 封印批次（F-21..F-23 + 四条 SEC P0）",
+      "method": "无需订正",
+      "evidence": "git log %cI 39c7432"
+    }
+  ],
+  "p0IndependentVerification": {
+    "at": "2026-10-08T07:38Z",
+    "method": "Orchestrator 逐条读到 文件:行号 级源码复核；只读；未运行任何 DB/网络/容器操作；不采信交付物自述",
+    "scopeNote": "SECURITY_BASELINE.md §9 的 P0 = SB-01…SB-06 + SB-31（7 条）。本表把\"报告声称\"与\"Orchestrator 亲验\"分开计数。",
+    "items": [
+      {
+        "id": "SB-01",
+        "verdict": "CONFIRMED",
+        "verifiedBy": "Orchestrator 亲验（21:0xZ 批次）",
+        "evidence": "middleware/performance.py:44-52/54/61/64-76 + :111-131；api/deps.py:16-20 Cookie 回落"
+      },
+      {
+        "id": "SB-02",
+        "verdict": "CONFIRMED-BY-DERIVATION（H-10 仍未闭）",
+        "verifiedBy": "M0-005 实测 + Max Verify 亲跑；本轮无法补测（见 dockerDaemon）",
+        "evidence": "INTEGRATION_BASELINE.md §4/§6；conftest.py:65 session-scoped engine；sqlite 分支 :60-64 StaticPool 掩盖"
+      },
+      {
+        "id": "SB-03",
+        "verdict": "CONFIRMED",
+        "verifiedBy": "Orchestrator 亲验（21:0xZ 批次）",
+        "evidence": ".github/workflows/ci.yml:4-7 监听 main/develop；实有分支 master/feature/m0-baseline"
+      },
+      {
+        "id": "SB-04",
+        "verdict": "CONFIRMED-强化",
+        "verifiedBy": "Orchestrator 亲验（本批次，只读 grep + 源码）",
+        "evidence": "全仓 `backend/app/**/*.py` 对 emergency|转诊|急症|心理危机|自杀|risk_taxonom|query_classif **仅 1 处命中** = `core/config.py:144`（危机词在 SAFETY_KEYWORDS 内）；`app/models/` 对 safety_event|audit **零命中** ⇒ 无安全事件/审计落库；命中后的实际响应是通用拒答 `llm_gateway.py:256-258`「抱歉，我无法回答这个问题。让我们聊点别的吧。」与 `dialogue_service.py:160`「抱歉，这个话题我不太方便讨论。我们继续练习日常对话吧！」",
+        "impactRefinement": "严重度不高于报告，但**形态更具体**：危机披露得到的处置是\"继续练习日常对话\"，且该轮 `user_text` 原样写入 DialogueTurn（:163-167）→ 危机内容落 D 类库而无标记、无审计、且 SB-11（无删除路径）使其不可清除。§70 要求的 Emergency Route / Risk Taxonomy / Query Classifier / Safety Event+Audit 四项**均无载体**。文案本身属 HUMAN_REQUIRED（H-9），Orchestrator 不代拟。"
+      },
+      {
+        "id": "SB-05",
+        "verdict": "CONFIRMED-并收窄活跃面",
+        "verifiedBy": "Orchestrator 亲验（本批次）",
+        "evidence": "`_check_safety_input` 定义 `llm_gateway.py:205-215`，调用点**只有两处且均传 `messages[-1]`**：`:251-252`（chat）、`:317-318`（chat_stream）；服务层 `dialogue_service.py:159` 亦只检当前 `user_text` ⇒ 无任何一层检历史。活跃链路成立：`dialogue_orchestrator.py:82` `await self.llm.chat(messages, …)` → 网关只检最后一条 → `_build_messages` `:202 result.extend(messages)` 把**未检历史**整体注入 prompt（`:148` 摘要调用同型）",
+        "impactRefinement": "**诚实收窄**：`chat_stream` 在 `app/` 内**无任何调用方**（grep `chat_stream` 仅 `llm_base.py:31` 抽象 + `llm_gateway.py:307` 定义；`app/api|app/services` 无 StreamingResponse/event-stream）⇒ SB-05 的第二个调用点当前为死代码，**不构成活跃缺陷**；SB-05 的活跃面 = `chat()` 单点（已经足以成立）。附带同处发现：`:352` 在安全拦截分支 `yield {\"error\": …}`（对象）而签名声明 `AsyncGenerator[str, None]` ⇒ 一旦接通流式端点即成契约破坏，**当前潜在、非活跃**，不单独计缺陷。"
+      },
+      {
+        "id": "SB-06",
+        "verdict": "CONFIRMED",
+        "verifiedBy": "Orchestrator 亲验（21:0xZ 批次）",
+        "evidence": "api/hardware.py:65/82/103/124/147/198/219/241/280 仅 get_current_user；main.py:131 已挂载；tests 零覆盖"
+      },
+      {
+        "id": "SB-31",
+        "verdict": "CONFIRMED",
+        "verifiedBy": "Orchestrator 亲验（21:0xZ 批次）",
+        "evidence": "main.py:46/49 lifespan 无条件 init_database()+seed_data()；db/init_db.py:14-15 create_all、:23-27 幂等守卫只看 ItemBank、:162/:199 演示账号；config.py:41 默认串指向 :5432"
+      }
+    ],
+    "tally": "亲验成立 6/7（SB-01/03/04/05/06/31）；SB-02 为派生成立（依赖 M0-005 实测），其 postgres 口径直测项 H-10 本轮仍不可闭（见 notes.dockerAvailable@NOW）",
+    "duplicateDiscipline": "本轮另核查两处\"疑似新缺陷\"，确认**已存在于交付物**故不重复登记：无急症应急路径 = §422 行 + SB-04；无医疗安全评测集（仅 test_safety.py:4-9 一条关键词用例，tests/ 内对 自杀|emergency|转诊|急症 零命中）= §428 行 + SB-20。**撤回**拟新增的 F-25(原指评测集缺失)，改为把 F-25 编号用于本条自报记账缺陷。"
+  },
+  "pausedAtOriginalAsRecorded": "2026-10-07T21:14Z",
+  "pausedAtCorrection": "原标签为陈旧时间戳（见 findings.F-25）；权威值来自 `date -u`，由 argv 传入本脚本"
 }
