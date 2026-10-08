@@ -1,9 +1,11 @@
 # GOAL_PROGRESS — Autonomous Delivery Orchestrator
 
-> **⛔ 续跑前置条件（勿跳过）**：M0-005/006/007/008 **禁止在未修复 F-20 前重启** —— Workflow 守卫与 Gate 契约互斥（HD-N-01 / `FIX-GOV-001`），重启必以 `GOVERNANCE_POLICY_VIOLATION / REQUIRED_DOWNGRADE` 再次撞墙（每次约 40 分钟）。唯一正确顺序：人工修 `.qoder/workflows/project-feature-delivery.js` → 重跑 M0-005 → M0-006 → M0-007/M0-008 → M0 Milestone Gate（Exit 还需 HD-N-04 治理写 Catalog）。
+> **🟡 前置条件只剩最后一步（2026-10-08T11:05Z，HD-N-01 已执行但未封存）**：**FIX-GOV-001-R1** 已在两个授权治理文件里实施完毕（`.qoder/workflows/project-feature-delivery.js` + `.qoder/workflow-state/dryrun-harness.mjs`），机器证据 `REGRESSION: 115/115 passed`、既有 106 条断言摘要逐字节未变，独立 `qmodel_38max` **Review = PASS（Q1..Q11 全 YES，0 blocker）**。
+> **但独立 `qmodel_38max` Verify 两次尝试均被账户 credit 用量上限直接拦死**（`agent[2] max-verify-r1 failed`，第二次经 `resumeFromRunId` 只重跑该调用，2.3s 内同一错误）⇒ 按 §27 该 Fix **不具备 PASS 资格，因此不执行 §28 封存**。改动完整留在工作区，HEAD 仍为 `77fdb32`，未 push / merge / rebase / reset / clean / stash。
+> 修复本身已生效的语义（供人工审阅 diff）：Machine Gate 与 TASK_SPEC 的唯一对账键改为 **`MACHINE_GATE_COMMANDS[].gateId`**（声明冻结于 Implement 之前；执行手无权增删 gateId、无权改 `kind`、不得把 required 提交为 record）；`MANDATORY_TESTS`/`REGRESSION_TESTS` 退回**语义清单**，不再与 shell 命令字节串跨层比对（这正是 F-20 假红的根因，d6-01 为回归哨兵）；新增终态 `GATE_SPEC_MALFORMED`（Implement 前 fail-closed，零实施 Agent）／`BLOCKED_GATE_COMMAND_NOT_EXECUTED`（沉默省略）／`GATE_COMMAND_NOT_DECLARED`（未声明 gateId 或顶替成会绿命令）。
+> **解锁顺序**：恢复 Max 额度 → `Workflow({scriptPath:'.qoder/sessions/a77db379-ec91-434c-a612-8a7153485516/workflows/scripts/fix-gov-001-r1-review-verify-wf_375e92e7-2b8.js', resumeFromRunId:'wf_375e92e7-2b8'})`（Review 命中缓存，仅 Verify 实跑）→ TASK_PASS → 精确封存两文件 → 才按 DAG 推进 M0-005 → M0-006 → M0-007/M0-008 → **M0 Milestone Gate**（Exit 仍需 HD-N-04 治理写 Catalog）。
+> **M0-005/006/007/008 仍禁止重启**：不是因为 Fix 没写，而是因为最后一步独立验收缺失、变更未封存；且任何后续 Task 的 Review/Verify 同样需要 `qmodel_38max`。
 >
-> **⚠️ 修法约束（标签 `21:14Z` 系陈旧时间戳，权威为 `2026-10-08T06:31Z`；见「时间戳订正」/F-25）新增，来自 F-24**：HD-N-01 的候选 **A 或 B 单独实施会削弱门禁** —— 它们移除误报的同时也移除了 SPEC↔提交之间唯一的字符串对账，使"沉默省略红基线"成为零成本作弊。必须采纳 `TASK_LEDGER.json → pendingFixTasks.FIX-GOV-001.design` 的**融合设计（C1–C5 + 回归 d6-01..d6-08）**，其净效果为"收紧"而非"放宽"。
-
 > 人类可读进度日志。每完成一个 Task 更新一次。禁止记录任何 Secret 真实值。
 > 机器可读状态见同目录 `TASK_LEDGER.json`。
 
@@ -11,10 +13,22 @@
 - 当前分支：`feature/m0-baseline`
 - 当前 HEAD：**账本/进度字段按约定记录"本 seal commit 的父提交"**（详见 `TASK_LEDGER.json.headPointerNote`），因此本行数字恒比 `git log -1` 落后一个账本提交 —— 这是记录口径而非漂移，最新提交请以 `git log --oneline -1` 为准。最近两个账本提交：`39c7432`（M0-006 BLOCKED 封印，F-21..F-23 + 四条安全 P0）→ 其父 `1a62703`（候选 C 撤回）。任务侧最后一个安全交付提交 = **`a78b10f`（M0-004 TASK_PASS）**；M0-005 与 M0-006 均 **未提交**，见下。
 - 当前 Milestone：**M0 — Repository Truth & Baseline**
-- Goal 状态：**PAUSED_FOR_HUMAN**（2026-10-07T19:41Z 起）
-- 暂停根因：**F-20（P1-BLOCKING 治理缺陷，已真实执行两次确证）** — Workflow 反降级守卫 `detectRequiredDowngrade`（`.qoder/workflows/project-feature-delivery.js:727-743`）与 Gate 契约（同文件 `:1798-1799`「基线采集类命令必须 `kind=record`」）**结构性互斥**。M0-005（`wf_bd5d9d4f-2c7`）与 M0-006（`wf_6b00bd56-a7c`）两次 FULL 模式全程执行均 BLOCK 于 Machine Gate，两次都是 Max 亲写的 `record` 层被归因给执行手。修复需改治理保护路径 → Night Chain 禁止夜间自动修复治理缺陷。配套登记 **F-24（P1-BLOCKING-COUPLING）**：守卫同样缺少"SPEC↔提交覆盖率"对账，此缺陷**决定 F-20 的正确修法** → 融合设计见「FIX-GOV-001 融合设计」附录。
+- Goal 状态：**PAUSED_FOR_HUMAN**（2026-10-07T19:41Z 起；2026-10-08T11:05Z 因 F-29 账户额度上限再次暂停 —— 暂停原因已从「治理缺陷」变为「无法执行独立 Max 验收」）
+- 暂停根因（当前）：**F-29（P0-BLOCKING-CHAIN）** — 账户 credit 用量上限使 `qmodel_38max` 调用无法建立，Task PASS 公式里"独立 Max 验收"这一必要条件不可运行，整条自治链（含后续每个 Task 的 Review/Verify）因此冻结。原 F-20 根因的代码修复已完成并通过独立 Review，仅差 Verify。历史记录如下：
+- 暂停根因（历史）：**F-20（P1-BLOCKING 治理缺陷，已真实执行两次确证）** — Workflow 反降级守卫 `detectRequiredDowngrade`（`.qoder/workflows/project-feature-delivery.js:727-743`）与 Gate 契约（同文件 `:1798-1799`「基线采集类命令必须 `kind=record`」）**结构性互斥**。M0-005（`wf_bd5d9d4f-2c7`）与 M0-006（`wf_6b00bd56-a7c`）两次 FULL 模式全程执行均 BLOCK 于 Machine Gate，两次都是 Max 亲写的 `record` 层被归因给执行手。修复需改治理保护路径 → Night Chain 禁止夜间自动修复治理缺陷。配套登记 **F-24（P1-BLOCKING-COUPLING）**：守卫同样缺少"SPEC↔提交覆盖率"对账，此缺陷**决定 F-20 的正确修法** → 融合设计见「FIX-GOV-001 融合设计」附录。
 - 模型政策：仅 `qmodel_38max`(Max) / `qfmodel`(Flash)；执行器 `.qoder/workflows/project-feature-delivery.js`；**全程无违规、无 fallback、无换模型**。
 - 串行策略（§18）：夜间默认串行；进度文件在 Workflow 启动前提交，仅在 TASK_PASS 后更新（§116/§117）。
+
+
+## FIX-GOV-001-R1（人工授权治理修复：**未封存**，卡在独立 Verify；2026-10-08T11:05Z，HEAD `77fdb32`）
+
+- **机器证据（本 Orchestrator 于记账前复跑）**：`node .qoder/workflow-state/dryrun-harness.mjs test` → `REGRESSION: 115/115 passed`、exitCode 0；`SCENARIO_ROSTER: OLD_SCENARIO_COUNT=106 NEW_SCENARIOS_ADDED=9 TOTAL_SCENARIOS=115`；`OLD_EXPECTATION_DIGEST=cecf72bcb036d66b319f6dfd8c77d119bf2a4bdd8a63fea913394bfb0272a7bf`（与工作区版本及 `git show 77fdb32` 侧同法计算逐字节相等 ⇒ A1「断言语义零改动」机器证明）。
+- **独立 `qmodel_38max` Review = PASS**：runId `wf_375e92e7-2b8` / taskId `wf-f131bca2-d3c`，Q1..Q11 全 YES、0 blocker、6 条 non-blocking notes。逐条核实了：C2 精确匹配保留（d3-10 命令仍与 `MANDATORY_TESTS[0]` 字节相同且仍被拦）、旧跨层子串对账整段删除（Grep `indexOf(m)` 无残留）、对账只发生在 gateId 层、`validateGateSpec` 在任何实施 Agent 之前（d6-02/09/12 实测 `gateCalls=0`）、三类攻击路径均被拦（未声明 gateId／顶替会绿命令／沉默省略）、四个 `runMachineGate` 调用点全部覆盖且 `:5432` 破坏扫描仍排在最前、无隐藏 required→record 削弱、D1–D5 全数原样通过。
+- **独立 `qmodel_38max` Verify = 未运行**：两次尝试（`1791457040380`、`1791457150414`）同一错误 "You've reached your credit usage limit"。绝不以 `qfmodel` 代替（D3 降级须人工显式授权；Night Chain 禁止自动降级）。
+- **新增 9 条 d6 场景**：d6-01 前缀不误伤（F-20 哨兵，TASK_PASS）｜d6-02 kind 非法、d6-09 声明缺失、d6-12 gateId 重复 → `GATE_SPEC_MALFORMED` 且零实施 Agent｜d6-03 省略 required、d6-04 省略"本会红"的 record → `BLOCKED_GATE_COMMAND_NOT_EXECUTED`｜d6-05 未声明 gateId、d6-06 顶替成另一条会绿命令 → `GATE_COMMAND_NOT_DECLARED`｜d6-13 FULL 下 required→record → `GOVERNANCE_POLICY_VIOLATION`。
+- **F-27（有意保留的残余面）**：Max 若把本应 required 的目标测试声明成 `kind=record`，机器层不再跨层字符串捕获，改由 Review/Verify 的 blocker 类 `REQUIRED_GATE_MISDECLARED_AS_RECORD` / `GATE_CONTRACT_UNDER_DECLARED` 拦截（人工授权 §4-A3 明确要求解耦，不可两头都要）。Review 判定"可接受、无需上报升级"。
+- **F-28（本次自纠的干跑器缺陷）**：`dryrun-harness.mjs` 语法临时文件用固定名 `pfd-wrapped-check.mjs` 并在 `finally` 删除 —— 并发调用互相删除对方临时文件，产生**假 SYNTAX_FAIL**。已改为按 pid 命名，并以两条 suite 并发（各 115 PASS）复验。
+- **工作区状态**：仅两个授权治理文件为 `M`；`deliverables/baseline/INTEGRATION_BASELINE.md`、`SECURITY_BASELINE.md`、`docs/qgraphflow/dialogue-turn-sequence/` 为 pre-existing 未跟踪内容，未修改、未暂存、未归属本任务。
 
 ## Pre-existing untracked（§8，PRE_EXISTING_UNCHANGED）
 
