@@ -2,8 +2,8 @@
   "goalStartedAt": "2026-10-06T19:03:00Z",
   "goalObjective": "Autonomous Delivery Orchestrator: M0 -> M0 Gate -> ... -> M10 -> M10 Gate -> Release Gate -> PROJECT_READY (no fake completion; stop at PAUSED_FOR_HUMAN or BLOCKED if unsafe).",
   "currentMilestone": "M0",
-  "currentTask": "M0 DAG 全绿，待 Milestone Gate（需 HD-N-04/HD-N-05 人工授权）",
-  "goalStatus": "M0-DAG-COMPLETE-PENDING-MILESTONE-GATE",
+  "currentTask": "M0 DAG 全绿（8/8 TASK_PASS），待 Milestone Gate（需 HD-N-04/HD-N-05/HD-N-09 人工裁决）",
+  "goalStatus": "PAUSED_FOR_HUMAN_AT_M0_MILESTONE_GATE",
   "lastSafeCommit": "ed36481",
   "currentHead": "ed36481",
   "headPointerNote": "账本的 lastSafeCommit/currentHead 在写入时点是真相；紧随其后的记账提交无法自引用，故以 git log -1 为准。",
@@ -861,6 +861,17 @@
       "proposedFix": "候选 FIX-GOV-005：Task Spec 生成阶段对『前序任务终态』类断言必须引用已封存交付物的 file:line 而非会话记忆；下游 OPS-002/SEC-003 的 SPEC 先修正这两处描述。",
       "status": "OPEN-BACKLOG",
       "id": "F-52"
+    },
+    "F-53": {
+      "at": "2026-10-09T20:54:35Z",
+      "severity": "P3-PROCESS",
+      "foundBy": "Orchestrator 自查（账本自洽性修订批：逐字段核对 fixGov001R1 与 humanDecisionsRequired，而非只追加新行）",
+      "title": "同一验收事件在账本内留下三处互相矛盾的字段，且两行 attempt 时间倒序",
+      "detail": "FIX-GOV-001-R1 的独立 Verify 成功后，`fixGov001R1.status` 改为 SEALED-TASK_PASS、`sealedCommit/sealedAt/taskPassFormula` 均已落账，但 (1) `maxVerify.ran` 仍为 false、`verdict` 仍为 null、`runId` 仍指向失败的 v1 run wf_375e92e7-2b8；(2) `verifyAttempts[3]` 停在 outcome=IN_PROGRESS（at 2026-10-09T14:28:05Z），而其后的 `verifyAttempts[4]` 记 outcome=TASK_PASS 却标注 at 2026-10-09T14:11Z —— 同一次 run wf_3855e53c-a89 的两行时间倒序；(3) `humanDecisionsRequired[HD-N-01].decisionState` 仍为 GRANTED-AND-EXECUTED-EXCEPT-INDEPENDENT-VERIFY、`resolvedAt` 仍为 2026-10-08T11:05Z，note 末尾仍写\"未封存、005-008 前置阻塞尚未解除\"。三处都指向\"缺最后一步验收\"，与同一文件里 taskPassFormula.INDEPENDENT_MAX_VERIFY_TASK_PASS 与 git 里 d2d7ddb 的存在直接冲突。根因与 F-25 同族：账本按\"追加新字段\"演进，成功事件到来时只写了新增块，没有回改旧的否定字段；14:11Z 这类分钟精度转写值与 14:28:05Z 这类 date -u 机器值混用，使顺序无法判定。",
+      "impact": "账本是机器真相。任何只读 maxVerify / HD-N-01 / verifyAttempts 尾行的下游（人工复审、续跑编排、Milestone Gate 证据核对）都会得出\"Fix 未验收、M0-005..008 仍被阻塞\"的错误结论，进而可能重复启动已完成的任务或误判 M0 未达 Exit。",
+      "proposedFix": "候选 FIX-GOV-006：账本写入脚本对\"状态跃迁\"必须做**同字段回写**（写入前扫描与新事实矛盾的既有布尔/枚举字段并置 superseded*，保留原文），且所有时间字段只能来自 `date -u` argv 守卫（禁止分钟精度转写）；对同一 runId 的 attempt 行按机器时间强制单调，违序即 die() 零写入。",
+      "status": "OPEN-BACKLOG",
+      "id": "F-53"
     }
   },
   "humanDecisionsRequired": [
@@ -868,14 +879,30 @@
       "id": "HD-N-01",
       "decision": "Fix the guard/Gate-Schema conflict (F-20) in .qoder/workflows/project-feature-delivery.js: choose repair A (guard validates an explicit tier field instead of substring-matching MANDATORY/REGRESSION strings), B (SPEC gains MACHINE_GATE_COMMANDS[].tier and MANDATORY_TESTS becomes a semantic-only list), or C (keep guard as-is and redefine MANDATORY_TESTS as must-pass only — evaluated by the night orchestrator, mechanically viable, deliberately NOT taken unattended; see findings.F-20.candidateRepairs_C)",
       "blocks": "ALL remaining M0 baseline tasks (M0-005/006/007/008) and therefore M0 MILESTONE_PASS",
-      "note": "2026-10-08T07:52Z 二次更新：候选 A/B 单独实施会削弱门禁（F-24）；而**我上一轮给出的融合设计自身也有实施级缺陷（F-26）** —— 原判据会让 44 条 TASK_PASS 断言转红。现设计已修正为 amendmentR1（A1–A6）：断言不动、fixture 迁移、覆盖率只认 gateId、SPEC 完备性前移到 Max 侧。成本上修至 1.5~2 开发日。 2026-10-08：人工选择 amendmentR1（显式否决旧版 FIX-GOV-001）。实施完成、机器 115/115 全绿、独立 qmodel_38max Review PASS(0 blockers)；独立 qmodel_38max Verify 两次尝试均被账户 credit 上限拦下（见 findings.F-29）⇒ 未封存、M0-005/006/007/008 的前置阻塞尚未解除（缺最后一步验收，非缺代码）。",
-      "decisionState": "GRANTED-AND-EXECUTED-EXCEPT-INDEPENDENT-VERIFY",
-      "resolvedAt": "2026-10-08T11:05Z"
+      "note": "2026-10-08T07:52Z 二次更新：候选 A/B 单独实施会削弱门禁（F-24）；而**我上一轮给出的融合设计自身也有实施级缺陷（F-26）** —— 原判据会让 44 条 TASK_PASS 断言转红。现设计已修正为 amendmentR1（A1–A6）：断言不动、fixture 迁移、覆盖率只认 gateId、SPEC 完备性前移到 Max 侧。成本上修至 1.5~2 开发日。 2026-10-08：人工选择 amendmentR1（显式否决旧版 FIX-GOV-001）。实施完成、机器 115/115 全绿、独立 qmodel_38max Review PASS(0 blockers)；独立 qmodel_38max Verify 两次尝试均被账户 credit 上限拦下（见 findings.F-29）⇒ 未封存、M0-005/006/007/008 的前置阻塞尚未解除（缺最后一步验收，非缺代码）。 ｜ 2026-10-09T20:54:35Z 订正（F-25 口径：原文保留于 superseded* 字段）：独立 qmodel_38max Verify 已在 v2 脚本 runId wf_3855e53c-a89 下取得 **TASK_PASS**，两治理文件封存为 d2d7ddb（%cI=2026-10-09T23:41:17+09:00，UTC 2026-10-09T14:41:17Z）。\"EXCEPT-INDEPENDENT-VERIFY / 未封存 / 005-008 前置阻塞\"均为被后续真实执行推翻的旧状态。M0-005..008 已全部重跑 TASK_PASS；本 HD 原阻塞面现由 HD-N-04 / HD-N-05 / HD-N-09 承担。",
+      "decisionState": "GRANTED-EXECUTED-VERIFIED-AND-SEALED",
+      "resolvedAt": "2026-10-09T14:41:17Z",
+      "supersededDecisionState": "GRANTED-AND-EXECUTED-EXCEPT-INDEPENDENT-VERIFY",
+      "supersededResolvedAt": "2026-10-08T11:05Z",
+      "sealedAs": {
+        "commit": "d2d7ddb",
+        "commitIso": "2026-10-09T23:41:17+09:00",
+        "commitUtc": "2026-10-09T14:41:17Z",
+        "files": [
+          "project-feature-delivery.js",
+          "dryrun-harness.mjs"
+        ],
+        "ancestryVerifiedAt": "2026-10-09T20:54:35Z",
+        "note": "封存时刻以 git %cI 为准（机器可核）。Verify 完成于该时刻之前，但账本内两处候选值 14:28:05Z(IN_PROGRESS) / 14:11Z(TASK_PASS) 顺序矛盾 ⇒ 不择一伪造，见 F-53。"
+      }
     },
     {
       "id": "HD-N-02",
       "decision": "Ratify or reject keeping deliverables/baseline/INTEGRATION_BASELINE.md (untracked, 56ad8639…, not TASK_PASS) as the M0-005 record",
-      "blocks": "M0-005 closure"
+      "blocks": "M0-005 closure",
+      "decisionState": "SUPERSEDED-BY-RERUN (no human ruling needed)",
+      "resolvedAt": "2026-10-09T20:51:18Z",
+      "resolution": "After FIX-GOV-001-R1 sealed d2d7ddb, M0-005 was fully re-run to five-criterion TASK_PASS and its deliverable committed as 317341b. The original question (can an uncommitted evidence file count as a task) no longer exists."
     },
     {
       "id": "HD-N-03",
@@ -909,7 +936,28 @@
       "decision": "认可 M0-005/M0-006 两份未跟踪交付物（INTEGRATION_BASELINE.md 29672B、SECURITY_BASELINE.md 97758B）在 F-20 修复后以\"内容不重跑即复用\"的方式补审提交，还是要求 guard 修复后整任务重跑（约 40~60 分钟/任务，内容会重新生成）",
       "blocks": "夜间产出物是否成为正式基线；M0 Milestone Gate 的证据来源",
       "rationale": "两份文档均由 FULL 模式 Max SPEC + qfmodel 实施产出、D4 Task Delta 干净、Orchestrator 已逐条取证；唯一失败原因是治理脚本自身的 F-20 矛盾，与内容质量无关。但按 90-quality-gates，缺 MACHINE_GATE_PASS/Review/Verify 判据即不得记 TASK_PASS —— 因此它们现在是\"证据\"，不是\"通过的任务\"。",
-      "raisedAt": "2026-10-07T21:05Z"
+      "raisedAt": "2026-10-07T21:05Z",
+      "decisionState": "SUPERSEDED-BY-RERUN (no human ruling needed)",
+      "resolvedAt": "2026-10-09T20:51:18Z",
+      "resolution": "Both baselines were re-run as whole tasks rather than reused: M0-005 -> 317341b, M0-006 -> 8c81df5 (HIGH risk, dual independent Review A+B both PASS). SECURITY_BASELINE.md rerun version = 602 lines / 94736 B / sha256 65aa374df9b06ae0f88cd1277fde6926176908b90ffbc305264194c639cc0370."
+    },
+    {
+      "id": "HD-N-09",
+      "decision": "Ruling on the M0-008 catalog gate wording. docs/workflow/TASK_CATALOG.md:29 requires \"docker build exitCode=0\"; measured reality is `docker compose config` AND `build` both exit 1 with \"project name must not be empty\" (compose derives the project name from this repo directory, whose name is non-ASCII, and the file declares no top-level `name:`). Structurally unreachable in this environment => a config defect (F-48), not an implementation failure. Choose one: (A) do FIX-DEP-01 first, then re-run M0-008 build gate so the catalog requirement holds as written; (B) have Max rewrite that catalog row at a governance stage to \"build availability recorded honestly\", letting M0-008 stand on current evidence; (C) judge the M0 Milestone Gate MILESTONE_BLOCKED with F-48 as the sole blocker. [2026-10-09T20:55:52Z 订正] 选项 (A) 提到的 FIX-DEP-01 是**建议编号**，catalog 中不存在（已 grep HEAD 版本核实 0 命中），写入目录本身即需 HD-N-04；其技术内容 = compose 顶层 name 或 COMPOSE_PROJECT_NAME + 移除 obsolete version 键（DEPLOY_BASELINE.md §A.4 三重根因证据）。",
+      "blocks": "M0 MILESTONE_PASS; also OPS-002 / SEC-003 inputs and Release Gate items 9 (Docker build) and 10 (deployment smoke)",
+      "raisedAt": "2026-10-09T20:51:18Z",
+      "evidence": {
+        "deliverableCommit": "ed36481",
+        "runId": "wf_dfb3e8e5-ed5",
+        "finding": "F-48",
+        "refusal": "The executor did NOT pass -p/--project-name to make the gate go green (DEPLOY_BASELINE.md:315) and recorded exit 1 as a gateId-reconciled record-tier command."
+      },
+      "autonomousChainStance": "NOT self-selected: docs/workflow/** is a governance path the implementer chain may not write, and no gate wording may be relaxed from the implementation side.",
+      "numberProvenance": {
+        "FIX-DEP-01": "PROPOSED id — grep of docs/workflow/TASK_CATALOG.md (HEAD version) returns 0 hits; landing it in the catalog is itself HD-N-04. Substance = add top-level `name: aiear` (or COMPOSE_PROJECT_NAME) and drop the obsolete `version` key.",
+        "OPS-002 / SEC-003": "verified existing catalog rows (deps include M0-008): OPS-002=in catalog SEC-003=in catalog",
+        "checkedAt": "2026-10-09T20:55:52Z"
+      }
     }
   ],
   "pendingFixTasks": {
@@ -1186,8 +1234,8 @@
       "attempts": 1
     },
     "maxVerify": {
-      "verdict": null,
-      "ran": false,
+      "verdict": "TASK_PASS",
+      "ran": true,
       "runId": "wf_375e92e7-2b8",
       "workflowTaskId": "wf-f131bca2-d3c → 重试 wf-fb9eafba-b21",
       "error": "You've reached your credit usage limit. Please upgrade your subscription plan to get more resources.",
@@ -1203,7 +1251,28 @@
           "note": "resumeFromRunId 只重跑该调用（Review 命中缓存），2.3s 内同一错误 ⇒  blocker 为当前有效状态而非瞬时抖动"
         }
       ],
-      "cause": "账户级 credit 用量上限（外部计费状态），非模型政策违规、非代码缺陷"
+      "cause": "账户级 credit 用量上限（外部计费状态），非模型政策违规、非代码缺陷",
+      "supersededSnapshot": {
+        "ran": false,
+        "verdict": null,
+        "runId": "wf_375e92e7-2b8",
+        "cause": "账户级 credit 用量上限（外部计费状态），非模型政策违规、非代码缺陷"
+      },
+      "completedBy": {
+        "runId": "wf_3855e53c-a89",
+        "script": "fix-gov-001-r1-review-verify-v2（限窗 ≤200 行 + 逐字行锚点；Review→Verify 串行）",
+        "model": "qmodel_38max",
+        "sealCommit": "d2d7ddb",
+        "sealCommitUtc": "2026-10-09T14:41:17Z",
+        "fiveCriteria": {
+          "MACHINE_GATE_PASS": "115/115 exitCode 0 (Verifier re-ran; digest recomputed from baseline blob == cecf72bc...)",
+          "INDEPENDENT_MAX_REVIEW_PASS": "qmodel_38max, Q1..Q11 all YES, 0 blockers, 9 non-blocking notes, aborted=false",
+          "INDEPENDENT_MAX_VERIFY_TASK_PASS": "qmodel_38max, verdict TASK_PASS, aborted=false, 9 spotChecks all matchesClaim=true",
+          "TASK_DELTA_PASS": "git status --porcelain == exactly the two authorized governance files",
+          "GOVERNANCE_GUARD_PASS": "HD-N-01 amendmentR1 authorization; :5432 zero contact; no business file touched"
+        }
+      },
+      "creditCeilingHistoryRetained": "上方 attempts/error/cause 保留 2026-10-08 的 credit 拦死与 v1 传输失败（F-29/F-30），未删除。v1 失败的根因经 v2 单变量差异确认为 brief 要求整读 178KB+130KB 两文件，非实现质量、非额度。"
     },
     "notSealedBecause": null,
     "uncommittedWorktree": [
@@ -1307,7 +1376,7 @@
     },
     "caveat": "快照在本账本写盘之前枚举，可能含 TASK_LEDGER.json/GOAL_PROGRESS.md 自身的上一版哈希（自指项）；后续任务的 pre-existing 判据只取 treeUnits 与非记账路径。"
   },
-  "pausedReasonCurrent": null,
+  "pausedReasonCurrent": "M0 基线 DAG 8/8 TASK_PASS，但 Milestone Gate 的 Exit 条款欠三项人工裁决：HD-N-04（向 docs/workflow/TASK_CATALOG.md 写入 FIX-*/SEC-*/OPS-*/PRIV-* 行，治理写）、HD-N-05（基线文档 8 vs 7 口径）、HD-N-09（M0-008 的 docker build 门禁口径 甲/乙/丙）。非模型不可用、非配额、非环境阻塞。自治链无权改 docs/workflow/**，亦不自选口径。",
   "m005LatestRun": {
     "taskId": "M0-005-integration-test-baseline",
     "runId": "wf_5a685efc-fc6",
@@ -1700,5 +1769,6 @@
     "totalToolCalls": 158,
     "durationMs": 2196279,
     "failures": []
-  }
+  },
+  "goalStatusSuperseded": "M0-DAG-COMPLETE-PENDING-MILESTONE-GATE"
 }

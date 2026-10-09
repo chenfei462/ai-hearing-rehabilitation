@@ -1,10 +1,15 @@
 # GOAL_PROGRESS — Autonomous Delivery Orchestrator
 
-> **🟡 前置条件只剩最后一步（2026-10-08T11:05Z，HD-N-01 已执行但未封存）**：**FIX-GOV-001-R1** 已在两个授权治理文件里实施完毕（`.qoder/workflows/project-feature-delivery.js` + `.qoder/workflow-state/dryrun-harness.mjs`），机器证据 `REGRESSION: 115/115 passed`、既有 106 条断言摘要逐字节未变，独立 `qmodel_38max` **Review = PASS（Q1..Q11 全 YES，0 blocker）**。
-> **但独立 `qmodel_38max` Verify 两次尝试均被账户 credit 用量上限直接拦死**（`agent[2] max-verify-r1 failed`，第二次经 `resumeFromRunId` 只重跑该调用，2.3s 内同一错误）⇒ 按 §27 该 Fix **不具备 PASS 资格，因此不执行 §28 封存**。改动完整留在工作区，HEAD 仍为 `77fdb32`，未 push / merge / rebase / reset / clean / stash。
+> **🟢 当前状态（2026-10-09T20:43Z 入账 / 记账 commit `37e0c58`）：FIX-GOV-001-R1 已独立 Verify 并封存为 `d2d7ddb`；M0 基线 DAG 8/8 全绿（M0-001..M0-008 均五判据 TASK_PASS）；停在 M0 Milestone Gate 门前，等待人工裁决 HD-N-04 / HD-N-05 / HD-N-09。**
+> 门禁契约已在 4 次真实执行中现场验证：M0-005（declared 9 == submitted 9）、M0-006、M0-007（declared 8 == submitted 8，required 6/6）、M0-008（declared 10 == submitted 10，required 6/6 + record 4/4，其中 `docker compose config/build` 真实 exitCode=1 原样记录、未降级未绕过）。
+> 交付物：`REPO_INVENTORY.md`/`BACKEND_TEST_BASELINE.md`（M0-001/002）、`FRONTEND_BASELINE.md`（003）、`DB_API_BASELINE.md`（004）、`INTEGRATION_BASELINE.md`（005）、`SECURITY_BASELINE.md`（006）、`PERF_BASELINE.md`（007）、`DEPLOY_BASELINE.md`（008），提交 sha 见 `TASK_LEDGER.json.taskCommits`。
+> **需人工的新裁决 = HD-N-09**：`docs/workflow/TASK_CATALOG.md:29` 对 M0-008 要求『docker build exitCode=0』，而本轮实测该命令在本仓库路径下结构性不可达（compose 项目名为空，`PROJECT_PATH` 派生自中文目录名）。三种口径（甲/乙/丙）见「M0-008」节 E 小节，自治链不自选、无权改 `docs/workflow/**`。
+>
+> ~~🟡 前置条件只剩最后一步（2026-10-08T11:05Z，HD-N-01 已执行但未封存）~~ —— 以下为该时刻的**历史记录原文**，其"未封存/禁止重启 005-008"结论已被后续真实执行覆盖；原文完整保留于下方「FIX-GOV-001-R1（人工授权治理修复…）」与「FIX-GOV-001-R1 封存 + M0-005 首次实战 TASK_PASS」两节，不做删除。
+> **FIX-GOV-001-R1** 已在两个授权治理文件里实施完毕（`.qoder/workflows/project-feature-delivery.js` + `.qoder/workflow-state/dryrun-harness.mjs`），机器证据 `REGRESSION: 115/115 passed`、既有 106 条断言摘要逐字节未变，独立 `qmodel_38max` **Review = PASS（Q1..Q11 全 YES，0 blocker）**。
+> **但独立 `qmodel_38max` Verify 两次尝试均被账户 credit 用量上限直接拦死**（`agent[2] max-verify-r1 failed`，第二次经 `resumeFromRunId` 只重跑该调用，2.3s 内同一错误）⇒ 按 §27 该 Fix **不具备 PASS 资格，因此不执行 §28 封存**。改动完整留在工作区，HEAD 仍为 `77fdb32`，未 push / merge / rebase / reset / clean / stash。**（订正：额度恢复后已重跑独立 Verify = TASK_PASS，封存 `d2d7ddb`。）**
 > 修复本身已生效的语义（供人工审阅 diff）：Machine Gate 与 TASK_SPEC 的唯一对账键改为 **`MACHINE_GATE_COMMANDS[].gateId`**（声明冻结于 Implement 之前；执行手无权增删 gateId、无权改 `kind`、不得把 required 提交为 record）；`MANDATORY_TESTS`/`REGRESSION_TESTS` 退回**语义清单**，不再与 shell 命令字节串跨层比对（这正是 F-20 假红的根因，d6-01 为回归哨兵）；新增终态 `GATE_SPEC_MALFORMED`（Implement 前 fail-closed，零实施 Agent）／`BLOCKED_GATE_COMMAND_NOT_EXECUTED`（沉默省略）／`GATE_COMMAND_NOT_DECLARED`（未声明 gateId 或顶替成会绿命令）。
-> **解锁顺序**：恢复 Max 额度 → `Workflow({scriptPath:'.qoder/sessions/a77db379-ec91-434c-a612-8a7153485516/workflows/scripts/fix-gov-001-r1-review-verify-wf_375e92e7-2b8.js', resumeFromRunId:'wf_375e92e7-2b8'})`（Review 命中缓存，仅 Verify 实跑）→ TASK_PASS → 精确封存两文件 → 才按 DAG 推进 M0-005 → M0-006 → M0-007/M0-008 → **M0 Milestone Gate**（Exit 仍需 HD-N-04 治理写 Catalog）。
-> **M0-005/006/007/008 仍禁止重启**：不是因为 Fix 没写，而是因为最后一步独立验收缺失、变更未封存；且任何后续 Task 的 Review/Verify 同样需要 `qmodel_38max`。
+> 当时的解锁顺序（已按此执行到底）：恢复 Max 额度 → resume 该 run 只补 Verify → TASK_PASS → 精确封存两文件 → 按 DAG 推进 M0-005 → M0-006 → M0-007/M0-008 → **M0 Milestone Gate**（Exit 仍需 HD-N-04/HD-N-05/HD-N-09 人工裁决）。
 >
 > 人类可读进度日志。每完成一个 Task 更新一次。禁止记录任何 Secret 真实值。
 > 机器可读状态见同目录 `TASK_LEDGER.json`。
@@ -202,6 +207,8 @@
 
 ## 已完成 Task
 
+> 本节详录 M0-001..M0-004；M0-005..M0-008 的完整判据与交付物各自成节（见上文「M0-006/M0-007/M0-008 … TASK_PASS」与「FIX-GOV-001-R1 封存 + M0-005 首次实战 TASK_PASS」），提交 sha 汇总见「M0 DAG」表与 `TASK_LEDGER.json.taskCommits`。八项均 TASK_PASS。
+
 ### M0-001 — 仓库清单与真相基线文档
 - 状态：TASK_PASS
 - Commit：`abc6a78`
@@ -244,10 +251,12 @@
 | M0-002 | 后端测试基线 | P0 | M0-001 | TASK_PASS |
 | M0-003 | 前端构建基线 | P0 | M0-001 | TASK_PASS |
 | M0-004 | API/DB/迁移基线 | P0 | M0-001 | TASK_PASS（`a78b10f`，Critical Path） |
-| M0-005 | 集成测试基线 | P0 | M0-002,M0-004 | **BLOCKED（F-20 治理缺陷，未提交）** |
-| M0-006 | 安全基线 | P0 | M0-002 | BLOCKED（同 F-20，预测未执行） |
-| M0-007 | 性能基线 | P0 | M0-005 | BLOCKED（同 F-20 + dep 未 PASS） |
-| M0-008 | 部署基线 | P0 | M0-003,M0-004 | BLOCKED（同 F-20，预测未执行） |
+| M0-005 | 集成测试基线 | P0 | M0-002,M0-004 | TASK_PASS（`317341b`；guard 封存后重跑，五判据成立） |
+| M0-006 | 安全基线 | P0 | M0-002 | TASK_PASS（`8c81df5`，HIGH risk 双独立 Review A+B 均 PASS） |
+| M0-007 | 性能基线 | P0 | M0-005 | TASK_PASS（`7dcf2f8`，required 6/6 + record 4/4，读数不达标一律如实记录未改阈值） |
+| M0-008 | 部署基线 | P0 | M0-003,M0-004 | TASK_PASS（`ed36481`，required 6/6 + record 4/4；`docker compose` 真实 exit 1 记为 F-48 → **HD-N-09 待裁决**） |
+
+> M0-005..008 四行原为 `BLOCKED（F-20）`，那是 2026-10-08 的时点事实；HD-N-01 执行并封存 `d2d7ddb` 后已逐一重跑，上表现为当前真相，详细判据见各 Task 的 `## … TASK_PASS` 小节。Milestone Gate 的 M0 Exit 仍受 **HD-N-04 / HD-N-05 / HD-N-09** 人工裁决约束。
 
 ## M0-004（API/DB/迁移基线）— 历程：SPEC_CONFLICT×2 + 瞬时模型不可用 → relaunch #3 TASK_PASS
 
@@ -412,26 +421,27 @@ HEAD `1a62703`；staging 为空；工作树仅 `M deliverables/overnight/*`（Or
 
 **成本与净效果**：~~约 1 开发日（SPEC schema + 3 处提示词 + 守卫 + 覆盖率对账 + 8 场景）~~ ⇒ **因 F-26 上修为约 1.5~2 开发日**：真实变更面是 **2 个治理文件**（`project-feature-delivery.js` + `dryrun-harness.mjs`），含 1 个共享 `specObj`、2 个 `req()/rec()` 构造器、21 个门禁分支复核、22 个去重命令串的 gateId 映射、`d6-01..11` 共 11 条新场景。净效果 = **净收紧**：新增一条必然失败路径（省略），移除一条必然误报路径（诚实 record）。**风险点名**：若照 amendmentR1 之前的原设计落地，harness 会大面积转红，而"让它变绿"的压力极易诱导删掉 C3 或把 required 降级 —— 那才是门禁真正被削弱的一刻，故本修正与 C1–C5 同批交付。
 
-## Human Decisions Required（HD-N-01 … HD-N-08，夜间一律不自动批准）
+## Human Decisions Required（HD-N-01 … HD-N-09，夜间一律不自动批准）
 
 | ID | 需人工决策 | 阻塞范围 |
 |---|---|---|
-| HD-N-01 | 修复 F-20：`.qoder/workflows/project-feature-delivery.js` 守卫（`:727-743`）与 Gate 契约（`:1798-1799`）互斥；三选一：**A** 守卫改为校验显式 tier 字段（不做字符串包含匹配）；**B** SPEC 增 `MACHINE_GATE_COMMANDS[].tier`，`MANDATORY_TESTS` 退为语义清单；**C** 保持守卫不动、把 `MANDATORY_TESTS` 语义从"必须执行"改为"必须通过"，基线探针移出该数组、仅由 ACCEPTANCE_CRITERIA + Review 约束。**21:14Z 更新**：A/B **单独**实施会削弱门禁 —— 省略成为零成本作弊（F-24），C 单独实施亦不可取；建议采纳上节**融合设计 C1–C5 + 回归 d6-01..d6-08**（含 A/B 的 tier 字段，另加 C3 覆盖率对账与 C4 归因修正）。**`09:16Z` 二次更新（F-26 自纠）**：该融合设计的 R1 原文**自身不可实施** —— C3 若按字符串清单对账会把 44 条 `TASK_PASS` 断言打成 BLOCK（实测声明项 `pytest backend/tests` 从未被 21 个门禁 fixture 中任何一个提交）。现按 `design.amendmentR1` A1–A6 执行：断言不动、fixture 迁移、覆盖率只认 `gateId`、SPEC 完备性前移到 Max 侧；成本上修 **1.5~2 开发日**，变更面含 `dryrun-harness.mjs` | **M0 全部剩余基线 Task（005/006/007/008）→ M0 MILESTONE_PASS** |
-| HD-N-02 | 追认或否决 `deliverables/baseline/INTEGRATION_BASELINE.md`（未跟踪，sha256 `56ad8639…8def`，非 TASK_PASS）作为 M0-005 记录 | M0-005 收尾 |
+| HD-N-01 | ~~修复 F-20~~ **已裁定并执行完毕（2026-10-09 封存 `d2d7ddb`）**：采纳 `design.amendmentR1`（A1–A6）—— 对账键改为 `MACHINE_GATE_COMMANDS[].gateId`，`MANDATORY_TESTS`/`REGRESSION_TESTS` 退为语义清单，覆盖率对账 + `GATE_SPEC_MALFORMED` 前置 fail-closed + 按 tier 作者归因。机器证据 `REGRESSION: 115/115`、既有 106 条断言摘要逐字节未变、独立 Review PASS + 独立 Verify TASK_PASS + Task Delta 恰为两文件。F-20 缺陷家族（guard/契约互斥）自此在 4 次真实基线 Task 中未再复发 | 已解除（原阻塞：M0 全部剩余基线 Task → M0 MILESTONE_PASS）。原三选一 A/B/C 论证与 F-24/F-26 两次上修完整保留于上方 findings 表（`F-20`/`F-24`/`F-26` 行）、「FIX-GOV-001 融合设计」附录及进度日志，未删除 |
+| HD-N-02 | ~~追认或否决 `deliverables/baseline/INTEGRATION_BASELINE.md`~~ **已由重跑消解（2026-10-09，无需裁决）**：F-20 封存后 M0-005 以完整五判据重跑 TASK_PASS，交付物单独封存为 `317341b`。原问题（未跟踪证据能否算任务）不复存在 | 已解除；仅剩历史留痕 |
 | HD-N-03 | 授权 FIX-INT-01/02 Scope（测试引擎/loop 生命周期 + dev 依赖 pin）以恢复 CI 同款集成 green | `TODO.md:40 集成测试通过`；CI postgres job 可信度 |
 | HD-N-04 | 批准向 `docs/workflow/TASK_CATALOG.md` 插入 FIX-* 行（治理写操作，无人值守期间越界） | M0 Exit 条款"P0 存量缺陷清单产出并插入 FIX-* 任务" |
 | HD-N-05 | 确认 M0 基线 Task 文档口径 8 vs 7（F-17） | M0 Exit 交付物清单 |
 | HD-N-06 | M2 Entry 需已批准的 KB ADR + 具备 pgvector 的镜像；M3 Entry 需人工确认许可；真实生产部署/发布/短信/密钥永远属 HUMAN_REQUIRED | M0 之后的一切 |
 | HD-N-07 | **优先处置三条已确证安全 P0**：SB-01 跨用户响应缓存 IDOR（`middleware/performance.py:111-131` 缓存键仅在 Bearer 头下含 user_id，`api/deps.py:16-20` 浏览器走 httpOnly Cookie → `/api/report/summary`、`/api/report/levels`、`/api/training/levels` 等 D 类健康数据 60s TTL 内跨用户命中同一缓存）、SB-03 CI 触发分支不符（`.github/workflows/ci.yml:4-7` 监听 `main`/`develop`，仓库实为 `master`+`feature/m0-baseline` ⇒ 全部安全/权限回归从未被 CI 执行；属治理路径，夜间禁改）、SB-06 硬件 9 端点仅认证无归属校验（`api/hardware.py:65…280`，`main.py:131` 已挂载，测试零覆盖）。另 SB-31 为**最高危写库面**：`main.py:46/49` lifespan 无条件 `init_database()`+`seed_data()`（无 DEBUG/ENVIRONMENT 守卫）+ `db/init_db.py:14-15` `Base.metadata.create_all` + 默认串指向身份未知且绑定 0.0.0.0 的 `:5432` ⇒ 一条 `uvicorn app.main:app` 即可 DDL+写种子+建可登录演示账号；修复前禁止任何"启动一次看看"式冒烟 | M0 之后的真实安全修复排期；Chain 无权改代码/`.github/**`/`.qoder/rules/**` |
-| HD-N-08 | **追认或否决两份未跟踪基线交付物**：`INTEGRATION_BASELINE.md`（29672 B / `56ad8639…8def`）与 `SECURITY_BASELINE.md`（97758 B / 592 行 / `72fd898f…34f7`，P0×7/P1×17/P2×11=35 条 + §12 列 14 项 `missing_evidence` 且规定"未取证不得记 OK"）——guard 修复后是"复用内容补审提交"还是"整任务重跑"（约 40~60 分钟/任务，内容会重新生成） | M0 Milestone Gate 的证据来源；二者现为**证据**而非"通过的任务"（缺 MACHINE_GATE_PASS/Review/Verify 判据） |
+| HD-N-08 | ~~追认或否决两份未跟踪基线交付物~~ **已由重跑消解（2026-10-09，无需裁决）**：guard 封存后 M0-005/M0-006 均**整任务重跑**（非复用补审），五判据成立后各自封存为 `317341b` / `8c81df5`；`SECURITY_BASELINE.md` 重跑版为 602 行 / 94736 B / sha256 `65aa374d…0370`。原"证据 ≠ 任务"的口径缺口已闭合 | 已解除 |
+| HD-N-09 | **M0-008 的 catalog 门禁口径裁决（新）**：`docs/workflow/TASK_CATALOG.md:29` 要求『docker build exitCode=0』，实测 `docker compose config` 与 `build` 在本仓库路径下均 **exit 1 / `project name must not be empty`**（中文目录名派生的 project name 非法；compose 无顶层 `name:`）⇒ 该要求在此环境下**结构性不可达**，不是实现失败。三择一：**(甲)** 先做 `FIX-DEP-01`（**建议编号，catalog 尚未占用 ⇒ 落库本身需 HD-N-04**；实为 compose 加顶层 `name: aiear` 或显式 `COMPOSE_PROJECT_NAME`，并移除 obsolete `version` 键 —— 根因三重证据见 `DEPLOY_BASELINE.md` §A.4）再复跑 M0-008 build 门禁，令 catalog 原要求成立；**(乙)** 由 Max 在治理阶段把该行改为"构建可用性如实记录"，M0-008 以现有证据直接计入；**(丙)** Milestone Gate 判 `MILESTONE_BLOCKED`，F-48 列为唯一阻塞项。**自治链不自选**（改 `docs/workflow/**` 属治理写，且任何口径都不得由实施侧自行放宽） | M0 MILESTONE_PASS 能否成立；OPS-002 / SEC-003 /  Release Gate 第 9、10 项证据 |
 
 ## 终态判定（诚实口径）
 
-- `GOAL_STATUS` = **PAUSED_FOR_HUMAN**（真实阻塞：F-20 治理缺陷；非模型不可用、非配额、非环境）。
-- `ENGINEERING_RELEASE_READY` = **NO**（M0 未 MILESTONE_PASS，M1+ 未启动；Release Gate 11 项证据均未采集）。
-  - `07:38Z` 追加环境事实：Docker 守护进程当前不可达 ⇒ 第 **9**（Docker build）与第 **10**（部署冒烟）项证据此刻**客观不可采**，与"未采集"并列记录；H-10 同因不可闭。已拒绝擅自启动 Docker（`:5432` 未知实例可能被 restart 策略复活）。
+- `GOAL_STATUS` = **PAUSED_FOR_HUMAN**（2026-10-09T20:43Z 口径更新）。真实阻塞已从"F-20 治理缺陷"上移为**人工裁决缺位**：M0 基线 DAG 8/8 TASK_PASS，但 Milestone Gate 的 Exit 条款要 `docs/workflow/TASK_CATALOG.md` 治理写入（HD-N-04）、基线文档口径确认（HD-N-05）与 M0-008 build 门禁口径（HD-N-09）；自治链无权改 `docs/workflow/**`，亦不自选口径。
+- `ENGINEERING_RELEASE_READY` = **NO**（M0 未 MILESTONE_PASS，M1+ 未启动）。Release Gate 11 项证据的当前覆盖：**第 6 项**（性能）已由 M0-007 采集，但为**进程内口径**（ASGITransport + sqlite 内存 + `_MemoryRedis`，零网络）且 `/api/metrics` 读数落在 401 错误路径（F-44）⇒ 不构成生产延迟证据；**第 9 项**（Docker build）已由 M0-008 真实尝试并 exit 1（F-48）⇒ 结论是"当前不可构建"，非"未采集"；其余 1/2/3/4/5/7/8/10/11 项仍为未采集或仅有基线侧证据。
+  - ~~`07:38Z` 追加环境事实：Docker 守护进程当前不可达~~ 已于 2026-10-09 由人工授权启动后解除（M0-005 的 postgres+redis 与 M0-008 的 compose 均为真实执行）；该历史条目保留作时间线证据。
 - `REAL_PRODUCTION_APPROVED` = **NO**（无真实人工批准，per D3 §8 恒 NO —— 这一项 NO 不属缺陷）。
-- 未达成目标**不伪造**：不以放宽 Gate、降级 required、skip 测试、自动切 FLASH_ONLY、改判据的方式换取"看起来通过"。
+- 未达成目标**不伪造**：不以放宽 Gate、降级 required、skip 测试、自动切 FLASH_ONLY、改判据的方式换取"看起来通过"。本轮的具体体现：M0-007 未动 `SAMPLE_COUNT=3` 与任何阈值（PF-03 仅记录）、M0-008 未给 compose 加 `-p` 绕过 project name 缺陷（F-48 以真实 exit 1 入档）、两次均未把红基线移出声明集。
 
 ## 进度日志
 
@@ -463,3 +473,10 @@ HEAD `1a62703`；staging 为空；工作树仅 `M deliverables/overnight/*`（Or
   (3) `status: 'TASK_PASS'` 断言共 **44 条** ⇒ 原 C3（按 SPEC 字符串清单做覆盖率对账）落地即大面积转红。**结论：我上一轮同时写下的 "C3" 与 "既有 106 条全保留" 两个承诺互斥，原设计不可实施。** 唯一站得住的保留项也顺带验证了：`d3-10` 的降级命令与 `MANDATORY_TESTS[0]` 逐字相等（`:949` vs `:454`），故 C2 精确匹配后反作弊断言不回退。
   产出 `design.amendmentR1`（A1 断言不变量 / A2 fixture 迁移 / A3 覆盖率只认 gateId / A4 SPEC 完备性 fail-closed 前移到 Max 侧 / A5 已验证 / A6 新增 `d6-09..11`），撤回不实口径并保留原文留痕，成本上修 1.5~2 开发日，并点名最危险的失败模式（harness 转红 → 压力之下删 C3 或降级 required = 门禁真被削弱）。
   口径说明：`TASK_LEDGER.json.pausedAt = 07:52Z` 是**最后一次状态变更**时刻（F-26 写入），非心跳值；本条 `09:16Z` 为记录时刻。树安全：本批仅改两个账本文件（findings 24→25，`FIX-GOV-001.status → DESIGNED-NOT-APPLIED (amended R1)`）；`.qoder/**` 治理文件与 `*.spec.json` 零改动（`git diff --name-only HEAD -- <治理路径>` 为空）；**未运行任何 DB/容器/网络命令**；`:5432` 零接触；qgraphflow 与两份基线交付物 SHA-256 复核不变；无 push/merge/rebase/tag。终点维持：**PAUSED_FOR_HUMAN**（HD-N-01 仍为唯一解锁点，且现已带可实施版本）。
+- 2026-10-09T14:31Z → 20:43:35Z（各批 `date -u` 权威值）— **HD-N-01 执行到底 + M0 基线 DAG 8/8 的真实推进（四批，明细见上方各 Task 小节）**：① 额度恢复后 `resumeFromRunId` 只补独立 `qmodel_38max` Verify = TASK_PASS，治理两文件封存 **`d2d7ddb`**；② M0-005 重跑 TASK_PASS → `317341b`；③ M0-006 重跑 TASK_PASS（HIGH risk，Reviewer A+B 彼此不可见结论、均 PASS）→ `8c81df5`；④ M0-007 → `7dcf2f8`、M0-008 → `ed36481`。新登记 **F-38..F-52**（含 F-44 错误路径延迟可"通过"阈值、F-48 compose 在本仓路径结构性不可构建、F-52 我自己写的 SPEC 摘要两处与已封存源文档不符）。每一批入账前均由 Orchestrator 独立复跑关键命令核实（perf 7 passed exit 0、全量 pytest 1 failed/231 passed exit 1、compose config/build 双双 exit 1、交付物字节与 SHA-256 重算）。
+  口径纪律：红基线一律 `EXECUTED_AND_RECORDED` 原样入档，**未**降级、**未**省略、**未**改阈值/采样数、**未**用 `-p` 绕过 compose 缺陷；`.qoder/**` 治理文件在 ①之后的四批 Task 中零改动。DB 安全：隔离端口，**`:5432` 全程零接触**。终点：**M0 DAG 8/8，PAUSED_FOR_HUMAN**（阻塞上移至 HD-N-04 / HD-N-05 / HD-N-09）。
+- 2026-10-09T20:51:23Z → 20:54:35Z — **账本自洽性修订批（零治理改动，仅两个账本文件）**：把仍停留在"HD-N-01 未封存 / 005-008 BLOCKED"的旧口径更新为当前真相。
+  (1) **人类可读侧**：顶部横幅改写为"8/8 TASK_PASS，停在 Milestone Gate 门前"（旧🟡原文以删除线保留并指向历史小节，不删）；M0 DAG 表 M0-005..008 四行改为 TASK_PASS + 封存 commit；「已完成 Task」补指针说明；Human Decisions 表 HD-N-01 记"已裁定并执行、封存 `d2d7ddb`"、HD-N-02/HD-N-08 记"由整任务重跑消解，无需裁决"、新增 **HD-N-09**；终态判定把 Release Gate 第 6/9 项证据从"未采集"订正为"已采集但口径不足 / 当前不可构建"。
+  (2) **机器侧（带 `date -u` argv 守卫 + double-apply 拒绝的脚本写入）**：`humanDecisionsRequired` 9 条（HD-N-01 状态跃迁 + HD-N-02/08 消解 + HD-N-09）；`currentTask` / `pausedReasonCurrent` 改写。随后逐字段自查发现**三处互相矛盾的历史字段**并登记 **F-53（P3-PROCESS，自报）**：`fixGov001R1.maxVerify` 在 Verify 成功后仍写 `ran:false / verdict:null / runId=失败的 v1 run`、`verifyAttempts` 中 IN_PROGRESS 行与 TASK_PASS 行**时间倒序**、`HD-N-01.decisionState` 仍写"EXCEPT-INDEPENDENT-VERIFY"。根因与 F-25 同族：账本只追加新块、不回改旧否定字段，且机器时间戳与分钟精度转写值混用。已按"原文保留于 `superseded*` + 新字段指向 v2 run `wf_3855e53c-a89` = TASK_PASS + `sealedAs{commit:d2d7ddb, commitUtc:2026-10-09T14:41:17Z}`"的方式订正，`goalStatus` 改为 **`PAUSED_FOR_HUMAN_AT_M0_MILESTONE_GATE`**（旧值保留于 `goalStatusSuperseded`）。
+  (3) **本批我自己踩到的两个记录缺陷，如实上报**：① 改 DAG 表时把 M0-005 的 Deps 误写为 `M0-001`，与 `TASK_CATALOG.md:26`（`M0-002,M0-004`）不符，提交前按 catalog 与账本双真相回改，最终文本无误；② 账本脚本打印的 "bytes A -> B" 中 A 取的是 `readFileSync` 的 **UTF-16 字符数**、B 是 `statSync().size` 的**字节数**，二者不可比 —— 我据此写进上一条日志的"字节 116858 → 154446"是误导数字，权威实测为 **151889 B（`37e0c58` 版本）→ 159535 B（本批后）**；该显示缺陷并入 F-53 的 proposedFix（时间/大小字段一律取机器单一真相）。
+  本批事实锚点（全部现场重取，非引用旧数字）：`git log -1` = `37e0c58`；`d2d7ddb` 经 `merge-base --is-ancestor` 验证在 HEAD 历史中且 `--stat` 恰含两治理文件；`taskCommits` 八项齐备、`blockedTasks = 0`、`findings = 52`；`SECURITY_BASELINE.md@8c81df5` = 602 行 / 94736 B / sha256 `65aa374d…0370`；`DEPLOY_BASELINE.md:315` 记录"未使用 `-p` 等绕过参数"；`backend/tests/test_performance.py` 与 `docker-compose.yml` 工作树零 diff。树安全：仅 `deliverables/overnight/{TASK_LEDGER.json,GOAL_PROGRESS.md}` 两文件被改；`.qoder/**` 治理文件与 `*.spec.json` 零改动；qgraphflow 未跟踪内容未触碰、未暂存；**`:5432` 零接触**、未创建/停止任何容器、无 push/merge/rebase/tag/reset/clean/checkout。终点维持：**PAUSED_FOR_HUMAN**（待 HD-N-04 / HD-N-05 / HD-N-09 人工裁决）。
