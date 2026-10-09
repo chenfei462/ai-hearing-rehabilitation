@@ -2,10 +2,10 @@
   "goalStartedAt": "2026-10-06T19:03:00Z",
   "goalObjective": "Autonomous Delivery Orchestrator: M0 -> M0 Gate -> ... -> M10 -> M10 Gate -> Release Gate -> PROJECT_READY (no fake completion; stop at PAUSED_FOR_HUMAN or BLOCKED if unsafe).",
   "currentMilestone": "M0",
-  "currentTask": "下一个：M0-008（deps=[\"M0-003\",\"M0-004\"]）",
-  "goalStatus": "RUNNING-M0-DAG",
-  "lastSafeCommit": "7dcf2f8",
-  "currentHead": "7dcf2f8",
+  "currentTask": "M0 DAG 全绿，待 Milestone Gate（需 HD-N-04/HD-N-05 人工授权）",
+  "goalStatus": "M0-DAG-COMPLETE-PENDING-MILESTONE-GATE",
+  "lastSafeCommit": "ed36481",
+  "currentHead": "ed36481",
   "headPointerNote": "账本的 lastSafeCommit/currentHead 在写入时点是真相；紧随其后的记账提交无法自引用，故以 git log -1 为准。",
   "branch": "feature/m0-baseline",
   "modelPolicy": {
@@ -136,6 +136,18 @@
       "runId": "wf_cc12b79d-5be",
       "executionMode": "FULL",
       "verifiedBy": "Machine Gate(真实 exitCode) + 独立 Review A+B（HIGH risk 双独立） + 独立 Verify"
+    },
+    {
+      "id": "M0-008",
+      "title": "M0-008 部署/容器基线：docker compose build 实测 + 部署配置完整性只读审计（唯一产物 DEPLOY_BASELINE.md）",
+      "status": "TASK_PASS",
+      "commit": "ed36481",
+      "deliverables": [
+        "deliverables/baseline/DEPLOY_BASELINE.md"
+      ],
+      "runId": "wf_dfb3e8e5-ed5",
+      "executionMode": "FULL",
+      "verifiedBy": "Machine Gate(真实 exitCode) + 独立 Review A+B（HIGH risk 双独立） + 独立 Verify"
     }
   ],
   "blockedTasks": [],
@@ -149,7 +161,8 @@
     "M0-004": "a78b10f",
     "M0-005": "317341b",
     "M0-006": "8c81df5",
-    "M0-007": "7dcf2f8"
+    "M0-007": "7dcf2f8",
+    "M0-008": "ed36481"
   },
   "milestoneGateResults": {},
   "m0Dag": {
@@ -222,10 +235,12 @@
         "M0-004"
       ],
       "pri": "P0",
-      "status": "READY",
-      "note": "READY：deps M0-003+M0-004 均 TASK_PASS；原记录是『不启动以免重复已知墙』的推断（引用 blockedTasks[M0-005].machineProof，该条目现已随 M0-005 通过而移除），F-20 修复后此推断不再成立",
+      "status": "TASK_PASS",
+      "note": "TASK_PASS：required 6/6 exit 0、record 4/4 采集完成、REPAIR_CYCLES_USED=0、双独立 Review=[\"max-review\",\"max-review-b\"]、独立 Verify TASK_PASS；deliverable commit=ed36481",
       "priorBlockedNote": "deps satisfied (M0-003 + M0-004) but NOT launched: docker-build record shape is covered by blockedTasks[M0-005].machineProof (replicated guard -> BLOCKED). Launching would repeat a known wall at ~40-60 min/run with zero new information.",
-      "overrideAt": "2026-10-09T19:22:47Z"
+      "overrideAt": "2026-10-09T19:22:47Z",
+      "runId": "wf_dfb3e8e5-ed5",
+      "commit": "ed36481"
     }
   },
   "criticalPath": "M0-001 -> M0-004 -> KB-001 -> KB-002 -> KB-003 -> KB-004 -> ING-001 -> ING-005 -> ING-007 -> ING-008 -> ING-009 -> RAG-001 -> RAG-003 -> RAG-006 -> RAG-007 -> RAG-008 -> RAG-010 -> UI-001 -> EVAL-005 -> OPS-004",
@@ -796,6 +811,56 @@
       "proposedFix": "治理候选（并入 FIX-GOV-003 讨论）：基线/审计类 SPEC 强制要求『所有非门禁运行的失败必须标注 审计工具缺陷/非项目红 并附复跑证据』；门禁判定只认原样 required 命令的 exitCode。",
       "status": "OPEN-BACKLOG",
       "id": "F-47"
+    },
+    "F-48": {
+      "at": "2026-10-09T20:43:35Z",
+      "severity": "P0-DEPLOY-BLOCKER",
+      "foundBy": "M0-008 record 门禁 G-COMPOSE-CONFIG/G-BUILD（Orchestrator 于 2026-10-09 独立复现）",
+      "title": "docker compose 在本仓库路径下完全不可用：project name must not be empty（阻塞 OPS-002/SEC-003 全链）",
+      "detail": "`docker compose config --quiet` 与 `docker compose build` 均 exit 1，stderr 恒为『project name must not be empty』，并伴随『version attribute is obsolete』警告。三重根因证据（报告 §A.4）：(1) 工作目录名『听觉康复』非 ASCII，compose 无法从目录名推导项目名；(2) `grep -n '^name:' docker-compose.yml` exit 1 —— 无顶层 name:（obsolete `version:` 在 :6）；(3) 根 .env 的 11 个键名集合不含 COMPOSE_PROJECT_NAME。失败发生在项目名解析阶段，先于任何镜像/缓存构建 ⇒ 零副作用，但也意味着 catalog 对 M0-008 的原预期『docker build exitCode=0』在本路径下结构性不可达。附带事实：宿主无 compose 引用的 postgres:15-alpine tag（实测仅 16-alpine 与 pgvector pg15/pg16），修复项目名后首次 up 还会触发拉取。",
+      "proposedFix": "独立原子 fix 任务：docker-compose.yml 加顶层 `name: aiear`（或以 COMPOSE_PROJECT_NAME 显式注入）并移除 obsolete `version` 键；属配置改动，本基线任务无权实施。报告内对应 F-M0008-01/F-M0008-09。",
+      "status": "OPEN-BACKLOG (建议编号 FIX-DEP-01，待 HD-N-04 落库；OPS-002/SEC-003 的前置)",
+      "id": "F-48"
+    },
+    "F-49": {
+      "at": "2026-10-09T20:43:35Z",
+      "severity": "P1-CONFIG-DRIFT",
+      "foundBy": "M0-008 报告 F-M0008-02 + Orchestrator 源码独立核实",
+      "title": "健康检查路径四处同源失配：配置与文档全用 /api/health*，实际路由是 /health*",
+      "detail": "真实路由为 backend/app/api/health.py:14 `@router.get(\"/health\")` 与 :30 `/health/detailed`，且 backend/app/main.py:124 `include_router(health_router, ...)` 未加 prefix ⇒ 对外路径不含 /api。而 docker-compose.yml:39 的 healthcheck、backend/Dockerfile:30 的 HEALTHCHECK、deploy/serverless.yml:12 的发布核验说明、docs/runbook.md:9/:41-42 的冒烟探针四处全部指向 `http://localhost:8000/api/health`。配置级推论：backend 容器永不 healthy ⇒ depends_on 的 frontend 卡死，runbook 四条冒烟路径的第一条即失效。M0-004 的 DB_API_BASELINE.md:268-276 已记录该路由真实形态，本轮首次在部署侧坐实其后果。",
+      "proposedFix": "与 F-48 同批修复（统一 healthcheck 路径），或按 20-architecture.md 以 ADR 决定是否给健康路由加 /api 前缀（属公开 API 契约变更，需决策，不得由实施侧顺手改）。",
+      "status": "OPEN-BACKLOG (OPS-002 + SEC-003)",
+      "id": "F-49"
+    },
+    "F-50": {
+      "at": "2026-10-09T20:43:35Z",
+      "severity": "P1-SECRET-SURFACE",
+      "foundBy": "M0-008 报告 F-M0008-03/04/05（du/ls 只读实测）",
+      "title": "构建上下文与镜像层的秘密入层风险：三级 .dockerignore 全缺 + 两个 Dockerfile 均 COPY . .",
+      "detail": "`ls -la .dockerignore backend/.dockerignore frontend/.dockerignore` exit 2（三处均不存在，该失败本身即取证）。同时实测上下文内含 backend/.env（存在，本任务零值读取）、backend/venv312 574M、backend/venv 14M、frontend/node_modules 390M、frontend/dist 1.7M ⇒ 一旦 F-48 修复使 build 可跑，.env 与虚拟环境将进入构建上下文乃至镜像层。相关面还包括 .env.example 模板缺口（OSS 五键、COOKIE_SECURE/COOKIE_SAMESITE、VPC_ID/VSWITCH_ID/SECURITY_GROUP_ID 未覆盖，而 runbook:5 要求 COOKIE_SECURE=true 无模板承载；COOKIE_SECURE 在 config.py:152 默认 False）与 serverless.yml:77/:84 的匿名公网 HTTP 触发器（authType anonymous + disableURLInternet false）。",
+      "proposedFix": "SEC-003 生产硬化清单落地：三级 .dockerignore、.env.example 补齐缺失键、COOKIE_SECURE 默认值决策、匿名触发器暴露面复核。本基线任务禁新增该文件（OUT_OF_SCOPE）。",
+      "status": "OPEN-BACKLOG (SEC-003)",
+      "id": "F-50"
+    },
+    "F-51": {
+      "at": "2026-10-09T20:43:35Z",
+      "severity": "P1-RELEASE-CHANNEL",
+      "foundBy": "M0-008 报告 F-M0008-07（ci.yml 全文审计）",
+      "title": "当前不存在可用的发布通道：CI 触发分支与实际分支不符，且 deploy job 未取产物就 cp",
+      "detail": "ci.yml:3-7 触发分支写 main/develop，而仓库实测主干为 master（M0 工作在 feature/m0-baseline），:156/:189 的 main 限定同样落空。deploy job（:186-212）只 checkout（:192），既未构建前端也未 `download-artifact` 拉取 :146-150 upload 的 frontend-dist，随即执行 `ossutil cp -r frontend/dist/ oss://cochlear-rehab-web/`（:211）⇒ 该 job 工作区不存在 frontend/dist，属确定性缺件失败。Secret 仅以引用名出现（ALIYUN_CR_USER/ALIYUN_CR_PASSWORD/ALIYUN_ACCESS_KEY_ID/ALIYUN_ACCESS_KEY_SECRET，:165-166/:197/:204-209），未读取任何值。",
+      "proposedFix": "OPS-001（CI 增强提案，注意其『.github/** 属 Flash 禁区，实际变更由治理阶段或人工应用』的既有约束）承接：分支名对齐 + deploy job 产物依赖补齐。",
+      "status": "OPEN-BACKLOG (OPS-001)",
+      "id": "F-51"
+    },
+    "F-52": {
+      "at": "2026-10-09T20:43:35Z",
+      "severity": "P2-GOVERNANCE-EVIDENCE",
+      "foundBy": "M0-008 执行手如实上报 + Review 独立核实（报告 §G.2）",
+      "title": "SPEC 摘要与源文档事实不符的两处误差传播（我的治理侧输入质量缺陷）",
+      "detail": "本轮 SPEC 的 DEPENDENCIES 把 M0-004 写成『迁移三连 exitCode=0』，而 DB_API_BASELINE.md:95-105/:167-170 实录 `upgrade head` exit 1（F-15，归 FIX-M0-004-001）；KNOWN_RISKS 称 backend 含 `.venv/__pycache__`，实测目录名是 venv/(14M) 与 venv312/(574M)，不存在 .venv。执行手按源文档真实口径引用并以非门禁失败留痕（F.3 的 du exit 1 拆分复跑），Review 判定『按差异记录而非 SPEC_CONFLICT 停止』是恰当裁量 —— 但误差源头在规划侧：SPEC 由上游摘要生成时未回读已封存基线。与 F-40（同编号双 Scope）同族，均属治理输入卫生。",
+      "proposedFix": "候选 FIX-GOV-005：Task Spec 生成阶段对『前序任务终态』类断言必须引用已封存交付物的 file:line 而非会话记忆；下游 OPS-002/SEC-003 的 SPEC 先修正这两处描述。",
+      "status": "OPEN-BACKLOG",
+      "id": "F-52"
     }
   },
   "humanDecisionsRequired": [
@@ -989,7 +1054,7 @@
       "gitWritesByFlash": "none（HEAD 仍 1a62703，staging 空，无破坏性 git 命令）"
     }
   ],
-  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。\n[2026-10-09T19:20:37Z] M0-006 = TASK_PASS（run wf_6c897bee-ab8，mode=FULL，agents=27，toolUses=427，7597134ms，repair=2）。\n[2026-10-09T20:03:41Z] M0-007 = TASK_PASS（run wf_cc12b79d-5be，mode=FULL，agents=15，toolUses=127，1779557ms，repair=0）。",
+  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。\n[2026-10-09T19:20:37Z] M0-006 = TASK_PASS（run wf_6c897bee-ab8，mode=FULL，agents=27，toolUses=427，7597134ms，repair=2）。\n[2026-10-09T20:03:41Z] M0-007 = TASK_PASS（run wf_cc12b79d-5be，mode=FULL，agents=15，toolUses=127，1779557ms，repair=0）。\n[2026-10-09T20:43:35Z] M0-008 = TASK_PASS（run wf_dfb3e8e5-ed5，mode=FULL，agents=15，toolUses=158，2196279ms，repair=0）。",
   "pausedAt": "2026-10-09T14:28:05Z",
   "timestampCorrections": [
     {
@@ -1208,7 +1273,7 @@
     }
   },
   "worktreeAtPause": {
-    "head": "7dcf2f8",
+    "head": "ed36481",
     "porcelain": [
       "M .qoder/workflow-state/dryrun-harness.mjs",
       " M .qoder/workflows/project-feature-delivery.js",
@@ -1216,7 +1281,7 @@
       "?? deliverables/baseline/SECURITY_BASELINE.md",
       "?? docs/qgraphflow/dialogue-turn-sequence/"
     ],
-    "reVerifiedAt": "2026-10-09T20:03:41Z",
+    "reVerifiedAt": "2026-10-09T20:43:35Z",
     "sha256": {},
     "governanceFilesIdenticalBetween": "77fdb32..29f2775 (git diff --stat empty) ⇒ verify baseline git show 77fdb32:<path> == HEAD:<path>",
     "readOnlyAgentsWroteNothing": true,
@@ -1540,6 +1605,100 @@
     "agentCount": 15,
     "totalToolCalls": 127,
     "durationMs": 1779557,
+    "failures": []
+  },
+  "lastRun_M0_008": {
+    "taskId": "m0-008-deploy-baseline",
+    "title": "M0-008 部署/容器基线：docker compose build 实测 + 部署配置完整性只读审计（唯一产物 DEPLOY_BASELINE.md）",
+    "runId": "wf_dfb3e8e5-ed5",
+    "executionMode": "FULL",
+    "at": "2026-10-09T20:43:35Z",
+    "WORKFLOW_STATUS": "TASK_PASS",
+    "BLOCK_REASON": null,
+    "FAILED_PHASE": null,
+    "HIGH_RISK": true,
+    "REPAIR_CYCLES_USED": 0,
+    "reviewInvocations": [
+      "max-review",
+      "max-review-b"
+    ],
+    "maxReview": {
+      "verdict": "PASS",
+      "rounds": 1
+    },
+    "gateHealth": {
+      "status": "PASS",
+      "requiredTotal": 6,
+      "requiredPassed": true,
+      "requiredFailures": 0,
+      "requiredBlockedSafeEnv": 0,
+      "recordTotal": 4,
+      "recordCollectionComplete": true,
+      "recordCollectionFailed": 0,
+      "blockedMissingSafeTestEnv": false
+    },
+    "gateContractCounts": {
+      "declared": 10,
+      "submitted": 10
+    },
+    "projectBaselineHealth": "DEGRADED",
+    "filesChanged": [
+      "deliverables/baseline/DEPLOY_BASELINE.md"
+    ],
+    "taskDelta": {
+      "taskChanged": [
+        "deliverables/baseline/DEPLOY_BASELINE.md"
+      ],
+      "taskGovernance": [],
+      "preExistingUnchanged": [
+        "docs/qgraphflow/dialogue-turn-sequence"
+      ],
+      "externalChangedDuringTask": [],
+      "preExistingReverted": [],
+      "retryOwnedArtifacts": [],
+      "treeUnitChanges": [],
+      "headChanged": false,
+      "stagedAppeared": []
+    },
+    "retryOwned": {
+      "status": "NOT_A_RETRY",
+      "artifacts": []
+    },
+    "baselineFindings": [
+      "F-BUILD-001|Medium|Evidence: docker compose config --quiet 与 docker compose build 均 exit 1，stderr 'project name must not be empty' + warning 'version attribute is obsolete'。Affected Area: 部署配置 docker-compose.yml / 项目名解析（根因归类：compose 无法从工作目录名'听觉康复'推断 project name——非 ASCII 目录名触发 'project name must not"
+    ],
+    "nonBlockingRisks": [
+      "文件总行数元数据 +1 偏差（不影响任何结论）：报告称 docker-compose.yml 81 行/backend Dockerfile 45 行/frontend Dockerfile 14 行/serverless.yml 117 行/ci.yml 213 行，Max 实测 wc -l 分别为 80/44/13/116/212（均带结尾换行）；而 nginx.conf 119、nginx-production.conf 115、.env.example 21 与报告一致。所有被引用的具体行号（:6/:15/:39/:48、:17/:22/:29-30、:49/:67-70/:77/:8",
+      "OSS_REGION 字段实际在 config.py:131（:132 是其 docstring），报告 §C.1 引 :132 偏 1 行；字段事实（默认 cn-hangzhou、模板缺键）经 Max 核实成立，不构成证据缺陷。",
+      "门禁合同审查（FIX-GOV-001-R1 口径）结论：GATE_CONTRACT_DECLARED 10 条与 spec MACHINE_GATE_COMMANDS 及提交集按 gateId/kind/命令原文逐条相等；本任务为纯审计文档任务（零代码/配置/测试/迁移改动），其自身目标校验（产物存在/Scope/HEAD/治理/树单元/Secret 六条）全部 kind=required 且 Max 独立复跑全绿；G-BUILD/G-COMPOSE-CONFIG 的 record 定性是冻结 SPEC 在设计阶段的既有决策（Max 预实测确定性存量缺陷，AC-02/AC-08 明确要求如实引",
+      "报告 §G.1（catalog 原预期 build exit 0 vs spec record 重定义）与 §G.2 两处 SPEC 上下文差异的处置正确：G.2.1 经 Max 对照 DB_API_BASELINE.md :95-105/:167-170 证实 upgrade head 确为 exit 1（F-15，归 FIX-M0-004-001），报告按源文档真实口径引用而非照抄 spec 摘要，符合证据纪律；G.2.2 经 du 实测证实（venv 14M/venv312 574M，无 .venv），风险方向成立且量级更大。两者均不动摇门禁可执行性与 AC 成立，按差异记录而非 SPE",
+      "报告 §A.5 的 docker images 事实（宿主无 postgres:15-alpine、既有 16-alpine/pgvector pg15/pg16、backend-backend:latest 1497c4b2aed7 为历史镜像）经 Max 只读复核逐字成立，为下游修复项目名后的 compose up 决策提供了有效输入。",
+      "引用行号 1 行偏移：报告 §C.1 引 OSS_REGION 为 config.py:132，实际字段定义在 :131（:132 为其 docstring）；内容（默认 cn-hangzhou、模板缺键）准确，不影响 AC-04 结论。",
+      "全文总行数标签采用编辑器计数（含末尾空行）与 wc -l 差 1（docker-compose 81/80、backend/Dockerfile 45/44、frontend/Dockerfile 14/13、serverless.yml 117/116、ci.yml 213/212）；所有被引用的具体行号经 grep -n 逐字核实无误，纯计数口径差异。",
+      "报告 §G.2 揭示的两处 SPEC 上下文失实经 Review 独立核实成立：(1) spec DEPENDENCIES 称 M0-004『迁移三连 exitCode=0』，DB_API_BASELINE.md:95-105/:167-170 实录 upgrade head exit 1（F-15，归 FIX-M0-004-001）；(2) spec KNOWN_RISKS 称 backend 含 .venv/__pycache__，实测为 venv/(14M)/venv312/(574M)。执行手按源文档真实口径引用并如实上报的处理正确；建议 spec 编写侧（Max 治理通道）在下游任务",
+      "报告 §G.1 主动暴露 catalog（M0-008 原预期 build exit 0）与 TASK_SPEC（record 层重定义）口径差异且零触碰治理文件——处理正确；catalog 的口径更新应在 M0 Milestone Gate 或后续治理阶段由 Max 统一裁定，非本任务义务。",
+      "宿主缺 postgres:15-alpine（compose db 引用 tag，实测仅有 16-alpine 与 pgvector/pg15/pg16）已被报告 §A.5/F-M0008-08 如实记录：下游修复项目名后首次 compose up 将触发拉取或需调整镜像引用，OPS-002 演练时应预期该事实。"
+    ],
+    "repairHistory": [],
+    "taskPassFormula": {
+      "MACHINE_GATE_PASS": true,
+      "INDEPENDENT_FLASH_REVIEW_PASS": true,
+      "INDEPENDENT_REVIEW_INVOCATIONS": [
+        "max-review",
+        "max-review-b"
+      ],
+      "DOUBLE_REVIEW_REQUIRED": true,
+      "FLASH_VERIFY_PASS": true,
+      "TASK_DELTA_PASS": true,
+      "GOVERNANCE_GUARD_PASS": true,
+      "ALL_CLAUSES_TRUE": true
+    },
+    "specPath": ".qoder/workflow-state/m0-008-deploy-baseline.spec.json",
+    "rollback": "本任务唯一产物为未跟踪新文件 deliverables/baseline/DEPLOY_BASELINE.md：回滚=删除该文件（rm deliverables/baseline/DEPLOY_BASELINE.md），删除后 git status --porcelain 应恢复为仅 '?? docs/qgraphflow/dialogue-turn-sequence/' 的既有状态。已跟踪文件零改动、零 commit、零迁移、零 API/配置变更→无其他回滚面。Docker 侧：build 实测在项目名解析阶段失败、零镜像/缓存产生；若执行环境意外产生构建缓存或镜像，报告如实记录镜像名/ID，其清理属破坏性操作须人工确认后执行（Agent 禁止自行 rmi/prune）。宿主既有容器零触碰，无需回滚。",
+    "suggestedNextTask": "M0 Milestone Gate（任务清单 #6）：M0-001~M0-008 全部基线落盘后，按 90-quality-gates Milestone 口径汇总当前有效证据（八份基线 + 迁移链 + 治理不变式）判定 MILESTONE_PASS/BLOCKED。Gate 通过后立即为 F-M0008-01（P0：compose 项目名解析失败——加顶层 name: 或 COMPOSE_PROJECT_NAME、移除 obsolete version 键，顺带 F-M0008-09）立独立原子 fix 任务，因其阻塞一切 docker compose 路径，是 OPS-002 冒烟演练与 SEC-003 生产硬化的前置；F-M0008-02（healthcheck /api/health 四处同源失配）可并入 SEC-003 或同一 fix 批次。",
+    "agentCount": 15,
+    "totalToolCalls": 158,
+    "durationMs": 2196279,
     "failures": []
   }
 }

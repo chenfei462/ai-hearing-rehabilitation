@@ -152,6 +152,46 @@
 - `currentTask = 下一个：M0-008（deps=["M0-003","M0-004"]）`，它是 M0 基线 DAG 的最后一个节点；完成后即可进入 M0 Milestone Gate，但该门禁仍需人工 **HD-N-04**（目录治理写）与 **HD-N-05**（基线文档 8 vs 7 口径）。
 - 串行未破：M0-008 依赖 docker 与 compose 构建，与 M0-007 同工作树并发会互触 D4 外部改动误判，故按 §18 串行推进。
 
+## M0-008 部署/容器基线：**TASK_PASS**（2026-10-09T20:43:35Z 入账，交付物 commit `ed36481`）— M0 基线 DAG 至此 8/8
+
+### A. 终态与五判据（runId `wf_dfb3e8e5-ed5`，`ACTIVE_EXECUTION_MODE=FULL`，`HIGH_RISK=true`）
+
+- **门禁合同**：Max 亲写 10 条，`DECLARED_COUNT=10 == SUBMITTED_COUNT=10`，`validateGateSpec` 在 Implement 之前通过。`GATE_HEALTH=PASS`：required 6/6 exit 0（`G-DELIVERABLE`/`G-SCOPE-DIFF`/`G-HEAD-FIXED`/`G-GOVERNANCE-DIFF`/`G-TREE-UNIT`/`G-SECRET-ZERO`）、record 4/4 采集完成（`G-COMPOSE-CLI` exit 0、`G-COMPOSE-CONFIG` exit 1、`G-BUILD` exit 1、`G-DOCKER-PS` exit 0）。
+- **双真相**：`PROJECT_BASELINE_HEALTH=DEGRADED`。本任务的 required 里**没有**"构建必须成功"，因为构建在本仓库路径下结构性不可达（见 B 节）。
+- **一次干净跑完**：`REPAIR_CYCLES_USED=0`、`raw.failures=[]`、`agents=15`、`tool_uses=158`、`duration=2196279ms`（约 36.6 分钟），无上游断连。HIGH risk ⇒ `max-review` + `max-review-b` 双独立 `qmodel_38max`，`MAX_REVIEW.verdict=PASS rounds=1`，独立 Verify `TASK_PASS`。
+- **Task Delta 恰好一份**：唯一 `taskChanged = deliverables/baseline/DEPLOY_BASELINE.md`（全新文件，`RETRY_OWNERSHIP=NOT_A_RETRY`）；`taskGovernance=[]`、`externalChangedDuringTask=[]`、`headChanged=false`、`stagedAppeared=[]`；`G-TREE-UNIT` 用 `sha256sum -c -` 逐文件校验 qgraphflow 两成员（`5f12d3d4…`/`2bd127b7…`）exit 0。
+- **交付物身份**：363 行 / 41800 B / sha256 `ff214b643a3b58a107b525530e7ac1c5571597849a302d98a99e101cfbec70bd`，提交 `ed36481`。
+
+### B. 本轮最大的真实发现：`docker compose` 在此仓库路径下根本跑不起来（P0）
+
+- 我（Orchestrator）入账前**独立复跑**：`docker compose config --quiet` 与 `docker compose build` 均 **exit 1**，stderr 恒为 `project name must not be empty`，并附 `the attribute version is obsolete` 警告。三重根因（报告 §A.4）：目录名『听觉康复』非 ASCII ⇒ compose 无法从工作目录推导项目名；`docker-compose.yml` 无顶层 `name:`（obsolete `version:` 在 `:6`）；根 `.env` 的 11 个键名集合不含 `COMPOSE_PROJECT_NAME`。
+- 后果：catalog 第 29 行对 M0-008 写的门禁要求『docker build exitCode=0』在本路径下**不可能达成**；`docker compose` 的一切子命令（含 OPS-002 冒烟演练所需的 `up`）都先败在项目名解析。失败发生在镜像/缓存工作之前 ⇒ **零副作用**（无新镜像、无新容器、宿主既有资产未动）。
+- **治理层的一个正面证据**：`G-BUILD`/`G-COMPOSE-CONFIG` 被 SPEC 定为 `record`，Reviewer B 专门按 FIX-GOV-001-R1 的补偿控制审了"这是否构成 `REQUIRED_GATE_MISDECLARED_AS_RECORD`/`GATE_CONTRACT_UNDER_DECLARED`"，结论是不成立（冻结 SPEC 设计阶段的既有决策，且 AC-02/AC-08 明确要求如实引用 exitCode=1；执行手未使用 `-p` 等绕过参数改写命令）。⇒ F-31 提出的那条 blocker 类**第一次在真实任务里被消费并给出可审计结论**。
+- 顺带坐实：宿主没有 compose 引用的 `postgres:15-alpine` tag（实测仅 `16-alpine` 与 `pgvector/pg15`、`pgvector/pg16`）⇒ 修好项目名后首次 `up` 还要触发拉取，OPS-002 演练须预期该事实。
+
+### C. 配置完整性审计（8 对象，结论全部带 file:line）
+
+- **healthcheck 路径四处同源失配（P1）**：真实路由是 `backend/app/api/health.py:14 /health`、`:30 /health/detailed`（`app/main.py:124` 挂载时**未加 prefix**），而 `docker-compose.yml:39`、`backend/Dockerfile:30`、`deploy/serverless.yml:12`、`docs/runbook.md:9/:41-42` 四处全部探 `http://localhost:8000/api/health`。我已在源码逐行核实。配置级推论：backend 永不 healthy ⇒ `depends_on` 的 frontend 卡死，runbook 四条冒烟路径的第一条即失效。
+- **构建上下文与镜像层的秘密入层风险（P1）**：三级 `.dockerignore` 全缺（`ls` exit 2 即取证）+ 两个 Dockerfile 均 `COPY . .`，而上下文内含 `backend/.env`（存在，本任务零值读取）、`backend/venv312` 574M、`backend/venv` 14M、`frontend/node_modules` 390M。
+- **发布通道事实断裂（P1）**：`ci.yml:3-7` 触发分支写 `main/develop`，仓库主干实为 `master`（本工作在 `feature/m0-baseline`）；deploy job（`:186-212`）只 checkout，既未构建前端也未 `download-artifact` 就 `ossutil cp -r frontend/dist/`（`:211`）⇒ 确定性缺件失败。凭证只以引用名出现。
+- 其余：`.env.example` 缺 OSS 五键 / `COOKIE_SECURE`·`COOKIE_SAMESITE` / VPC 三键（`config.py:152` 的 `COOKIE_SECURE` 默认 `False`，而 runbook:5 要求 `true`）；`serverless.yml:77/:84` 匿名公网触发器；`backend/Dockerfile:17` gunicorn 裸装未锁版本；compose 无 worker/ARQ 服务。
+- **双列结论**：`ENGINEERING_DEPLOY_READY = NO` 与 `REAL_PRODUCTION_APPROVED = NO` 分列（后者无真实人工批准恒 NO）；Secret 零输出（`G-SECRET-ZERO` required），`.env` 只取存在性与键名集合。
+
+### D. 本任务新增 Findings（F-48..F-52）
+
+- **F-48（P0 部署阻塞）**：compose 项目名解析失败 ⇒ 容器路径全阻塞；建议独立 `FIX-DEP-01`（加顶层 `name:` 或显式 `COMPOSE_PROJECT_NAME`，移除 obsolete `version`），是 OPS-002/SEC-003 的前置。
+- **F-49（P1 配置漂移）**：healthcheck 四处同源失配（修复须先决定"改探针"还是"给路由加 /api 前缀"，后者属公开 API 契约变更 ⇒ 需 ADR，不得由实施侧顺手改）。
+- **F-50（P1 秘密面）**：`.dockerignore` 缺失 + `COPY . .` + env 模板缺口 + 匿名触发器 ⇒ 归 SEC-003 生产硬化清单。
+- **F-51（P1 发布通道）**：CI 分支名与产物依赖双重断裂 ⇒ 归 OPS-001（注意其『`.github/**` 属 Flash 禁区，实际变更由治理阶段或人工应用』的既有约束）。
+- **F-52（P2 治理证据，我的输入质量缺陷）**：SPEC 摘要两处与已封存源文档不符——把 M0-004 写成"迁移三连 exit 0"（实录 `upgrade head` exit 1，F-15），把虚拟环境写成 `.venv`（实测 `venv/`+`venv312/`）。执行手按源文档真实口径引用并以非门禁失败留痕，Review 判"按差异记录而非 `SPEC_CONFLICT` 停止"恰当；误差源头在规划侧未回读已封存基线 ⇒ 候选 `FIX-GOV-005`：Task Spec 中"前序任务终态"类断言必须引用已封存交付物的 file:line。
+- 另有两条不影响结论的计数口径偏差（文件总行数 +1、`OSS_REGION` 行号偏 1），留作下游修订。
+
+### E. 状态：M0 基线 DAG 8/8 全绿，停在 Milestone Gate 门前
+
+- `completedTasks` = M0-001..M0-008（`abc6a78`/`7be3c50`/`f73cb01`/`a78b10f`/`317341b`/`8c81df5`/`7dcf2f8`/`ed36481`）；`blockedTasks` 空；findings = 51 条。
+- `goalStatus = M0-DAG-COMPLETE-PENDING-MILESTONE-GATE`；`currentTask = M0 DAG 全绿，待 Milestone Gate（需 HD-N-04/HD-N-05 人工授权）`。
+- **需要人工新增一条裁决（建议记为 HD-N-09）**：catalog 对 M0-008 的门禁要求『docker build exitCode=0』与本轮真实终态（结构性不可达，已以 record 如实记录）冲突。Milestone Gate 不能把这条冲突当作不存在。三种口径请择一：(甲) 先做 `FIX-DEP-01` 再复跑 M0-008 的 build 门禁，令 catalog 原要求成立；(乙) 由 Max 在治理阶段把 catalog 该行的门禁要求改写为"构建可用性如实记录"，随后 M0-008 以当前证据直接计入；(丙) Milestone Gate 判 `MILESTONE_BLOCKED` 并把 F-48 列为唯一阻塞项。**我不会自选**，夜间/自治链无权改 `docs/workflow/**`。
+
 ## Pre-existing untracked（§8，PRE_EXISTING_UNCHANGED）
 
 - `docs/qgraphflow/dialogue-turn-sequence/` — 2 文件
