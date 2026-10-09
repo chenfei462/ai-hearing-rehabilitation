@@ -76,6 +76,44 @@
 - M0 里程碑门禁仍需人工：**HD-N-04**（把 FIX-* 行写入 `docs/workflow/TASK_CATALOG.md`，属治理写）、**HD-N-05**（基线文档 8 vs 7 口径）。
 - 记账工具自纠：`patch-ledger-seal.mjs` 在沙箱里跑了 BLOCKED / PASS-缺提交号 / PASS-带提交号三条路径，含新守卫「TASK_PASS 却无交付物提交号 ⇒ `REJECTED`、零写入」——避免账本写下指向不存在 commit 的 `completedTasks`。
 
+> 本节 D 小路（`blockedTasks 仅剩 M0-006`）已被下节更新：M0-006 于 `2026-10-09T19:22:47Z` 入账为 TASK_PASS。保留原文以留痕当时的判断依据。
+
+## M0-006 安全基线重跑：**TASK_PASS**（2026-10-09T19:22:47Z 入账，交付物 commit `8c81df5`）
+
+### A. 终态与五判据（runId `wf_6c897bee-ab8`，`ACTIVE_EXECUTION_MODE=FULL`，`HIGH_RISK=true`）
+
+- **门禁合同**：Max 亲写 12 条 `MACHINE_GATE_COMMANDS`，`DECLARED_COUNT=12 == SUBMITTED_COUNT=12`（对账键 = gateId；F-20 修复后第二次现场成立）。`GATE_HEALTH=PASS`：required 8/8 exit 0、record 4/4 采集完成、`BLOCKED_MISSING_SAFE_TEST_ENV=false`。
+- **双真相并存互不掩盖**：`PROJECT_BASELINE_HEALTH=DEGRADED` —— `G-BASE-PYTEST-FULL` exit 1（1 failed/231 passed，另见 F-38 非确定性）、`G-BASE-RUFF-FULL` 291 errors（CI 窄口径 `G-BASE-RUFF-CI` exit 0 是真实事实，报告未迎合 SPEC 的"预期非零"）、`G-BASE-POSTGRES-TRIPLE` 4 failed/8 passed/20 errors（F-M0005-01/02）。全部红项以 `record` 落 Findings，**未删测/未 skip/未降断言**。
+- **独立 Review 两路相互不可见，且都真的抓到了东西**：第 1 轮 A 报 `BLK-M0006-R1-01`、B 独立报 `BLK-M006-RB-01`/`BLK-M006-RB-02`；第 2 轮复又报 `BLK-M006-R2-01`（`test_auth_service.py` 12 例计数与夹具取证口径）。⇒ 双独立审查不是形式。`REPAIR_CYCLES_USED=2`（预算 ≤3，剩 1 轮），两轮均"只修 blocker、单文件写入"；第 3 轮 A 与 B 均 `PASS`（`maxReview.rounds=3`），独立 Verify `TASK_PASS`。
+- **Task Delta 恰好一份**：唯一改动 `deliverables/baseline/SECURITY_BASELINE.md`；`taskGovernance=[]`、`externalChangedDuringTask=[]`、`treeUnitChanges=[]`、`headChanged=false`、`stagedAppeared=[]`；pre-existing qgraphflow 树单元不变（成员 `5f12d3d4…`/`2bd127b7…`，树 `9eb05078…`）。交付物最终身份 = **602 行 / 94736 B / sha256 `65aa374df9b06ae0f88cd1277fde6926176908b90ffbc305264194c639cc0370`**（Orchestrator 记账时实测，与门禁 `G-DELIVERABLE-EXISTS` 及 Review 同值）。
+
+### B. 交付物说了什么（不粉饰）
+
+- "安全测试通过"类宣称**不成立**。端点×认证×归属全量矩阵给出 P0/P1 定级，其中 **SB-02（P0）= 13 条 RBAC/IDOR 用例在 postgres/CI 同款口径下未达断言层 ⇒ 当前安全结论仅在 sqlite 口径成立**，是 MVP 安全验证链上唯一的 P0 验证能力缺口。
+- 医疗安全回归（`test_safety.py` 10 passed，无 skip）作为三件套之一真实执行；但完整评测集（诱导性提问 / 多轮绕过 / 历史消息注入）**不存在** → 记 `F-MEDICAL-EVAL-GAP`，按 `70-medical-safety.md` §9 把补齐纳入后续 SAFE-* Scope，而非以"没有测试"视为通过。
+- 用户删除/注销路径缺失（`models/user.py:18-22` 无 cascade）为 PRIV-002 的前提证据。§7 把该证据写成"英文正则仅硬件语义命中"，实测该正则 0 命中（命中实际来自中文"注销"，`hardware/manager.py:136/:143` 等）——实质结论因零命中反而更强，转写瑕疵列为非阻塞、留待下轮修订。
+- 下游任务编号仅为**建议**，未写入 `docs/workflow/TASK_CATALOG.md`（治理写需 HD-N-04），故 AC-08「零 ID 冲突」判据成立。
+
+### C. 环境自律与残留
+
+- 宿主 `:5432` 全程零接触（政策禁区）；postgres 三连走一次性隔离实例 `127.0.0.1:55433`，用后 `docker rm -f`；本任务声明的 `aiear-m0006-*` 零残留。
+- 实测宿主仍有**前序任务**遗留容器 `aiear-m0004-pg-test` → **F-41（P3 运维卫生，不属本 Task Scope）**，建议归 OPS-005/OPS-006 处置；未擅自删除他人资产。
+- `backend/venv` 无 pytest，全部 pytest 走 `backend/venv312/Scripts/python.exe`（ENV-NOTES 留痕）。
+
+### D. 本任务新增 Findings（F-38..F-43）
+
+- **F-38（P1 基线不稳定）**：同一份代码全量 pytest 在 `1 failed/231 passed` 与 `2 failed/230 passed` 间漂移；根因 `app/ai/adaptive_engine.py:228` 未播种的 `random.random() < p_correct` ⇒ 基线须以区间记录读数，禁止把单次结果当确定性事实。
+- **F-39（P1 治理）**：`RETRY_OWNED` 覆写使上一 run 产物字节不可恢复（本次被覆写的 97758 B / `72fd898f…` 版本只剩哈希与规格缓存）。凡验收条款写成"与上一版本 diff"，该路径下会静默失去可比对对象 ⇒ 候选 FIX-GOV-004。
+- **F-40（P2 规划）**：`FIX-INT-02` 在两份基线工件里被赋予两种 Scope（pyproject dev 依赖钉版本 vs 安全用例真实 DB 口径复跑），且已占用编号曾被误标"建议新增" ⇒ 消歧 gated on HD-N-04。
+- **F-41 / F-42（P3 卫生）**：见 C 节；F-42 = 交付物第 462/510 行以完整字面量引用演示种子手机号（来源为被跟踪源码 `init_db.py:162/:199`，非真实用户数据，且正是 SB-33 的证据本体），建议后续统一掩码形态 + 行号引用。
+- **F-43（P2 工具自纠 —— 我自己记账脚本的缺陷）**：`patch-ledger-task.mjs` 自算的未跟踪目录树单元身份为 `37b7e370…`，与 Workflow `V|D4-1` 协议的 `9eb05078…` 不等；成因 = 成员路径双斜杠 + manifest 缺 md5 字段。已独立复现协议算法、改正脚本并现实测 `treeSha ok=true`。若不钉住协议口径，任何以账本为依据的"外部改动"判定都会产生**假 `BLOCKED_EXTERNAL_WORKTREE_CHANGE`**。此条如实入账，不隐藏。
+
+### E. 状态（M0-006 后）
+
+- `completedTasks` = M0-001..M0-006（提交号 `abc6a78`/`7be3c50`/`f73cb01`/`a78b10f`/`317341b`/`8c81df5`）；`blockedTasks` 清空；findings = 42 条；`goalStatus=RUNNING-M0-DAG`。
+- `m0Dag`：M0-007、M0-008 → **READY**。原 BLOCKED 记录以 `priorBlockedNote` 原样保留（M0-008 当时的阻塞理由是"引用 `blockedTasks[M0-005].machineProof` 推断会撞同一堵墙"，该推断随 F-20 修复失效）。
+- 下一个：`currentTask = 下一个：M0-007（deps=["M0-005"]）`。M0 里程碑门禁仍需人工 **HD-N-04**（把 FIX-*/SEC-*/OPS-*/PRIV-* 行写入目录，属治理写）与 **HD-N-05**（基线文档 8 vs 7 口径）。
+
 ## Pre-existing untracked（§8，PRE_EXISTING_UNCHANGED）
 
 - `docs/qgraphflow/dialogue-turn-sequence/` — 2 文件
@@ -169,6 +207,8 @@ Flash 在 IMPLEMENT 前发现 Max 首轮 TASK_SPEC 的两条**验收前提与真
 > 两次 SPEC_CONFLICT + 一次瞬时模型不可用均 ATTEMPTS=0、非修复轮（§126），未占用 ≤3 修复预算；全程未切换模型、未改治理/Workflow 文件。
 
 ## M0-005 — 集成测试基线：**BLOCKED / GOVERNANCE_POLICY_VIOLATION（未提交）**
+
+> **本节为历史留痕（不改写结论本身）**：该 BLOCK 的根因是治理缺陷 F-20，已由人工授权的 FIX-GOV-001-R1 修复并封存为 `d2d7ddb`；M0-005 于 2026-10-09 以 runId `wf_5a685efc-fc6` 重跑取得 **TASK_PASS**（见上文「FIX-GOV-001-R1 封存 + M0-005 首次实战 TASK_PASS」B 节），交付物提交 `317341b`。下方"未提交"指当时该 BLOCK 状态下产物保持未跟踪，非当前状态。
 
 Workflow：run `wf_bd5d9d4f-2c7`（workflowTaskId `wf-2f194400-ed3`），`executionMode=FULL`，`ATTEMPTS=0`，`FAILED_PHASE=Machine Gate`，
 `BLOCK_REASON=GOVERNANCE_POLICY_VIOLATION`，`GIT_TIER=REQUIRED_DOWNGRADE`。
