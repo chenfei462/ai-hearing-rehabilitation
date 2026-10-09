@@ -780,7 +780,46 @@
       "detail": "backend/tests/test_performance.py:38-45 的 _measure 把响应对象丢弃，只做 `assert median_ms < threshold_ms`（:33-37）。实测 /api/metrics 计时用例的三次请求全部返回 401，用例仍 PASSED 并通过 100ms 阈值。app/api/metrics.py:14-25 要求 get_current_user + role==therapist（否则 403/401），而 conftest.py:154 的 token fixture 是 role=patient。Orchestrator 独立复核（2026-10-09，只读）：test_metrics_performance 在 :137 直接取 `client: AsyncClient` 且不附 auth 头 ⇒ 三次 GET /api/metrics 全落 401 错误路径，pytest 仍报 7 passed / exit 0。危害不止 metrics：任何返回 401/403/422 的端点都可能以『比错误处理还快』的名义被判性能达标，属门禁断言语义缺陷（与 F-01/CT-1 的鉴权口径同源，但影响面更大）。",
       "proposedFix": "性能用例必须先断言 2xx 再计量（或 status in (200,201) 后才计入样本）；补 therapist 角色 fixture 的真实数据路径计时用例；与 F-01 的鉴权口径决策合并清偿。属测试代码改动 ⇒ 需独立 task 走 project-feature-delivery，本基线任务无权修改。",
       "status": "OPEN-BACKLOG (建议编号 FIX-PERF-03，待 HD-N-04 落库)",
-      "id": "F-44"
+      "id": "F-44",
+      "reviewAddendum": {
+        "at": "2026-10-09T23:08:36Z",
+        "performedBy": "qmodel_38max（只读复核 + 程序内只读插桩，未改动任何仓库文件）",
+        "interpreter": "backend/venv312/Scripts/python.exe (Python 3.12.10, pytest 9.1.1)",
+        "reproduces": "test_metrics_performance -> `1 passed` / exitCode=0，而其发出的三次请求实测 http_status=[401,401,401] => F-44/PF-01 独立复现成立",
+        "blastRadius": "全 7 条计时用例的请求->状态映射：/health 200x3、/ 200x3、/api/auth/sms/send 200x3、/api/auth/login 200x3、/api/training/sessions 200x3、/api/report/summary 200x3、/api/dialogue/scenarios 200x3，**仅 /api/metrics 401x3**。断言缺陷（_measure:40-47 丢弃 Response）是全量系统性的，但当前只有 metrics 落在错误路径 => 加状态码校验不会把其余 6 条改红（已实测）。",
+        "identityMatrix": "GET /api/metrics：无凭据 401；auth_token(patient, conftest.py:148-156) **403**；therapist_token **200**（app/api/metrics.py:14-25 + app/api/deps.py:22-26）=> 换成既有 auth_token 不足以修复，必须 therapist 身份",
+        "correctsProposedFix": "原 proposedFix 的\"补 therapist 角色 fixture\"**不必要**：therapist_token 已存在于 conftest.py:158-166，当前仅 tests/test_role_permissions.py:35/:64 使用，性能用例从未引用。新增同义 fixture 只会造成第二身份源。",
+        "deRisked": "真实 200 路径计时余量已实测：therapist 认证下 /api/metrics 中位数 **4.70ms**（匿名 401 为 2.02ms，阈值 100ms）=> 修正口径不会把假绿变成真红。",
+        "systematicBiasInsight": "app/middleware/performance.py:83 只缓存 status==200 => **错误路径结构性更快**（401 由依赖提前拒绝，不过缓存、不落库、不聚合）。\"ms 越小越达标\"的断言恰在失败路径上最易满足 - 这解释 F-44 为何能长期隐身，也是必须\"先断言 2xx 再计量\"而非仅加告警的理由。",
+        "siblingClosure": "同一身份决策可顺带清偿存量红 **F-01**（tests/test_middleware.py:30-35 断言 200 实得 401；全量 pytest 现为 1 failed / 231 passed）=> 建议 FIX-PERF-03 同时覆盖 test_performance.py 与 test_middleware.py，使 Release Gate 第 1 项由红转绿。",
+        "rejectedAlternative": "反向方案\"把 /api/metrics 改为公开/去角色\"属公开 API 契约与鉴权口径变更（AGENTS.md §6、20-architecture.md 禁止事项，须 ADR + DECISIONS.md），本复核不建议，也不得由测试侧单方面放宽。",
+        "statusUpdate": "维持 OPEN-BACKLOG；FIX-PERF-03 落库仍依赖 **HD-N-04**。测试代码改动须走 project-feature-delivery task，本复核未实施。",
+        "fixSpecR2": {
+          "id": "FIX-PERF-03（proposed R2）",
+          "inScope": [
+            "tests/test_performance.py：_measure 返回 {ms, status, cache} 样本；新增 _assert_sample_ok 要求 status==200；仅 2xx 样本进入中位数；断言 len(valid)==SAMPLE_COUNT（静默 4xx 无法通过）",
+            "test_metrics_performance 改用既有 therapist_token（conftest.py:158）",
+            "tests/test_middleware.py::test_metrics_endpoint_is_available 改用 therapist_token（关闭 F-01）",
+            "鉴权回归（匿名->401 / patient->403）放入角色/安全测试文件，**不进性能文件**（性能用例只负责计时）"
+          ],
+          "outOfScope": [
+            "THRESHOLDS 数值",
+            "SAMPLE_COUNT",
+            "端点鉴权契约/角色要求",
+            "app/api/metrics.py、app/api/deps.py 实现改动",
+            "缓存中间件行为"
+          ],
+          "mandatoryChecks": [
+            "cd backend && venv312/Scripts/python.exe -m pytest tests/test_performance.py -v -p no:cacheprovider",
+            "cd backend && venv312/Scripts/python.exe -m pytest tests/test_middleware.py -q -p no:cacheprovider",
+            "cd backend && venv312/Scripts/python.exe -m pytest -q -p no:cacheprovider（期望 1 failed/231 passed -> 0 failed/>=232 passed）",
+            "cd backend && venv312/Scripts/python.exe -m ruff check app/",
+            "负向自证：临时把 metrics 用例身份改为匿名，该用例必须 FAILED（证明断言真在把关）；验证后还原，不得提交"
+          ],
+          "acceptance": "7/7 计时用例均在断言 2xx 后才计量；/api/metrics 真实数据路径首次获得有效读数；全量 pytest 无失败；无测试被删除/skip/降低断言。",
+          "rollback": "纯测试改动，git revert 单提交即可；无生产依赖与数据影响。"
+        }
+      }
     },
     "F-45": {
       "at": "2026-10-09T20:03:41Z",
@@ -884,6 +923,31 @@
       "status": "OPEN-NOTE",
       "id": "F-54",
       "zeroTouchReconfirmed": "本轮全程未对该端口发起任何连接或写操作；观测命令均为只读。"
+    },
+    "F-55": {
+      "id": "F-55",
+      "at": "2026-10-09T23:08:36Z",
+      "severity": "P2-MEASUREMENT-INTEGRITY",
+      "foundBy": "qmodel_38max 复核 F-44 时的只读 X-Cache 探针（tests/test_performance.py 全量复跑）",
+      "title": "两条计时用例的中位数由缓存命中样本主导，读数名义是端点延迟、语义是命中路径延迟",
+      "detail": "app/middleware/performance.py:44-50 把 /api/dialogue/scenarios 与 /api/report/summary 列为可缓存（DEFAULT_TTL=60）。探针实测各 3 次采样为 **MISSx1 + HITx2** => statistics.median 取到的正是 HIT 值。PERF_BASELINE §2 第 5/6 号读数因此在口径上不等于\"端点真实工作延迟\"，并与 F-44 的 401（永不入缓存）同表并列，三种路径口径混在一列。与 F-44 同源（_measure 丢弃响应，连 X-Cache 都不可见）但独立成因、需独立处置。",
+      "impact": "性能基线不区分冷路径/命中路径；引用该表做 SLA 或容量结论会误读。Release Gate 第 6 项（性能证据）的口径需先解决这一点。",
+      "evidence": "XCACHE 探针原样：/api/dialogue/scenarios 200 X-Cache=MISS x1 / 200 X-Cache=HIT x2；/api/report/summary 200 X-Cache=MISS x1 / 200 X-Cache=HIT x2；其余端点 X-Cache=-（不在 CACHEABLE_PATHS）。",
+      "proposedFix": "第一步只取证不改判：_measure 捕获 X-Cache，用例分别输出 MISS/HIT 两组中位数，基线表分列。\"阈值应绑冷路径还是命中路径\"属**测量口径决策**，不得由实施侧自选 -> 交人工（建议与 HD-N-09 同批裁定）。本任务未修改任何测试。",
+      "status": "OPEN-BACKLOG（建议编号 FIX-PERF-04，紧邻 FIX-PERF-03，待 HD-N-04 落库）"
+    },
+    "F-56": {
+      "id": "F-56",
+      "at": "2026-10-09T23:08:36Z",
+      "severity": "P3-PROCESS-LEDGER-INTEGRITY",
+      "foundBy": "qmodel_38max 本次复核途中自查（脚本 l.notes.push 抛 TypeError 暴露 notes 已非数组）",
+      "title": "账本 notes 字段的有损追加：对象被字符串拼接成 \"[object Object]\"，7 个键正文一度丢失",
+      "detail": "TASK_LEDGER.json 的 notes 在 6fe4904 及以前是 7 键对象；到 506f5ee 变成字符串，首行为 \"[object Object]\"。即某次账本写入把对象与字符串直接相加（JS 隐式 String(object)），使 dbSafety / dockerAvailable / serialPolicy / resumePrecondition / engineeringReleaseReady / realProductionApproved / bookkeepingIgnore 七项正文在该次写入中丢失。后续 4 次追加以字符串形式继续，无人察觉。属**我自己的记账缺陷**，与 F-53（同一事件三处自相矛盾）、FIX-GOV-006（单一机器真相 + 写前类型断言）同族。",
+      "impact": "只影响账本可读性/留痕，不影响任何门禁判定或代码；但\"账本自身会静默毁数据\"直接削弱证据可信度 - D4/F-25 纪律要求写入无损。",
+      "detectedByWhom": "由我下一步脚本的 TypeError 暴露，而非任何校验器：现有 PATCH 脚本不校验目标字段类型，也不在写后做语义 diff。",
+      "remediationDone": "本批按原样恢复至 notesPreCorruption（来源 6fe4904，逐字取回），当前 notes 字符串未改写；丢失内容自此可审计。",
+      "proposedFix": "候选 FIX-GOV-006 追加两条：(1) 账本写入脚本必须先断言目标字段运行时类型（string/array/object），不匹配即 die 且零写入；(2) 写入后重新读取并做结构等值比较（除本次有意变更的键外，其余键须逐字节相等），否则回滚并报错。禁用语义上的 x = x + str 型追加，改走显式 append 函数。",
+      "status": "OPEN-BACKLOG（治理/账本工具类，属 Max 治理阶段；不涉及仓库代码）"
     }
   },
   "humanDecisionsRequired": [
@@ -1051,6 +1115,52 @@
       },
       "designRef": "findings.F-24 + pendingFixTasks.FIX-GOV-001.design",
       "sealed": false
+    },
+    "FIX-PERF-03": {
+      "source": "F-44 / PF-01（M0-007 性能基线）+ 本次只读复核 addendum（2026-10-09T23:08:36Z）+ 顺带清偿 F-01",
+      "objective": "让性能用例只在真实成功路径上计量：_measure 返回 {ms,status,cache}，仅 status==200 的样本进入中位数，并断言有效样本数==SAMPLE_COUNT；test_metrics_performance 改用既有 therapist_token（conftest.py:158）；test_middleware.py::test_metrics_endpoint_is_available 同批改用 therapist_token 以关闭 F-01。鉴权负向回归（匿名->401 / patient->403）另放角色/安全测试文件，不进性能文件。",
+      "severity": "P1-MEASUREMENT-INTEGRITY",
+      "mustRunBefore": "Release Gate 第 6 项（性能证据）与第 1 项（后端全量测试由 1 failed/231 passed 转绿）；任何引用 PERF_BASELINE metrics 行数的下游结论",
+      "notOnM0CriticalPath": true,
+      "evidenceGrounded": [
+        "test_metrics_performance 1 passed / exitCode=0 而同用例三次请求 = [401,401,401]（本次独立复现）",
+        "其余 6 条计时用例今日全部 200x3 => 收紧断言不会引发额外转红",
+        "身份矩阵：无凭据 401 / patient 403 / therapist 200",
+        "therapist 认证下中位数 4.70ms << 阈值 100ms => 修正后仍为绿色"
+      ],
+      "explicitlyNotDoing": [
+        "改 THRESHOLDS 或 SAMPLE_COUNT",
+        "改 app/api/metrics.py 或 deps.py 的鉴权契约（须 ADR + DECISIONS.md）",
+        "新增重复 therapist fixture（已存在）",
+        "删除/skip/降低任何既有断言"
+      ],
+      "gateCommands": [
+        "cd backend && venv312/Scripts/python.exe -m pytest tests/test_performance.py -v -p no:cacheprovider",
+        "cd backend && venv312/Scripts/python.exe -m pytest tests/test_middleware.py -q -p no:cacheprovider",
+        "cd backend && venv312/Scripts/python.exe -m pytest -q -p no:cacheprovider",
+        "cd backend && venv312/Scripts/python.exe -m ruff check app/"
+      ],
+      "selfProofRequired": "临时把 metrics 用例身份改为匿名，该用例必须 FAILED（证明断言真在把关）；验证后还原且不得提交",
+      "status": "BACKLOG-GATED-BY-HD-N-04",
+      "blockedBy": "HD-N-04（向 docs/workflow/TASK_CATALOG.md 写入 FIX-* 行属治理写）；实施须走 project-feature-delivery task",
+      "registeredAt": "2026-10-09T23:10:21Z"
+    },
+    "FIX-PERF-04": {
+      "source": "F-55（本次复核的 X-Cache 只读探针）",
+      "objective": "把缓存命中与冷路径分开计量：_measure 捕获 X-Cache，性能用例分别输出 MISS/HIT 两组中位数，基线表按两栏呈现，使 /api/dialogue/scenarios 与 /api/report/summary 的读数语义可解释。",
+      "severity": "P2-MEASUREMENT-INTEGRITY",
+      "mustRunBefore": "Release Gate 第 6 项性能证据的口径澄清；任何以 PERF_BASELINE §2 数值做 SLA/容量结论的下游",
+      "notOnM0CriticalPath": true,
+      "evidenceGrounded": [
+        "app/middleware/performance.py:44-50 CACHEABLE_PATHS 含 /api/dialogue/scenarios、/api/report/summary（DEFAULT_TTL=60）",
+        "实测各 3 次采样 = MISSx1 + HITx2 => median 落在 HIT 值上",
+        "performance.py:83 只缓存 status==200（故 401 永不入缓存，与 F-44 的系统性偏差同源）"
+      ],
+      "openHumanQuestion": "阈值应绑冷路径（MISS）还是命中路径（HIT）？属测量口径决策，实施侧不自选，建议与 HD-N-09 同批裁定。",
+      "orderingNote": "与 FIX-PERF-03 同域同文件，宜紧邻排期（先 03 建立状态码门槛，再 04 分列缓存口径），避免两次改写 _measure 签名。",
+      "status": "BACKLOG-GATED-BY-HD-N-04",
+      "blockedBy": "HD-N-04 + 上述口径裁决",
+      "registeredAt": "2026-10-09T23:10:21Z"
     }
   },
   "specConflictLog": [
@@ -1124,7 +1234,7 @@
       "gitWritesByFlash": "none（HEAD 仍 1a62703，staging 空，无破坏性 git 命令）"
     }
   ],
-  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。\n[2026-10-09T19:20:37Z] M0-006 = TASK_PASS（run wf_6c897bee-ab8，mode=FULL，agents=27，toolUses=427，7597134ms，repair=2）。\n[2026-10-09T20:03:41Z] M0-007 = TASK_PASS（run wf_cc12b79d-5be，mode=FULL，agents=15，toolUses=127，1779557ms，repair=0）。\n[2026-10-09T20:43:35Z] M0-008 = TASK_PASS（run wf_dfb3e8e5-ed5，mode=FULL，agents=15，toolUses=158，2196279ms，repair=0）。\n[2026-10-09T20:58:02Z] F-54：:5432 监听进程 6892 → 6740（原生 postgres.exe 服务），历史观测快照过期；实例身份仍未知，零接触纪律不变。已封存交付物未改写。",
+  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。\n[2026-10-09T19:20:37Z] M0-006 = TASK_PASS（run wf_6c897bee-ab8，mode=FULL，agents=27，toolUses=427，7597134ms，repair=2）。\n[2026-10-09T20:03:41Z] M0-007 = TASK_PASS（run wf_cc12b79d-5be，mode=FULL，agents=15，toolUses=127，1779557ms，repair=0）。\n[2026-10-09T20:43:35Z] M0-008 = TASK_PASS（run wf_dfb3e8e5-ed5，mode=FULL，agents=15，toolUses=158，2196279ms，repair=0）。\n[2026-10-09T20:58:02Z] F-54：:5432 监听进程 6892 → 6740（原生 postgres.exe 服务），历史观测快照过期；实例身份仍未知，零接触纪律不变。已封存交付物未改写。\n[2026-10-09T23:08:36Z] F-44 只读复核（未改仓库文件）：PF-01 独立复现 [401,401,401] + 7 条用例状态映射（仅 metrics 落错误路径）+ 身份矩阵 401/403/200 + 更正\"补 therapist fixture\"（conftest.py:158 已存在）+ 真实 200 路径中位数 4.70ms 证明修正后仍绿 + 建议同批清偿 F-01。新增 F-55（缓存命中样本主导两条用例中位数）。另自查发现 F-56：notes 曾被 \"[object Object]\" 拼接毁掉 7 键正文，已自 6fe4904 原样恢复至 notesPreCorruption。FIX-PERF-03/04 仍待 HD-N-04 落库，自治链未实施测试代码改动。\n[2026-10-09T23:10:41Z] 续记：FIX-PERF-03 / FIX-PERF-04 已登记进 pendingFixTasks（各含 evidenceGrounded、explicitlyNotDoing、gateCommands、selfProofRequired，状态 BACKLOG-GATED-BY-HD-N-04）。本写入按 F-56 建议先做运行时类型断言，并在写后校验原 notes 为逐字节前缀。测试代码与业务代码零改动。",
   "pausedAt": "2026-10-09T14:28:05Z",
   "timestampCorrections": [
     {
@@ -1797,5 +1907,21 @@
     "text": "M0 基线 DAG 8/8 TASK_PASS，但 Milestone Gate 的 Exit 条款欠三项人工裁决：HD-N-04（向 docs/workflow/TASK_CATALOG.md 写入 FIX-*/SEC-*/OPS-*/PRIV-* 行，治理写）、HD-N-05（基线文档 8 vs 7 口径）、HD-N-09（M0-008 的 docker build 门禁口径 甲/乙/丙）。非模型不可用、非配额、非环境阻塞。自治链无权改 docs/workflow/**，亦不自选口径。",
     "supersededAt": "2026-10-09T21:00:38Z",
     "reason": "HD-N-10 appended"
+  },
+  "notesPreCorruption": {
+    "recoveredAt": "2026-10-09T23:08:36Z",
+    "sourceCommit": "6fe4904",
+    "corruptedInCommit": "506f5ee",
+    "why": "notes 曾被当作字符串追加分隔符使用（typeof object -> \"[object Object]\"），使 7 个键的正文在该次写入中丢失。此处按原样恢复，不改动当前 notes 字符串。",
+    "provenanceNote": "这些是各键在 6fe4904 时点的原文，属历史留痕；其中 engineeringReleaseReady / dockerAvailable 等结论以当前证据为准，不因其恢复而变为现状判定。",
+    "keys": {
+      "resumePrecondition": "前置条件仅剩一步：独立 qmodel_38max Verify 可运行。恢复额度 → 重跑 Verify → TASK_PASS → 按 §28 精确封存两个治理文件 → 才能重启 M0-005。禁止在未封存前让业务 Worker 写治理文件。",
+      "dbSafety": "backend/alembic.ini:5 default sqlalchemy.url points to postgresql://...@localhost:5432/cochlear_rehab (the UNKNOWN listener). Any migration test MUST override the URL to a Goal-created isolated non-5432 container; NEVER touch 5432.",
+      "dockerAvailable": "Docker 29.5.2 / Compose v5.1.4 曾于 M0-004/M0-005/M0-006 批次确认可用（隔离容器 :55432/:55433/:26379）。2026-10-08T07:38Z 复测：`docker info` **失败** —— `failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`（Docker Desktop 守护进程当前未运行）。⇒ H-10（postgres 口径 13 条安全用例直测）此刻不可闭；`ENGINEERING_RELEASE_READY` 的 Docker build/部署冒烟两项证据同样不可采。**决策：不擅自启动 Docker Desktop。** 理由：(1) 带 restart=always 的既有容器可能在启动时被自动复活，其中包括身份未知的 `:5432` 相关实例（SB-28/SB-31 危险面）与他方会话持有的 `dresslens-*`；(2) 拉起机器级服务不属本 Chain 授权范围，属需人工确认的环境变更。本 Chain 全程未因本次观测对 :5432 做任何连接或变更。",
+      "serialPolicy": "Overnight default serial (§18); progress files committed before Workflow launch and updated only after TASK_PASS (§116/§117).",
+      "engineeringReleaseReady": "NO — M0 未过 Gate（4 个 P0 任务 BLOCKED），M1..M5 未启动；criticalPath 首环 M0-001→M0-004 之后的 M0 收口即断。",
+      "realProductionApproved": "NO — 无任何真实人工/授权主体批准；正式生产部署属 HUMAN_REQUIRED，夜间不自动批准。",
+      "bookkeepingIgnore": "夜间账本（deliverables/overnight/**）在 .gitignore 的 `deliverables/*` 之下且无例外；提交账本必须显式 `git add -- <已跟踪的两个文件路径>`，新增记录文件须先由人工加 `!deliverables/overnight/` 例外，否则会被静默忽略（见 findings.F-23）。"
+    }
   }
 }
