@@ -30,6 +30,21 @@
 - **F-28（本次自纠的干跑器缺陷）**：`dryrun-harness.mjs` 语法临时文件用固定名 `pfd-wrapped-check.mjs` 并在 `finally` 删除 —— 并发调用互相删除对方临时文件，产生**假 SYNTAX_FAIL**。已改为按 pid 命名，并以两条 suite 并发（各 115 PASS）复验。
 - **工作区状态**：仅两个授权治理文件为 `M`；`deliverables/baseline/INTEGRATION_BASELINE.md`、`SECURITY_BASELINE.md`、`docs/qgraphflow/dialogue-turn-sequence/` 为 pre-existing 未跟踪内容，未修改、未暂存、未归属本任务。
 
+## F-30 独立 Verify 重试（2026-10-09，Orchestrator 亲自执行，非夜间链）
+
+- **F-29 已解除**：`nightchain-model-smoke` runId `wf_b8413f35-914` 的 MAX-PROBE 于 `2026-10-09T13:23:05Z` 返回 `marker=MAX_SMOKE_OK` / `bytes=8411` / 首行 `# 00 — 模型政策（永久，禁止 fallback）` ⇒ `qmodel_38max` 调用**可以建立**，不再是 credit 上限。同一探针的 FLASH-PROBE 反而失败（`13:25:17Z`，`Sorry, something went wrong`）⇒ 当前故障是**模型服务间歇性断连**，与额度、与本次 Fix 质量都无关。
+- **两次 v1 重试均无 verdict（诚实记录，不记为验收）**：
+  - `12:51:50Z` 启动 resume `wf_375e92e7-2b8`（脚本逐字未改）：`max-verify-r1` 于 `12:52:57Z`（67s）报 `Sorry, something went wrong`；`max-review-r1` 干跑 28 次工具调用后于 `13:07:22Z` 被 harness 判 `stalled after 180000ms` → attempt 2 → `13:14:53Z` 报 `The connection to the model service was interrupted`。
+  - `13:31:44Z` 第二次 resume：两个 invocation 于 `13:38:30Z` / `13:38:35Z`（约 405s）同样报 `Sorry, something went wrong`，仅 7 次工具调用。
+  - 合计 **4 次 Max 尝试、0 个 verdict**。按 §27 / 证据纪律，Fix 仍**不具备 PASS 资格**，仍不封存。
+- **Root cause 假设（v1 失败的可解释成因，属 Orchestrator 自身 brief 缺陷）**：被审的两个治理文件为 `project-feature-delivery.js` **2458 行 / 178462 B** 与 `dryrun-harness.mjs` **1264 行 / 130624 B**，而 v1 的 CTX 要求 Reviewer 与 Verifier **各自整读二者**（≈4.5 万 token × 并行两路）⇒ 上游连接被截断是合理结果。**这不是实现质量缺陷**：机器证据与既有 106 条断言摘要零改动仍成立。
+- **v2 缓解（不改判据、不降模型、不降门禁）**：新脚本 `fix-gov-001-r1-review-verify-v2.js`（runId `wf_3855e53c-a89`）
+  1. **限窗读取纪律**：禁止整文件 Read；只允许 Grep + `Read offset/limit ≤200 行`；并逐字下发已知行锚点（validateGateSpec `:754-775`、detectRequiredDowngrade `:776-794`、detectGateDeclaration `:795-820`、scanUnsafeDbCommand `:821-845`、gateGuardViolation `:1987-2010`、四个 `runMachineGate` 调用点 `:2026/:2111/:2221/:2263`；harness 侧 `:37-43/:186/:313-329/:431-432/:556-575/:988/:1095-1128`）。Q1..Q11 / V1..V7 判据**逐条原样保留**。
+  2. **并行改串行**：Review 不再可用（agent 失败或自报 `aborted=true`）或 verdict≠PASS 时**不启动 Verify**——省额度，且杜绝"Review 缺失却合成 PASS"。
+  3. **反假绿加固**：两个 schema 新增 `aborted`/`abortReason`，prompt 明写"证据不足时绝不给 PASS/TASK_PASS"；`BLOCKS_SEAL` 由脚本按 `verify.verdict==='TASK_PASS' ∧ !aborted` 计算。
+- **工作区完整性复核（`13:32Z`，失败的两个只读 invocation 之后）**：HEAD 仍 `29f2775`；`git status --porcelain` 与 `TASK_LEDGER.worktreeAtPause` 逐条一致；6 个关键文件 SHA-256 实测 `5512598f…`(workflow) / `441daf23…`(harness) / `56ad8639…`(INTEGRATION_BASELINE.md) / `72fd898f…`(SECURITY_BASELINE.md) / `5f12d3d4…`+`2bd127b7…`(qgraphflow) 全部与既有记录相等 ⇒ **只读取证未落任何写入**，无 `GOVERNANCE_POLICY_VIOLATION`。另机器核实：这两文件在 `77fdb32..29f2775` 之间逐字节未变 ⇒ 验收基线取 `git show 77fdb32:<path>` 与 HEAD 等价。
+- **仍未变的事实**：M0-005/006/007/008 禁止重启；Goal 状态仍 `PAUSED_FOR_HUMAN`，暂停根因由 F-29（额度）改为 **F-30（Max 调用不稳定，独立验收 0/4 取得 verdict）**。若 v2 再次无 verdict，则停止自动重试交人工（不在同一失效形态上连烧第三次）。
+
 ## Pre-existing untracked（§8，PRE_EXISTING_UNCHANGED）
 
 - `docs/qgraphflow/dialogue-turn-sequence/` — 2 文件

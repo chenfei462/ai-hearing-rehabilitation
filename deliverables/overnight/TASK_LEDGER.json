@@ -2,7 +2,7 @@
   "goalStartedAt": "2026-10-06T19:03:00Z",
   "goalObjective": "Autonomous Delivery Orchestrator: M0 -> M0 Gate -> ... -> M10 -> M10 Gate -> Release Gate -> PROJECT_READY (no fake completion; stop at PAUSED_FOR_HUMAN or BLOCKED if unsafe).",
   "currentMilestone": "M0",
-  "currentTask": "FIX-GOV-001-R1 (BLOCKED BEFORE SEAL: independent qmodel_38max Verify unavailable)",
+  "currentTask": "FIX-GOV-001-R1 (seal withheld: independent qmodel_38max Verify has produced 0 verdicts in 4 attempts; v2 retry running)",
   "goalStatus": "PAUSED_FOR_HUMAN",
   "lastSafeCommit": "77fdb32",
   "currentHead": "77fdb32",
@@ -608,6 +608,87 @@
         "B 人工显式授权本次治理 Fix 走 D3 FLASH_ONLY_DEGRADED_MODE 的独立 qfmodel 验收（判据等价、但需书面授权，且不得自动推广到后续 Task）",
         "C 人工直接审阅工作区 diff 并自行 commit（Orchestrator 代跑 commit 需 §26 验收，人工接手即视为 HD 批准）"
       ]
+    },
+    "F-30": {
+      "id": "F-30",
+      "severity": "P0-BLOCKING-CHAIN",
+      "supersedes": "F-29 (credit ceiling) — F-29 is RESOLVED",
+      "title": "qmodel_38max 调用可建立但不稳定：FIX-GOV-001-R1 独立 Verify 连续 4 次尝试 0 个 verdict",
+      "at": "2026-10-09T14:28:05Z",
+      "evidence": {
+        "maxProbePass": {
+          "runId": "wf_b8413f35-914",
+          "script": "nightchain-model-smoke-wf_71992be1-218.js",
+          "at": "2026-10-09T13:23:05Z",
+          "marker": "MAX_SMOKE_OK",
+          "path": ".qoder/rules/00-model-policy.md",
+          "bytes": 8411,
+          "firstLine": "# 00 — 模型政策（永久，禁止 fallback）",
+          "meaning": "F-29 credit ceiling is GONE — Max calls can be established"
+        },
+        "flashProbeFail": {
+          "runId": "wf_b8413f35-914",
+          "at": "2026-10-09T13:25:17Z",
+          "error": "Sorry, something went wrong. Please try again. Report Issue (input /feedback)"
+        },
+        "resumeAttempts": [
+          {
+            "runId": "wf_375e92e7-2b8",
+            "scriptVersion": "v1",
+            "startedAt": "2026-10-09T12:51:50Z",
+            "taskId": "wf-08bcef84-5ed",
+            "verify": {
+              "label": "max-verify-r1",
+              "failedAt": "2026-10-09T12:52:57Z",
+              "elapsedS": 67,
+              "error": "Sorry, something went wrong. Please try again."
+            },
+            "review": {
+              "label": "max-review-r1",
+              "stalledAt": "2026-10-09T13:07:22Z",
+              "stallRule": "workflow agent stalled after 180000ms without completing",
+              "attempt2FailedAt": "2026-10-09T13:14:53Z",
+              "error": "The connection to the model service was interrupted. Please try again.",
+              "toolUses": 28,
+              "durationMs": 1383558
+            }
+          },
+          {
+            "runId": "wf_375e92e7-2b8",
+            "scriptVersion": "v1",
+            "startedAt": "2026-10-09T13:31:44Z",
+            "taskId": "wf-62596f93-8e3",
+            "review": {
+              "failedAt": "2026-10-09T13:38:30Z",
+              "error": "Sorry, something went wrong. Please try again."
+            },
+            "verify": {
+              "failedAt": "2026-10-09T13:38:35Z",
+              "error": "Sorry, something went wrong. Please try again."
+            },
+            "toolUses": 7,
+            "durationMs": 410935
+          }
+        ],
+        "verdictsObtained": 0
+      },
+      "rootCauseHypothesis": {
+        "statement": "v1 brief required Reviewer AND Verifier to each Read both governance files in full; those files are 2458 lines / 178462 B and 1264 lines / 130624 B (~45k tokens each, in parallel) — upstream connection truncation is the plausible cause.",
+        "owner": "Orchestrator (this brief is the defect, NOT the FIX-GOV-001-R1 implementation)",
+        "notQualityOfFix": "Machine evidence unchanged: REGRESSION 115/115, OLD_EXPECTATION_DIGEST byte-identical to pre-Fix baseline"
+      },
+      "mitigation": {
+        "scriptPath": ".qoder/sessions/eaf1d768-a97f-408c-9ef6-5cb09321523c/workflows/scripts/fix-gov-001-r1-review-verify-v2.js",
+        "runId": "wf_3855e53c-a89",
+        "changes": [
+          "bounded-read discipline: no whole-file Read; Grep + Read offset/limit <=200 lines; exact line anchors issued verbatim (validateGateSpec :754-775, detectRequiredDowngrade :776-794, detectGateDeclaration :795-820, scanUnsafeDbCommand :821-845, gateGuardViolation :1987-2010, runMachineGate call sites :2026/:2111/:2221/:2263; harness :37-43/:186/:313-329/:431-432/:556-575/:988/:1095-1128)",
+          "parallel -> sequential: Verify is NOT launched when Review failed or self-reported aborted, or verdict!=PASS",
+          "anti-false-green: schema adds aborted/abortReason; BLOCKS_SEAL computed by script as (verify.verdict===TASK_PASS && !aborted)",
+          "judgement criteria Q1..Q11 / V1..V7 preserved verbatim; model stays qmodel_38max; no effort downgrade; no FLASH_ONLY fallback"
+        ]
+      },
+      "haltRule": "If v2 also yields no verdict, stop retrying and hand to human — do not burn a third attempt on the same failure mode.",
+      "effectOnGates": "Fix still NOT PASS-eligible; seal withheld; M0-005/006/007/008 still forbidden to restart."
     }
   },
   "humanDecisionsRequired": [
@@ -810,7 +891,7 @@
     "realProductionApproved": "NO — 无任何真实人工/授权主体批准；正式生产部署属 HUMAN_REQUIRED，夜间不自动批准。",
     "bookkeepingIgnore": "夜间账本（deliverables/overnight/**）在 .gitignore 的 `deliverables/*` 之下且无例外；提交账本必须显式 `git add -- <已跟踪的两个文件路径>`，新增记录文件须先由人工加 `!deliverables/overnight/` 例外，否则会被静默忽略（见 findings.F-23）。"
   },
-  "pausedAt": "2026-10-08T11:05Z",
+  "pausedAt": "2026-10-09T14:28:05Z",
   "timestampCorrections": [
     {
       "asRecorded": "2026-10-07T21:10Z",
@@ -891,7 +972,7 @@
   "pausedAtCorrection": "原标签为陈旧时间戳（见 findings.F-25）；权威值来自 `date -u`，由 argv 传入本脚本",
   "fixGov001R1": {
     "authorizedBy": "HD-N-01（37 节人工授权，2026-10-08）：显式采纳 amendmentR1，显式否决旧版 FIX-GOV-001",
-    "status": "IMPLEMENTED-AND-MACHINE-VERIFIED-BUT-NOT-SEALED",
+    "status": "IMPLEMENTED-AND-MACHINE-VERIFIED-BUT-INDEPENDENT-VERIFY-NOT-YET-OBTAINED",
     "scope": [
       ".qoder/workflows/project-feature-delivery.js",
       ".qoder/workflow-state/dryrun-harness.mjs"
@@ -979,16 +1060,54 @@
       "Verify=TASK_PASS 后才允许 §28 精确封存：git add -- .qoder/workflows/project-feature-delivery.js .qoder/workflow-state/dryrun-harness.mjs（禁止 git add . / -A），git diff --cached --name-only 必须恰等于这两条路径，commit message 固定 \"fix(governance): enforce declared machine gate contracts\"",
       "封存后再按 DAG 推进 M0-005 → M0-006 → M0-007/M0-008 → M0 Milestone Gate"
     ],
-    "safeNow": "工作区无丢失风险：两个治理文件改动完整存在且已被 115/115 与 Review 证据锚定；HEAD 未动；无 push / merge / rebase / reset / clean / stash / checkout；docs/qgraphflow/dialogue-turn-sequence/ 与 deliverables/baseline/*.md 等 pre-existing 未跟踪内容未被触碰、未被暂存。"
+    "safeNow": "工作区无丢失风险：两个治理文件改动完整存在且已被 115/115 与 Review 证据锚定；HEAD 未动；无 push / merge / rebase / reset / clean / stash / checkout；docs/qgraphflow/dialogue-turn-sequence/ 与 deliverables/baseline/*.md 等 pre-existing 未跟踪内容未被触碰、未被暂存。",
+    "verifyAttempts": [
+      {
+        "at": "2026-10-08T11:05Z",
+        "runId": "wf_375e92e7-2b8",
+        "outcome": "BLOCKED_CREDIT_CEILING",
+        "note": "2 tries, same credit error (F-29)"
+      },
+      {
+        "at": "2026-10-09T12:51:50Z",
+        "runId": "wf_375e92e7-2b8",
+        "outcome": "TRANSPORT_FAILURE_NO_VERDICT",
+        "note": "verify 67s error; review stalled 180s then attempt2 disconnect"
+      },
+      {
+        "at": "2026-10-09T13:31:44Z",
+        "runId": "wf_375e92e7-2b8",
+        "outcome": "TRANSPORT_FAILURE_NO_VERDICT",
+        "note": "both agents ~405s generic upstream error"
+      },
+      {
+        "at": "2026-10-09T14:28:05Z",
+        "runId": "wf_3855e53c-a89",
+        "script": "v2-bounded-reads-sequential",
+        "outcome": "IN_PROGRESS"
+      }
+    ]
   },
   "worktreeAtPause": {
-    "head": "77fdb32",
+    "head": "29f2775",
     "porcelain": [
       "M .qoder/workflow-state/dryrun-harness.mjs",
       " M .qoder/workflows/project-feature-delivery.js",
       "?? deliverables/baseline/INTEGRATION_BASELINE.md",
       "?? deliverables/baseline/SECURITY_BASELINE.md",
       "?? docs/qgraphflow/dialogue-turn-sequence/"
-    ]
-  }
+    ],
+    "reVerifiedAt": "2026-10-09T14:28:05Z",
+    "sha256": {
+      ".qoder/workflows/project-feature-delivery.js": "5512598f1714f276ee6957b36e7f266686e747dbd5b06bc89fa29fff1d0b8fbf",
+      ".qoder/workflow-state/dryrun-harness.mjs": "441daf2392f32f5fe1987d9214fa21cc8c42a7d7e4c414cb7daed43e118e1d78",
+      "deliverables/baseline/INTEGRATION_BASELINE.md": "56ad863926343581084faf487f7b8b600c57bde800375e2977e66d0cd0e68def",
+      "deliverables/baseline/SECURITY_BASELINE.md": "72fd898f4b5add01ad8dc13e4ffc5c81c67b69033ea1012dc036d008461d34f7",
+      "docs/qgraphflow/dialogue-turn-sequence/graph.json": "5f12d3d4503d2305f352b21b8d275bb5e2ea544a32f3d539ea6909951373f138",
+      "docs/qgraphflow/dialogue-turn-sequence/index.html": "2bd127b7c22c25b20e04804cc5c745f686f7f462cae96649aa9b47612d4bf600"
+    },
+    "governanceFilesIdenticalBetween": "77fdb32..29f2775 (git diff --stat empty) ⇒ verify baseline git show 77fdb32:<path> == HEAD:<path>",
+    "readOnlyAgentsWroteNothing": true
+  },
+  "pausedReasonCurrent": "F-30 — Max calls reachable but unstable; independent verification not yet obtained"
 }
