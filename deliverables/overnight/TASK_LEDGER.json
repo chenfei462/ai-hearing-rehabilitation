@@ -872,6 +872,18 @@
       "proposedFix": "候选 FIX-GOV-006：账本写入脚本对\"状态跃迁\"必须做**同字段回写**（写入前扫描与新事实矛盾的既有布尔/枚举字段并置 superseded*，保留原文），且所有时间字段只能来自 `date -u` argv 守卫（禁止分钟精度转写）；对同一 runId 的 attempt 行按机器时间强制单调，违序即 die() 零写入。",
       "status": "OPEN-BACKLOG",
       "id": "F-53"
+    },
+    "F-54": {
+      "at": "2026-10-09T20:58:02Z",
+      "severity": "P3-OBSERVATION-EXPIRY",
+      "foundBy": "Orchestrator 收尾只读巡检（netstat -ano + tasklist + docker ps 端口映射；零连接、零写入、零处置）",
+      "title": ":5432 观测快照已过期 —— 监听进程由 PID 6892 变为 6740（原生 postgres.exe 服务），实例身份依旧未知",
+      "detail": "M0-002 交付物 `BACKEND_TEST_BASELINE.md:259`/`:274`（NB-01）、`GOAL_PROGRESS.md` 的 M0-006 日志行与本账本两处字段（`…summary: \"unknown PostgreSQL listener on localhost:5432 (PID 6892)\"` 等）记录的 \":5432 LISTENING PID 6892\" 现已失效：`tasklist //FI \"PID eq 6892\"` 返回无匹配进程，当前 0.0.0.0:5432 与 [::]:5432 由 **PID 6740 = postgres.exe（会话 Services/0）** 持有，即一台原生 Windows PostgreSQL 服务，而非容器（`opengauss-lab` 虽映射 0.0.0.0:5432->5432 但状态 Exited(255)，无法持有端口）。变化点位于人工授权启动 Docker Desktop 前后的机器级服务重启窗口内，因果未证明、只报相关。实例里有什么库/是否含生产数据仍然**不可证明**，因此 UNKNOWN_DATABASE_INSTANCE 口径不变、BLOCKED_UNSAFE_DATABASE_TARGET 纪律继续生效。",
+      "impact": "任何引用\"PID 6892\"的历史记录（含已封存交付物 DEPLOY_BASELINE.md §A.5、账本 worktreeAtPause 与 NB-01 系描述）自本刻起为**时点快照**而非当前事实。风险方向：若下游把\"PID 变了\"误读为\"这台库已被处置/已确认安全\"，可能对 :5432 发起写操作 —— 严禁。",
+      "proposedFix": "不改写已封存交付物（历史证据不可变）。改为：SEC-003/OPS-002 的 SPEC 若需引用宿主 :5432，必须在**当次执行内**重新取证 PID 与实例身份，禁止复用基线文档里的观测值；账本 observation 字段统一加 \"observedAt\" 前缀语义（已由 at 字段承担）。",
+      "status": "OPEN-NOTE",
+      "id": "F-54",
+      "zeroTouchReconfirmed": "本轮全程未对该端口发起任何连接或写操作；观测命令均为只读。"
     }
   },
   "humanDecisionsRequired": [
@@ -958,6 +970,16 @@
         "OPS-002 / SEC-003": "verified existing catalog rows (deps include M0-008): OPS-002=in catalog SEC-003=in catalog",
         "checkedAt": "2026-10-09T20:55:52Z"
       }
+    },
+    {
+      "id": "HD-N-10",
+      "decision": "Identify the host :5432 PostgreSQL instance and rule on its admissibility. Read-only evidence at 2026-10-09T20:58:02Z: 0.0.0.0:5432 and [::]:5432 LISTENING are held by PID 6740 = postgres.exe in session Services/0, i.e. a native Windows PostgreSQL SERVICE, not a container (opengauss-lab maps 0.0.0.0:5432->5432 but is Exited(255) and cannot hold the port). The PID recorded in every historical document (NB-01: \"5432 LISTENING PID 6892\", BACKEND_TEST_BASELINE.md:259/:274, GOAL_PROGRESS M0-006 log line, ledger NB fields) no longer exists => tasklist //FI \"PID eq 6892\" returns no matching process. Which databases it holds, whether it contains real health data or production data, and whether any agent may touch it are NOT provable by the agent. Human ruling required: either declare it a disposable dev instance with an explicit isolation contract (own database name / own port), or forbid its use and keep all verification on sqlite + self-created throwaway containers.",
+      "blocks": "OPS-002 deployment smoke, FIX-M0-004-001 migration repair, SEC-003 production hardening, and any \"just connect and look\" temptation against :5432. Until ruled, BLOCKED_UNSAFE_DATABASE_TARGET remains in force.",
+      "raisedAt": "2026-10-09T21:00:38Z",
+      "linkedFinding": "F-54",
+      "zeroTouchReconfirmed": "This batch ran only `netstat -ano`, `tasklist //FI`, `docker ps -a` — no connection, no read of any database, no start/stop of any service or container.",
+      "sealedDocPolicy": "BACKEND_TEST_BASELINE.md NB-01 is NOT rewritten (sealed evidence stays as a time-point snapshot); corrections land only in the living log and the ledger.",
+      "autonomousChainStance": "NOT self-decided. Proving instance identity would require credentials or writes to a database of unknown ownership."
     }
   ],
   "pendingFixTasks": {
@@ -1102,7 +1124,7 @@
       "gitWritesByFlash": "none（HEAD 仍 1a62703，staging 空，无破坏性 git 命令）"
     }
   ],
-  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。\n[2026-10-09T19:20:37Z] M0-006 = TASK_PASS（run wf_6c897bee-ab8，mode=FULL，agents=27，toolUses=427，7597134ms，repair=2）。\n[2026-10-09T20:03:41Z] M0-007 = TASK_PASS（run wf_cc12b79d-5be，mode=FULL，agents=15，toolUses=127，1779557ms，repair=0）。\n[2026-10-09T20:43:35Z] M0-008 = TASK_PASS（run wf_dfb3e8e5-ed5，mode=FULL，agents=15，toolUses=158，2196279ms，repair=0）。",
+  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。\n[2026-10-09T19:20:37Z] M0-006 = TASK_PASS（run wf_6c897bee-ab8，mode=FULL，agents=27，toolUses=427，7597134ms，repair=2）。\n[2026-10-09T20:03:41Z] M0-007 = TASK_PASS（run wf_cc12b79d-5be，mode=FULL，agents=15，toolUses=127，1779557ms，repair=0）。\n[2026-10-09T20:43:35Z] M0-008 = TASK_PASS（run wf_dfb3e8e5-ed5，mode=FULL，agents=15，toolUses=158，2196279ms，repair=0）。\n[2026-10-09T20:58:02Z] F-54：:5432 监听进程 6892 → 6740（原生 postgres.exe 服务），历史观测快照过期；实例身份仍未知，零接触纪律不变。已封存交付物未改写。",
   "pausedAt": "2026-10-09T14:28:05Z",
   "timestampCorrections": [
     {
@@ -1376,7 +1398,7 @@
     },
     "caveat": "快照在本账本写盘之前枚举，可能含 TASK_LEDGER.json/GOAL_PROGRESS.md 自身的上一版哈希（自指项）；后续任务的 pre-existing 判据只取 treeUnits 与非记账路径。"
   },
-  "pausedReasonCurrent": "M0 基线 DAG 8/8 TASK_PASS，但 Milestone Gate 的 Exit 条款欠三项人工裁决：HD-N-04（向 docs/workflow/TASK_CATALOG.md 写入 FIX-*/SEC-*/OPS-*/PRIV-* 行，治理写）、HD-N-05（基线文档 8 vs 7 口径）、HD-N-09（M0-008 的 docker build 门禁口径 甲/乙/丙）。非模型不可用、非配额、非环境阻塞。自治链无权改 docs/workflow/**，亦不自选口径。",
+  "pausedReasonCurrent": "M0 基线 DAG 8/8 TASK_PASS，Milestone Gate 的 Exit 欠三项人工裁决：HD-N-04（向 docs/workflow/TASK_CATALOG.md 写入 FIX-*/SEC-*/OPS-*/PRIV-* 行，治理写）、HD-N-05（基线文档 8 vs 7 口径）、HD-N-09（M0-008 的 docker build 门禁口径 甲/乙/丙）。下游另有 HD-N-10（宿主 :5432 实例身份）。非模型不可用、非配额、非环境阻塞；自治链无权改 docs/workflow/**，亦不自选口径。 [2026-10-09T21:00:38Z 追加 HD-N-10]",
   "m005LatestRun": {
     "taskId": "M0-005-integration-test-baseline",
     "runId": "wf_5a685efc-fc6",
@@ -1770,5 +1792,10 @@
     "durationMs": 2196279,
     "failures": []
   },
-  "goalStatusSuperseded": "M0-DAG-COMPLETE-PENDING-MILESTONE-GATE"
+  "goalStatusSuperseded": "M0-DAG-COMPLETE-PENDING-MILESTONE-GATE",
+  "pausedReasonSuperseded": {
+    "text": "M0 基线 DAG 8/8 TASK_PASS，但 Milestone Gate 的 Exit 条款欠三项人工裁决：HD-N-04（向 docs/workflow/TASK_CATALOG.md 写入 FIX-*/SEC-*/OPS-*/PRIV-* 行，治理写）、HD-N-05（基线文档 8 vs 7 口径）、HD-N-09（M0-008 的 docker build 门禁口径 甲/乙/丙）。非模型不可用、非配额、非环境阻塞。自治链无权改 docs/workflow/**，亦不自选口径。",
+    "supersededAt": "2026-10-09T21:00:38Z",
+    "reason": "HD-N-10 appended"
+  }
 }
