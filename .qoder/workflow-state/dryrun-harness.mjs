@@ -34,13 +34,21 @@
 //         · d5-12/d5-13 显式 executionMode:'FLASH_ONLY' 降级路径完整保留（含 HIGH 双独立审查）
 //         · d5-14 非法 executionMode → fail-closed（Input 阶段零 agent 调用，绝不静默回落）
 //         · d5-15/d5-16 D4 确定性字节证据 + 同任务重试归属在 FULL 下保持｜d5-17 D2 治理写保护在 FULL 下保持
-// 全量：node .qoder/workflow-state/dryrun-harness.mjs test → 106/106（D1+D2+D3+D4+D5）
+//       D6 门禁合同回归（FIX-GOV-001-R1，9）：d6-01..d6-13
+//         · 对账键 = gateId：MANDATORY/REGRESSION 只作语义清单，绝不与提交命令做跨层字节比对（A3）
+//         · d6-01 诚实 record 命令与 required 命令互为前缀 → 不再被误判降级（F-20 假红回归哨兵），仍 TASK_PASS
+//         · d6-02/09/12 kind 非法 / 声明缺失 / gateId 重复 → Implement 之前 GATE_SPEC_MALFORMED，零实施 Agent
+//         · d6-03/04 沉默省略 required 或"本会红"的 record → BLOCKED_GATE_COMMAND_NOT_EXECUTED
+//         · d6-05 未声明 gateId｜d6-06 沿用已声明 gateId 却顶替成另一条"会绿"命令 → GATE_COMMAND_NOT_DECLARED（exitCode=0 也拦）
+//         · d6-13 FULL 默认模式下 required→record 降级 → GOVERNANCE_POLICY_VIOLATION（与 d3-10 同判据，不因模式放松）
+// 全量：node .qoder/workflow-state/dryrun-harness.mjs test → 115/115（D1+D2+D3+D4+D5+D6；既有 106 条语义零改动）
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const selfPath = fileURLToPath(import.meta.url)
@@ -52,7 +60,8 @@ const cmd = process.argv[2] || 'check'
 
 // --- 语法校验：按运行时方式包进 async 函数再 node --check ---
 const wrapped = `async function __wf(agent, parallel, pipeline, phase, log, args, budget, workflow) {\n${src}\n}\n`
-const tmp = join(tmpdir(), 'pfd-wrapped-check.mjs')
+// 并发安全：Review/Verify 等多个 invocation 可能同时跑本校验器，固定文件名会互相删除临时文件（假 SYNTAX_FAIL）。
+const tmp = join(tmpdir(), `pfd-wrapped-check-${process.pid}.mjs`)
 writeFileSync(tmp, wrapped)
 try {
   execFileSync(process.execPath, ['--check', tmp], { stdio: 'pipe' })
@@ -299,6 +308,25 @@ if (cmd === 'test' || cmd === 'regression') {
     { scenario: 'd5-16-d4-retry-ownership-under-full', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', formula: true, noAdjudication: true, rehashNone: true, retryStatus: 'RETRY_OWNED_APPLIED', retryAcceptedPath: ART, deltaRetryOwnedIncludes: ART, roleModelExpected: { implement: 'qfmodel', verify: 'qmodel_38max' } },
     // 17 D2 保持：FULL 下 Worker 实施阶段改治理文件 → BLOCKED_GOVERNANCE_CONFLICT，且不启动任何修复（d3-14 的 FULL 版本）
     { scenario: 'd5-17-full-governance-write-blocked', status: 'BLOCKED', block: 'BLOCKED_GOVERNANCE_CONFLICT', maxGateCalls: 0, mode: 'FULL', activeMode: 'FULL', forbidLabels: ['self-repair', 'rca-fix', 'fix'], roleModelExpected: { implement: 'qfmodel' } },
+    // ---- D6（FIX-GOV-001-R1）门禁合同：声明完备性 + gateId 对账 + 顶替/省略/降级拦截 ----
+    // 01 诚实 record 与 required 命令互为前缀 → 不得再被跨层字符串比对误判（F-20 回归哨兵）
+    { scenario: 'd6-01-record-prefix-not-blocked', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', gateContract: { RECONCILED: true, DECLARED_COUNT: 2, SUBMITTED_COUNT: 2 } },
+    // 02 kind 非法（既非 required 也非 record）→ Implement 之前 fail-closed，零实施 Agent
+    { scenario: 'd6-02-illegal-gate-kind', status: 'BLOCKED', block: 'GATE_SPEC_MALFORMED', maxGateCalls: 0, mode: 'FULL', activeMode: 'FULL', forbidLabels: ['implement', 'machine-gate', 'self-repair', 'max-review', 'verify'] },
+    // 03 沉默省略一条 required 声明（只交绿色命令 + 自报 allPassed）→ 省略即阻塞
+    { scenario: 'd6-03-omit-required-gate', status: 'BLOCKED', block: 'BLOCKED_GATE_COMMAND_NOT_EXECUTED', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', forbidLabels: ['max-review', 'verify'] },
+    // 04 省略"本会红"的 record 声明（把红基线沉默丢弃）→ 同样阻塞
+    { scenario: 'd6-04-omit-red-record-baseline', status: 'BLOCKED', block: 'BLOCKED_GATE_COMMAND_NOT_EXECUTED', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', forbidLabels: ['max-review', 'verify'] },
+    // 05 提交 Spec 未声明的 gateId（自造门禁），即便 exitCode=0 → 不得 PASS
+    { scenario: 'd6-05-undeclared-gate-id', status: 'BLOCKED', block: 'GATE_COMMAND_NOT_DECLARED', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', forbidLabels: ['max-review', 'verify'] },
+    // 06 顶替：沿用已声明 gateId 却换成另一条"会绿"命令 → 不得 PASS
+    { scenario: 'd6-06-substitute-green-command', status: 'BLOCKED', block: 'GATE_COMMAND_NOT_DECLARED', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', forbidLabels: ['max-review', 'verify'] },
+    // 09 MACHINE_GATE_COMMANDS 缺失/为空 → Implement 之前 GATE_SPEC_MALFORMED，零实施 Agent
+    { scenario: 'd6-09-missing-gate-declaration', status: 'BLOCKED', block: 'GATE_SPEC_MALFORMED', maxGateCalls: 0, mode: 'FULL', activeMode: 'FULL', forbidLabels: ['implement', 'machine-gate', 'self-repair', 'max-review', 'verify'] },
+    // 12 gateId 重复声明（合同无法唯一对账）→ Implement 之前 fail-closed
+    { scenario: 'd6-12-duplicate-gate-id', status: 'BLOCKED', block: 'GATE_SPEC_MALFORMED', maxGateCalls: 0, mode: 'FULL', activeMode: 'FULL', forbidLabels: ['implement', 'machine-gate'] },
+    // 13 FULL 默认模式下 required→record 降级 → 治理级违规（与 d3-10 同判据，不因执行模式而放松）
+    { scenario: 'd6-13-required-to-record-under-full', status: 'BLOCKED', block: 'GOVERNANCE_POLICY_VIOLATION', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', forbidLabels: ['max-review', 'verify'] },
   ]
 
   const ALLOWED_MODELS = new Set(['qmodel_38max', 'qfmodel'])
@@ -340,6 +368,12 @@ if (cmd === 'test' || cmd === 'regression') {
     if (exp.dualReview && labels.indexOf('max-review-b') < 0) errs.push('HIGH risk missing dual review (max-review-b not invoked)')
     if (exp.singleReview && labels.indexOf('max-review-b') >= 0) errs.push('non-HIGH risk must NOT invoke max-review-b')
     if (exp.formula) { const f = parsed.taskPassFormula; if (!f || f.ALL_CLAUSES_TRUE !== true) errs.push(`TASK_PASS_FORMULA.ALL_CLAUSES_TRUE not true: ${JSON.stringify(f)}`) }
+    // ---- D6 断言：门禁合同（声明↔提交按 gateId 对账）----
+    if (exp.gateContract) {
+      const gcx = parsed.gateContract || {}
+      if (!gcx.DECLARED) errs.push('GATE_CONTRACT missing (no declared-gate evidence in terminal output)')
+      for (const k of Object.keys(exp.gateContract)) { if (gcx[k] !== exp.gateContract[k]) errs.push(`GATE_CONTRACT.${k} expected=${JSON.stringify(exp.gateContract[k])} got=${JSON.stringify(gcx[k])}`) }
+    }
     if (exp.roleSep) { const rc = parsed.roleCalls || {}; for (const role of ['planner', 'explorer', 'worker', 'reviewer', 'verifier']) { if (!rc[role]) errs.push(`role separation missing independent invocation: ${role}`) } }
     // ---- D4 断言：确定性字节证据链 / 双独立 rehash 仲裁 / retry 产物归属 / Task Delta 归属 ----
     const d4 = parsed.d4 || {}
@@ -391,6 +425,11 @@ if (cmd === 'test' || cmd === 'regression') {
     if (errs.length) failures.push(`${exp.scenario}: ${errs.join('; ')}`)
     else { pass++; console.log(`  PASS ${exp.scenario} -> ${parsed.WORKFLOW_STATUS}${parsed.BLOCK_REASON ? '/' + parsed.BLOCK_REASON : ''} (gateCalls=${parsed.gateCalls}, models=[${(parsed.modelsUsed || []).join(',')}])`) }
   }
+  const d6Rows = EXPECT.filter((e) => /^d6-/.test(e.scenario))
+  const oldRows = EXPECT.filter((e) => !/^d6-/.test(e.scenario))
+  const oldDigest = createHash('sha256').update(oldRows.map((e) => `${e.scenario}|${e.status}|${e.block || ''}`).sort().join('\n')).digest('hex')
+  console.log(`\nSCENARIO_ROSTER: OLD_SCENARIO_COUNT=${oldRows.length} NEW_SCENARIOS_ADDED=${d6Rows.length} TOTAL_SCENARIOS=${EXPECT.length}`)
+  console.log(`OLD_EXPECTATION_DIGEST=${oldDigest}（106 条既有场景的 scenario|status|block 摘要：与本 Fix 之前 HEAD 版本同法计算的摘要相等 ⇒ 既有断言语义零改动）`)
   console.log(`\nREGRESSION: ${pass}/${EXPECT.length} passed`)
   if (failures.length) { console.error('FAILURES:\n' + failures.map(f => '  - ' + f).join('\n')); process.exit(1) }
   console.log('ALL_SCENARIOS_PASS (old + new Gate semantics; model routing unchanged; no infinite loop)')
@@ -444,6 +483,98 @@ const ROLE_OF = {
 // 只读决策角色（禁止 Write/Edit）的 label 集合
 const READ_ONLY = new Set(['explore', 'classify', 'scope-check', 'worktree-snapshot', 'fingerprint-rehash-a', 'fingerprint-rehash-b', 'max-review', 'max-review-b', 'verify', 'rca', 'release-security', 'preflight', 'milestone-verdict', 'release-verdict'])
 
+// ============================================================
+// FIX-GOV-001-R1：门禁声明表（对账键 = gateId）
+//   G.<组> = 该场景 TASK_SPEC.MACHINE_GATE_COMMANDS 的冻结声明；
+//   诚实提交由声明构造（greq/grec/greqBlocked ⇒ command/kind 必然与声明一致）；
+//   作弊提交显式偏离声明（未声明 gateId / 换命令 / 改 kind / 省略条目），用原始 req/rec 构造。
+//   断言语义不因本表改变：每条场景的期望终态仍是 EXPECT 表里的原值。
+// ============================================================
+const gd = (gateId, kind, command, purpose) => ({ gateId, kind, command, purpose })
+const GT = gd('G-TARGET', 'required', 'pytest backend/tests/kb', '目标测试（本 Task 必须绿）')
+const GL = gd('G-LINT', 'required', 'ruff check backend', '后端 lint（explore.TEST_COMMANDS.lint）')
+const G_BUILD = gd('G-BUILD', 'required', 'npm run build', '前端 production build')
+const G_UNIT = gd('G-UNIT', 'required', 'pytest', '后端测试集')
+const G_MIGTRIPLE = gd('G-MIGTRIPLE', 'required', 'alembic upgrade head && alembic downgrade -1 && alembic upgrade head', '迁移 up/down/up（必须真验证 downgrade）')
+const G_SCOPE_DIFF = gd('G-SCOPE-DIFF', 'required', 'git diff --exit-code (scope whitelist)', 'Scope/forbidden-file 校验')
+const G_FORBIDDEN = gd('G-FORBIDDEN', 'required', 'test ! -e AGENTS.md.changed (forbidden-file check)', 'forbidden 文件未被改')
+const G_LINT_APP = gd('G-LINT-APP', 'required', 'ruff check app', '后端 lint')
+const G_DB_PROBE = gd('G-DB-PROBE', 'required', 'psql -h 127.0.0.1 -p 5432 -c "DROP DATABASE aiear_prod"', '（作弊样本）指向未知 :5432 的破坏性命令')
+const G_MIG_TESTDB = gd('G-MIG-TESTDB', 'required', 'PGPORT=55432 alembic -n ci_tmp downgrade -1', '一次性测试库 :55432 迁移（不得误伤）')
+const G_BASE_PYTEST = gd('G-BASE-PYTEST', 'record', 'pytest -q', '基线全量 pytest（存量红债，非本 Task 修复义务）')
+const G_BASE_RUFF_STAT = gd('G-BASE-RUFF', 'record', 'ruff check app/ --statistics', '基线全量 ruff（存量 lint 债）')
+const G_BASE_RUFF = gd('G-BASE-RUFF2', 'record', 'ruff check app/', '基线全量 ruff')
+const G_SCOPE = gd('G-SCOPE', 'required', 'git status scope', 'Scope 白名单校验')
+const G_DELIVERABLE = gd('G-DELIVERABLE', 'required', 'test -s deliverable', '产物存在校验')
+const G_BASE_MIG = gd('G-BASE-MIG', 'record', 'alembic up/down/up', '基线迁移安全环境可用性')
+const G_SCOPE_WL = gd('G-SCOPE-WL', 'required', 'git status scope whitelist', 'Scope 白名单校验')
+const G_DIFF_EMPTY = gd('G-DIFF-EMPTY', 'required', 'git diff empty', '工作区 diff 为空')
+const G_MD5 = gd('G-MD5', 'required', 'md5 fingerprint', 'pre-existing 未跟踪指纹')
+const G_INV = gd('G-DELIVERABLE-INV', 'required', 'test -s REPO_INVENTORY.md', '产物存在校验')
+const G_HEAD = gd('G-HEAD', 'required', 'git rev-parse HEAD', 'Git HEAD 校验')
+const G_CI_LINT = gd('G-BASE-CI-LINT', 'record', 'ruff CI narrow', '基线 CI 窄口径 lint')
+const G_BASE_TOOL = gd('G-BASE-TOOL', 'record', 'nonexistent-baseline-tool', '基线采集工具（不存在 ⇒ 采集失败）')
+const G_LINT_REQ_JSON = gd('G-LINT-REQ', 'required', 'ruff check app/ --output-format=json', 'CI lint 口径（required，绿）')
+const G_LINT_FULL_REC = gd('G-LINT-FULL', 'record', 'ruff check app/', '全量 lint 基线（红）—— 与上条存在前缀关系')
+const G = {
+  BASE: [GT, GL],
+  TARGET_ONLY: [GT],
+  BUILD_ONLY: [G_BUILD],
+  UNIT_MIG: [G_UNIT, G_MIGTRIPLE],
+  SCOPE_DIFF: [G_SCOPE_DIFF],
+  FORBIDDEN: [G_FORBIDDEN],
+  DOWNGRADE: [G_LINT_APP, GT],
+  UNSAFE_DB: [GT, G_DB_PROBE],
+  SAFE_DB: [GT, G_MIG_TESTDB],
+  RECORD_RED: [GT, G_LINT_APP, G_BASE_PYTEST, G_BASE_RUFF_STAT],
+  MIG_NOENV_REQ: [GT, G_MIGTRIPLE],
+  AUDIT_TEST_RED: [G_SCOPE, G_DELIVERABLE, G_BASE_PYTEST],
+  AUDIT_LINT_RED: [G_SCOPE, G_BASE_RUFF],
+  AUDIT_MIG_NOENV: [G_SCOPE, G_BASE_MIG],
+  AUDIT_COMBINED: [G_SCOPE_WL, G_DIFF_EMPTY, G_MD5, G_INV, G_HEAD, G_BASE_PYTEST, G_BASE_RUFF, G_CI_LINT, G_BASE_MIG],
+  AUDIT_COLLECT_FAIL: [G_SCOPE, G_BASE_TOOL],
+  PREFIX_COLLISION: [G_LINT_REQ_JSON, G_LINT_FULL_REC],
+  EMPTY: [],
+  DUP_GATE_ID: [GT, gd('G-TARGET', 'required', 'ruff check app', '（缺陷样本）与 G-TARGET 重复的 gateId')],
+  ILLEGAL_KIND: [gd('G-BASE-K', 'required-baseline', 'pytest -q', '（缺陷样本）非法 kind')],
+}
+// 场景 → 声明组（未列出的场景 = BASE，与其默认门禁提交形态一致）
+const SCEN_GATES = {
+  'd3-03-gate-red-repair-limit': 'TARGET_ONLY', 'd3-20-selfreport-pass-gate-fail': 'TARGET_ONLY',
+  'd4-20-d1-required-fail-still-machine-fail': 'TARGET_ONLY',
+  'd2-03-selfrepair-checkout-head': 'TARGET_ONLY', 'd2-04-selfrepair-restore': 'TARGET_ONLY',
+  'd2-05-selfrepair-reset-hard-cmdc': 'TARGET_ONLY', 'd2-06-selfrepair-clean-bashc': 'TARGET_ONLY',
+  'd2-07-selfrepair-stash': 'TARGET_ONLY', 'd2-10-selfrepair-allowed': 'TARGET_ONLY',
+  'd2-13-selfrepair-allowed-continues': 'TARGET_ONLY', 'd2-14-postrepair-preexisting-changed': 'TARGET_ONLY',
+  'd3-15-selfrepair-destructive-git': 'TARGET_ONLY', 'd3-16-selfrepair-allowed-continues': 'TARGET_ONLY',
+  'd4-22-destructive-git-still-block': 'TARGET_ONLY',
+  'feature-required-fail': 'TARGET_ONLY',
+  'feature-required-build-fail': 'BUILD_ONLY',
+  'feature-required-migration-noenv': 'UNIT_MIG',
+  'scope-required-fail': 'SCOPE_DIFF',
+  'forbidden-required-fail': 'FORBIDDEN',
+  'd3-10-required-downgrade-cheat': 'DOWNGRADE',
+  'd3-11-unsafe-db-5432': 'UNSAFE_DB',
+  'd3-25-safe-55432-not-flagged': 'SAFE_DB',
+  'd3-12-record-red-not-lowering': 'RECORD_RED',
+  'd3-13-migration-required-noenv': 'MIG_NOENV_REQ',
+  'audit-record-test-red': 'AUDIT_TEST_RED',
+  'audit-record-lint-red': 'AUDIT_LINT_RED',
+  'audit-migration-noenv': 'AUDIT_MIG_NOENV',
+  'audit-combined': 'AUDIT_COMBINED',
+  'audit-record-collection-failed': 'AUDIT_COLLECT_FAIL',
+  // ---- D6（FIX-GOV-001-R1）----
+  'd6-01-record-prefix-not-blocked': 'PREFIX_COLLISION',
+  'd6-02-illegal-gate-kind': 'ILLEGAL_KIND',
+  'd6-03-omit-required-gate': 'BASE',
+  'd6-04-omit-red-record-baseline': 'RECORD_RED',
+  'd6-05-undeclared-gate-id': 'BASE',
+  'd6-06-substitute-green-command': 'BASE',
+  'd6-09-missing-gate-declaration': 'EMPTY',
+  'd6-12-duplicate-gate-id': 'DUP_GATE_ID',
+  'd6-13-required-to-record-under-full': 'DOWNGRADE',
+}
+
 const specObj = {
   TASK_ID: 'kb-pdf-parser', TITLE: 'PDF 解析器', OBJECTIVE: 'o', CONTEXT: 'c',
   DEPENDENCIES: [], IN_SCOPE: ['a'], OUT_OF_SCOPE: ['b'], EXPECTED_FILES: ['backend/app/kb/pdf.py'],
@@ -451,7 +582,9 @@ const specObj = {
   SECURITY_IMPACT: 'none', PRIVACY_IMPACT: 'none', MEDICAL_IMPACT: 'none', KNOWLEDGE_IMPACT: 'kb',
   MIGRATION_REQUIREMENTS: 'none',
   ACCEPTANCE_CRITERIA: [{ id: 'AC-01', criterion: '未认证请求返回 401', verification: 'pytest' }],
+  // MANDATORY/REGRESSION 保留为语义清单：FIX-GOV-001-R1 起不参与机器字符串对账（A3）。
   MANDATORY_TESTS: ['pytest backend/tests/kb'], REGRESSION_TESTS: ['pytest backend/tests'],
+  MACHINE_GATE_COMMANDS: G.BASE,
   ROLLBACK_PLAN: 'git revert', KNOWN_RISKS: [], DELIVERABLES: ['code'],
   specPath: '.qoder/workflow-state/kb-pdf-parser.spec.json',
 }
@@ -850,6 +983,9 @@ const D4_SPEC = {
   'd4-19-governance-retry-never-owned': { EXPECTED_FILES: ['backend/app/kb/pdf.py', 'backend/app/kb/parser.py'] },
   // 21：目录前缀授权（§25 正例）；05 保持默认（EXPECTED_FILES 不含该目录 → 目录内新增属外部改动）
   'd4-21-allowed-write-path-in-preexisting-dir': { ALLOWED_WRITE_PATHS: [QGRAPH_DIR, 'backend/app/kb/'] },
+  // D6-01：语义清单里同时存在"required 命令"与"它的字节前缀 record 命令"——
+  // 若有人重新引入 MANDATORY/REGRESSION ↔ 提交命令的字符串跨层比对，本场景会立刻假红 BLOCK（F-20 形态回归哨兵）。
+  'd6-01-record-prefix-not-blocked': { MANDATORY_TESTS: ['ruff check app/ --output-format=json', 'pytest backend/tests/kb'], REGRESSION_TESTS: ['ruff check app/'] },
 }
 // D4：把 D4 主队列/重试队列并入统一 SNAPSHOTS 队列（worktree-snapshot 取证只查 SNAPSHOTS）。
 Object.assign(SNAPSHOTS, D4_SNAPS, D4_RETRY_SNAPS)
@@ -899,9 +1035,12 @@ function pickQueue(queues, counters, key) {
   return snapCalls === 0 ? CLEAN_BASE : DEFAULT_POST
 }
 // D4：按场景覆盖 TASK_SPEC 允许写集合（未覆盖场景 = 全局 specObj）
+// FIX-GOV-001-R1：同时按场景注入冻结门禁声明 MACHINE_GATE_COMMANDS（诚实提交由声明构造，作弊提交显式偏离）
 function specFor(scn) {
   const ov = D4_SPEC[scn]
-  return ov ? Object.assign({}, specObj, ov) : specObj
+  const base = Object.assign({}, specObj, ov || {})
+  base.MACHINE_GATE_COMMANDS = G[SCEN_GATES[scn] || 'BASE']
+  return base
 }
 
 function stubAgent(prompt, opts) {
@@ -940,36 +1079,56 @@ function stubAgent(prompt, opts) {
     case 'implement': return Promise.resolve({ status: 'IMPLEMENTED', TASK_ID: 'kb-pdf-parser', FILES_CREATED: ['backend/app/kb/pdf.py'], FILES_MODIFIED: ['backend/app/kb/parser.py'], FILES_DELETED: [], DATABASE_CHANGES: 'none', API_CHANGES: 'none', FRONTEND_CHANGES: 'none', TESTS_ADDED: ['backend/tests/kb/test_pdf.py'], TESTS_MODIFIED: [], TESTS_RUN: ['pytest backend/tests/kb'], TEST_RESULTS: '12 passed', DEVIATIONS_FROM_SPEC: 'none', KNOWN_LIMITATIONS: '', BLOCKERS: '' })
     case 'machine-gate': {
       gateCalls++
-      const req = (command, exitCode, purpose) => ({ command, purpose: purpose || 'required check', kind: 'required', exitCode, stdoutSummary: exitCode === 0 ? 'ok' : 'FAIL', stderrSummary: exitCode === 0 ? '' : 'non-zero' })
-      const reqBlocked = (command, purpose) => ({ command, purpose: purpose || 'required check blocked by missing safe env', kind: 'required', recordStatus: 'SAFELY_NOT_EXECUTED_AND_RECORDED', stderrSummary: 'no provably-safe one-time test env' })
-      const rec = (command, exitCode, purpose, recordStatus) => { const o = { command, purpose: purpose || 'baseline record', kind: 'record', stdoutSummary: '' }; if (typeof exitCode === 'number') o.exitCode = exitCode; o.recordStatus = recordStatus || (typeof exitCode === 'number' ? 'EXECUTED_AND_RECORDED' : 'SAFELY_NOT_EXECUTED_AND_RECORDED'); return o }
+      // FIX-GOV-001-R1：诚实执行手的 command/kind 一律取自 TASK_SPEC 的冻结声明（对账键 = gateId）
+      const DECL = G[SCEN_GATES[scenario] || 'BASE']
+      const byId = {}
+      DECL.forEach((d) => { byId[d.gateId] = d })
+      const decl = (gateId) => byId[gateId] || { gateId, command: '__FIXTURE_ERROR_UNDECLARED_GATE__:' + gateId, kind: 'required', purpose: '' }
+      const greq = (gateId, exitCode, purpose) => { const d = decl(gateId); return { gateId, command: d.command, purpose: purpose || d.purpose, kind: 'required', exitCode, stdoutSummary: exitCode === 0 ? 'ok' : 'FAIL', stderrSummary: exitCode === 0 ? '' : 'non-zero' } }
+      const greqBlocked = (gateId, purpose) => { const d = decl(gateId); return { gateId, command: d.command, purpose: purpose || d.purpose, kind: 'required', recordStatus: 'SAFELY_NOT_EXECUTED_AND_RECORDED', stderrSummary: 'no provably-safe one-time test env' } }
+      const grec = (gateId, exitCode, purpose, recordStatus) => { const d = decl(gateId); const o = { gateId, command: d.command, purpose: purpose || d.purpose, kind: 'record', stdoutSummary: '' }; if (typeof exitCode === 'number') o.exitCode = exitCode; o.recordStatus = recordStatus || (typeof exitCode === 'number' ? 'EXECUTED_AND_RECORDED' : 'SAFELY_NOT_EXECUTED_AND_RECORDED'); return o }
+      // 偏差样本：gateId/command/kind 可任意组合，用于构造「未声明 gateId / 换命令顶替 / required→record 降级」等违规提交
+      const dev = (gateId, command, kind, exitCode, purpose) => { const o = { command, purpose: purpose || '（偏差样本）', kind, exitCode, stdoutSummary: exitCode === 0 ? 'ok' : 'FAIL', stderrSummary: exitCode === 0 ? '' : 'non-zero' }; if (gateId) o.gateId = gateId; return o }
       // ---- D3：FLASH_ONLY 门禁裁判 / 反作弊场景（优先于 D2）----
-      if (D3_GATE_FAIL_ALWAYS.has(scenario)) return Promise.resolve({ commands: [req('pytest backend/tests/kb', 1, 'target tests (required)')], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
-      if (D3_GATE_FAIL_UNTIL[scenario]) return Promise.resolve(gateCalls < D3_GATE_FAIL_UNTIL[scenario] ? { commands: [req('pytest backend/tests/kb', 1, 'target tests (required)')], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] } : { commands: [req('pytest backend/tests/kb', 0, 'target tests (required)'), req('ruff check backend', 0, 'lint')], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
-      if (scenario === 'd3-10-required-downgrade-cheat') return Promise.resolve({ commands: [req('ruff check app', 0, 'lint (required)'), { command: 'pytest backend/tests/kb', purpose: '目标测试（本应 required，执行手擅自降级为 record）', kind: 'record', exitCode: 1, recordStatus: 'EXECUTED_AND_RECORDED', stdoutSummary: '1 failed' }], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
-      if (scenario === 'd3-11-unsafe-db-5432') return Promise.resolve({ commands: [req('pytest backend/tests/kb', 0, 'target tests (required)'), req('psql -h 127.0.0.1 -p 5432 -c "DROP DATABASE aiear_prod"', 1, 'destructive op against prod instance')], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
-      if (scenario === 'd3-25-safe-55432-not-flagged') return Promise.resolve({ commands: [req('pytest backend/tests/kb', 0, 'target tests (required)'), req('PGPORT=55432 alembic -n ci_tmp downgrade -1', 0, 'migration downgrade against one-time test db on port 55432 (must NOT be flagged)')], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
-      if (scenario === 'd3-12-record-red-not-lowering') return Promise.resolve({ commands: [req('pytest backend/tests/kb', 0, 'target tests (required)'), req('ruff check app', 0, 'lint (required)'), rec('pytest -q', 1, 'baseline full pytest (record)'), rec('ruff check app/ --statistics', 1, 'baseline full ruff (record)')], findings: ['F-D3-01|P1|基线全量 pytest 红|backend|CT-x'], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
-      if (scenario === 'd3-13-migration-required-noenv') return Promise.resolve({ commands: [req('pytest backend/tests/kb', 0, 'target tests (required)'), reqBlocked('alembic upgrade head && alembic downgrade -1 && alembic upgrade head', 'REQUIRED migration triple（无安全测试环境）')], allPassed: false, blockedMissingSafeTestEnv: true, skippedGates: [] })
+      if (D3_GATE_FAIL_ALWAYS.has(scenario)) return Promise.resolve({ commands: [greq('G-TARGET', 1)], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (D3_GATE_FAIL_UNTIL[scenario]) return Promise.resolve(gateCalls < D3_GATE_FAIL_UNTIL[scenario] ? { commands: [greq('G-TARGET', 1), greq('G-LINT', 0)], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] } : { commands: [greq('G-TARGET', 0), greq('G-LINT', 0)], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (scenario === 'd3-10-required-downgrade-cheat') return Promise.resolve({ commands: [greq('G-LINT-APP', 0), Object.assign(dev('G-TARGET', decl('G-TARGET').command, 'record', 1, '目标测试（本应 required，执行手擅自降级为 record）'), { stdoutSummary: '1 failed', recordStatus: 'EXECUTED_AND_RECORDED' })], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (scenario === 'd3-11-unsafe-db-5432') return Promise.resolve({ commands: [greq('G-TARGET', 0), greq('G-DB-PROBE', 1)], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (scenario === 'd3-25-safe-55432-not-flagged') return Promise.resolve({ commands: [greq('G-TARGET', 0), greq('G-MIG-TESTDB', 0)], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (scenario === 'd3-12-record-red-not-lowering') return Promise.resolve({ commands: [greq('G-TARGET', 0), greq('G-LINT-APP', 0), grec('G-BASE-PYTEST', 1), grec('G-BASE-RUFF', 1)], findings: ['F-D3-01|P1|基线全量 pytest 红|backend|CT-x'], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (scenario === 'd3-13-migration-required-noenv') return Promise.resolve({ commands: [greq('G-TARGET', 0), greqBlocked('G-MIGTRIPLE')], allPassed: false, blockedMissingSafeTestEnv: true, skippedGates: [] })
       // ---- D2：需要 required 失败以进入修复循环的场景 ----
       if (D2_GATE_FAIL.has(scenario)) {
-        if (D2_GATE_FAIL_THEN_PASS.has(scenario) && gateCalls > 1) return Promise.resolve({ commands: [req('pytest backend/tests/kb', 0, 'target tests (required)')], findings: [], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
-        return Promise.resolve({ commands: [req('pytest backend/tests/kb', 1, 'target tests (required)')], findings: [], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
+        if (D2_GATE_FAIL_THEN_PASS.has(scenario) && gateCalls > 1) return Promise.resolve({ commands: [greq('G-TARGET', 0)], findings: [], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
+        return Promise.resolve({ commands: [greq('G-TARGET', 1)], findings: [], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
       }
       // ---- 新增：Gate required/record 语义回归场景（§8 A–H）----
-      if (scenario === 'feature-required-fail') return Promise.resolve({ commands: [req('pytest backend/tests/kb', 1, 'target tests (required)')], findings: [], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
-      if (scenario === 'feature-required-build-fail') return Promise.resolve({ commands: [req('npm run build', 1, 'production build (required)')], findings: [], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
-      if (scenario === 'feature-required-migration-noenv') return Promise.resolve({ commands: [req('pytest', 0, 'target tests'), reqBlocked('alembic upgrade head && alembic downgrade -1 && alembic upgrade head', 'REQUIRED migration triple (feature task must migrate)')], findings: [], allPassed: false, blockedMissingSafeTestEnv: true, skippedGates: [] })
-      if (scenario === 'scope-required-fail') return Promise.resolve({ commands: [req('git diff --exit-code (scope whitelist)', 1, 'scope/forbidden-file check (required)')], findings: [], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
-      if (scenario === 'forbidden-required-fail') return Promise.resolve({ commands: [req('test ! -e AGENTS.md.changed (forbidden-file check)', 1, 'forbidden file changed (required)')], findings: [], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
-      if (scenario === 'audit-record-test-red') return Promise.resolve({ commands: [req('git status scope', 0), req('test -s deliverable', 0), rec('pytest -q', 1, 'baseline full pytest')], findings: ['F-01|P1|pytest 1 failed|backend tests|CT-1'], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
-      if (scenario === 'audit-record-lint-red') return Promise.resolve({ commands: [req('git status scope', 0), rec('ruff check app/', 1, 'baseline full ruff')], findings: ['F-02|P1|ruff 291 errors|backend lint|CT-2'], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
-      if (scenario === 'audit-migration-noenv') return Promise.resolve({ commands: [req('git status scope', 0), rec('alembic up/down/up', null, 'baseline migration safe-env availability', 'SAFELY_NOT_EXECUTED_AND_RECORDED')], findings: ['F-08|P1|migration safe env missing|database|CT-5'], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: ['alembic triple: RECORD_NOT_EXECUTED_SAFE_ENV'] })
-      if (scenario === 'audit-combined') return Promise.resolve({ commands: [req('git status scope whitelist', 0), req('git diff empty', 0), req('md5 fingerprint', 0), req('test -s REPO_INVENTORY.md', 0), req('git rev-parse HEAD', 0), rec('pytest -q', 1, 'baseline pytest'), rec('ruff check app/', 1, 'baseline full ruff'), rec('ruff CI narrow', 0, 'baseline CI lint'), rec('alembic up/down/up', null, 'baseline migration env availability', 'SAFELY_NOT_EXECUTED_AND_RECORDED')], findings: ['F-01 pytest red', 'F-02 ruff red', 'F-08 migration safe env missing'], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: ['COND-EXEC-9 alembic: SAFELY_NOT_EXECUTED'] })
-      if (scenario === 'audit-record-collection-failed') return Promise.resolve({ commands: [req('git status scope', 0), { command: 'nonexistent-baseline-tool', purpose: 'baseline record', kind: 'record', recordStatus: 'RECORD_COLLECTION_FAILED', stderrSummary: 'command not found' }], findings: [], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (scenario === 'feature-required-fail') return Promise.resolve({ commands: [greq('G-TARGET', 1)], findings: [], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (scenario === 'feature-required-build-fail') return Promise.resolve({ commands: [greq('G-BUILD', 1)], findings: [], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (scenario === 'feature-required-migration-noenv') return Promise.resolve({ commands: [greq('G-UNIT', 0), greqBlocked('G-MIGTRIPLE')], findings: [], allPassed: false, blockedMissingSafeTestEnv: true, skippedGates: [] })
+      if (scenario === 'scope-required-fail') return Promise.resolve({ commands: [greq('G-SCOPE-DIFF', 1)], findings: [], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (scenario === 'forbidden-required-fail') return Promise.resolve({ commands: [greq('G-FORBIDDEN', 1)], findings: [], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (scenario === 'audit-record-test-red') return Promise.resolve({ commands: [greq('G-SCOPE', 0), greq('G-DELIVERABLE', 0), grec('G-BASE-PYTEST', 1)], findings: ['F-01|P1|pytest 1 failed|backend tests|CT-1'], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (scenario === 'audit-record-lint-red') return Promise.resolve({ commands: [greq('G-SCOPE', 0), grec('G-BASE-RUFF2', 1)], findings: ['F-02|P1|ruff 291 errors|backend lint|CT-2'], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (scenario === 'audit-migration-noenv') return Promise.resolve({ commands: [greq('G-SCOPE', 0), grec('G-BASE-MIG', null)], findings: ['F-08|P1|migration safe env missing|database|CT-5'], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: ['alembic triple: RECORD_NOT_EXECUTED_SAFE_ENV'] })
+      if (scenario === 'audit-combined') return Promise.resolve({ commands: [greq('G-SCOPE-WL', 0), greq('G-DIFF-EMPTY', 0), greq('G-MD5', 0), greq('G-DELIVERABLE-INV', 0), greq('G-HEAD', 0), grec('G-BASE-PYTEST', 1), grec('G-BASE-RUFF2', 1), grec('G-BASE-CI-LINT', 0), grec('G-BASE-MIG', null)], findings: ['F-01 pytest red', 'F-02 ruff red', 'F-08 migration safe env missing'], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: ['COND-EXEC-9 alembic: SAFELY_NOT_EXECUTED'] })
+      if (scenario === 'audit-record-collection-failed') return Promise.resolve({ commands: [greq('G-SCOPE', 0), Object.assign(grec('G-BASE-TOOL', null), { recordStatus: 'RECORD_COLLECTION_FAILED', stderrSummary: 'command not found' })], findings: [], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      // ---- D6（FIX-GOV-001-R1）：门禁合同对账的攻防样本 ----
+      // d6-01 record 命令与 required 命令互为字节前缀：旧的跨层字符串比对会把诚实的 record 误判为"降级"（F-20 形态）；gateId 对账下不得被 BLOCK
+      if (scenario === 'd6-01-record-prefix-not-blocked') return Promise.resolve({ commands: [greq('G-LINT-REQ', 0), grec('G-LINT-FULL', 1)], findings: ['F-D6-01|P2|基线全量 ruff 存量债（record 口径）|backend lint|CT-x'], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      // d6-03 沉默省略一条 required 声明（只交绿色命令 + 自报 allPassed:true）
+      if (scenario === 'd6-03-omit-required-gate') return Promise.resolve({ commands: [greq('G-TARGET', 0)], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      // d6-04 省略"本会红"的 record 声明（把红基线沉默丢弃）
+      if (scenario === 'd6-04-omit-red-record-baseline') return Promise.resolve({ commands: [greq('G-TARGET', 0), greq('G-LINT-APP', 0)], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      // d6-05 提交 TASK_SPEC 未声明的 gateId（自造门禁），即便 exitCode=0
+      if (scenario === 'd6-05-undeclared-gate-id') return Promise.resolve({ commands: [greq('G-TARGET', 0), greq('G-LINT', 0), dev('G-SELFMADE-GATE', 'echo ok', 'required', 0, '执行手自造的门禁（Spec 从未声明）')], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      // d6-06 顶替：沿用已声明的 gateId，却换成一条"会绿"的别的命令
+      if (scenario === 'd6-06-substitute-green-command') return Promise.resolve({ commands: [dev('G-TARGET', 'pytest backend/tests/kb --collect-only', 'required', 0, '顶替声明命令的"会绿"变体'), greq('G-LINT', 0)], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      // d6-13 FULL 默认模式下把 required 门禁降级为 record（与 d3-10 同判据，执行模式不同）
+      if (scenario === 'd6-13-required-to-record-under-full') return Promise.resolve({ commands: [greq('G-LINT-APP', 0), Object.assign(dev('G-TARGET', decl('G-TARGET').command, 'record', 1, '目标测试降级为 record'), { stdoutSummary: '1 failed', recordStatus: 'EXECUTED_AND_RECORDED' })], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
       // ---- 既有场景（向后兼容：无 kind 字段的命令按 required 处理）----
-      if (scenario === 'gatealwaysfail' || (scenario === 'gatefail' && gateCalls === 1)) return Promise.resolve({ commands: [{ command: 'pytest backend/tests/kb', purpose: 'target tests', exitCode: 1, stdoutSummary: '1 failed', stderrSummary: 'AssertionError' }], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
-      return Promise.resolve({ commands: [{ command: 'pytest backend/tests/kb', purpose: 'target tests', exitCode: 0, stdoutSummary: '12 passed' }, { command: 'ruff check backend', purpose: 'lint', exitCode: 0 }], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      if (scenario === 'gatealwaysfail' || (scenario === 'gatefail' && gateCalls === 1)) return Promise.resolve({ commands: [{ gateId: 'G-TARGET', command: 'pytest backend/tests/kb', purpose: 'target tests', exitCode: 1, stdoutSummary: '1 failed', stderrSummary: 'AssertionError' }, { gateId: 'G-LINT', command: 'ruff check backend', purpose: 'lint', exitCode: 0 }], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      return Promise.resolve({ commands: [{ gateId: 'G-TARGET', command: 'pytest backend/tests/kb', purpose: 'target tests', exitCode: 0, stdoutSummary: '12 passed' }, { gateId: 'G-LINT', command: 'ruff check backend', purpose: 'lint', exitCode: 0 }], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
     }
     case 'self-repair': return Promise.resolve({ status: 'FIXED', summary: '修正断言', filesChanged: ['backend/app/kb/pdf.py'], gitCommandsRun: D2_SELFREPAIR_GIT[scenario] || [] })
     case 'rca': return Promise.resolve({ ROOT_CAUSE: '接口签名不一致', FIX_SPEC: '统一 parse() 签名', affectedFiles: ['backend/app/kb/pdf.py'] })
@@ -1099,6 +1258,7 @@ console.log(JSON.stringify({
   readOnlyPromptMisses: calls.filter(c => c.readOnly && !c.promptReadOnly).map(c => c.label),
   reviewInvocations: (result && result.REVIEW_INVOCATIONS) || null,
   taskPassFormula: (result && result.TASK_PASS_FORMULA) || null,
+  gateContract: (result && result.GATE_CONTRACT) || null,
   highRisk: (result && typeof result.HIGH_RISK !== 'undefined') ? result.HIGH_RISK : null,
   resultKeys: result ? Object.keys(result) : null,
 }, null, 1))

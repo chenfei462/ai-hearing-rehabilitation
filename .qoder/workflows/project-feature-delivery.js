@@ -722,22 +722,96 @@ function isHighRisk(cls) {
   return false
 }
 
-// D3 反作弊①：禁止执行手（Flash）把 required 命令动态降级为 record。
-// 若一条 kind=record 的命令明显对应 TASK_SPEC 的 MANDATORY/REGRESSION 必跑项，或 purpose 含 [GATE-REQUIRED]，即判降级违规。
+// ============ FIX-GOV-001-R1：Machine Gate 声明合同（唯一对账键 = gateId）============
+// 根因链：F-20（字符串双向包含匹配把"如实记录的红基线"误判为降级 ⇒ 诚实执行必然假红）
+//        + F-24（无 SPEC↔提交覆盖率对账 ⇒ "沉默省略"是零成本作弊）
+//        + F-26（旧 C3 按命令字符串对账与"共享 specObj 的既有场景语义"互斥 ⇒ 不可实施）。
+// 因此 amendmentR1 把对账面严格限定为 TASK_SPEC.MACHINE_GATE_COMMANDS[].gateId：
+//   I1 执行手不得把声明为 required 的门禁提交为 record（REQUIRED_DOWNGRADE —— d3-10 语义原样保留）
+//   I2 执行手不得省略已声明的门禁（BLOCKED_GATE_COMMAND_NOT_EXECUTED —— 堵住 F-24 的沉默省略）
+//   I3 执行手不得提交未声明的门禁/gateId，也不得在某 gateId 下换一条"会绿"的命令顶替（GATE_COMMAND_NOT_DECLARED）
+//   I4 门禁 PASS/FAIL 仍由脚本按真实 exitCode 计算（gateCompute 不变）
+// 禁止跨层对账：MANDATORY_TESTS / REGRESSION_TESTS 保留为语义清单（供提示词与 Max 审阅使用），
+// 绝不参与与 shell 命令字节串的比较 ⇒ "声明完整性"与"实际命令字节串"不再直接耦合（A3）。
+const GATE_ID_RE = /^[A-Za-z][A-Za-z0-9._:-]{1,63}$/
+const GATE_KINDS = ['required', 'record']
+
+// 命令归一化只折叠空白：绝不做子串/前缀匹配（那正是 F-20 误判与 F-24 假阳性的来源）。
+function normGateCommand(s) { return String(s == null ? '' : s).trim().replace(/\s+/g, ' ') }
+// 有效 kind：缺省按 required 处理（向后兼容，绝不因缺字段而放宽门禁）。
+function effGateKind(c) { return c && c.kind === 'record' ? 'record' : 'required' }
+function gateDecls(specObj) { return Array.isArray(specObj && specObj.MACHINE_GATE_COMMANDS) ? specObj.MACHINE_GATE_COMMANDS : [] }
+function gateIndex(specObj) {
+  const idx = {}
+  for (const d of gateDecls(specObj)) {
+    const id = normGateCommand(d && d.gateId)
+    if (id && !idx[id]) idx[id] = d
+  }
+  return idx
+}
+
+// A4：SPEC 声明完整性在任何实施 agent 调用之前 fail-closed（0 个实施 agent）。
+function validateGateSpec(specObj) {
+  const defects = []
+  const decls = gateDecls(specObj)
+  if (!decls.length) {
+    defects.push('MACHINE_GATE_COMMANDS 缺失或为空：TASK_SPEC 必须逐条声明门禁（gateId + kind + command + purpose），Machine Gate 只执行声明过的门禁')
+  }
+  const seen = {}
+  decls.forEach((d, i) => {
+    const at = 'MACHINE_GATE_COMMANDS[' + i + ']'
+    const id = normGateCommand(d && d.gateId)
+    if (!id) defects.push(at + '.gateId 缺失或为空')
+    else if (!GATE_ID_RE.test(id)) defects.push(at + '.gateId 非法（须稳定、非空、仅含字母数字与 ._:-）：' + id)
+    else if (seen[id]) defects.push('gateId 重复声明：' + id + '（首次 ' + seen[id] + '，重复于 ' + at + '）')
+    else seen[id] = at
+    if (GATE_KINDS.indexOf(d && d.kind) < 0) defects.push(at + '.kind 非法（只允许 required|record，实际=' + JSON.stringify(d && d.kind) + '）')
+    if (!normGateCommand(d && d.command)) defects.push(at + '.command 缺失或为空')
+  })
+  if (defects.length) return { code: 'GATE_SPEC_MALFORMED', defects }
+  return null
+}
+
+// D3 反作弊①（R1 形态）：按 gateId 对账"提交 kind ↔ 冻结声明 kind"，不做命令字符串跨层匹配。
 function detectRequiredDowngrade(cmds, specObj) {
-  const must = []
-    .concat((specObj && specObj.MANDATORY_TESTS) || [])
-    .concat((specObj && specObj.REGRESSION_TESTS) || [])
-    .map(s => String(s == null ? '' : s).trim())
-    .filter(Boolean)
+  const idx = gateIndex(specObj)
   for (const c of cmds) {
-    if (!c || c.kind !== 'record') continue
-    const cmd = String(c.command || '').trim()
-    const purpose = String(c.purpose || '')
-    if (/\[GATE-REQUIRED/i.test(purpose) || /\[GATE-REQUIRED/i.test(cmd)) {
+    if (!c || effGateKind(c) !== 'record') continue
+    const cmd = normGateCommand(c.command)
+    if (/\[GATE-REQUIRED/i.test(String(c.purpose || '')) || /\[GATE-REQUIRED/i.test(cmd)) {
       return { code: 'GOVERNANCE_POLICY_VIOLATION', tier: 'REQUIRED_DOWNGRADE', detail: `执行手把 required 门禁项降级为 record（purpose/command 仍含 [GATE-REQUIRED]）：${cmd}` }
     }
-    for (const m of must) { if (cmd && (cmd === m || cmd.indexOf(m) >= 0 || m.indexOf(cmd) >= 0)) return { code: 'GOVERNANCE_POLICY_VIOLATION', tier: 'REQUIRED_DOWNGRADE', detail: `执行手把 TASK_SPEC 必跑项 '${m}' 记为 record（kind=record），属动态降级，禁止。` } }
+    const id = normGateCommand(c.gateId)
+    const d = id ? idx[id] : null
+    if (!d) continue
+    if (String(d.kind) === 'required') {
+      return { code: 'GOVERNANCE_POLICY_VIOLATION', tier: 'REQUIRED_DOWNGRADE', detail: `执行手把 TASK_SPEC 冻结声明为 required 的门禁 '${id}'（command=${normGateCommand(d.command)}）提交为 kind=record，属动态降级，禁止。` }
+    }
+  }
+  return null
+}
+
+// D3 反作弊③（R1 新增，I2/I3）：提交面 ↔ 冻结声明面的完整性与一致性对账。
+function detectGateDeclaration(cmds, specObj) {
+  const idx = gateIndex(specObj)
+  const submitted = {}
+  for (const c of cmds) {
+    const id = normGateCommand(c && c.gateId)
+    const cmd = normGateCommand(c && c.command)
+    if (!id) return { code: 'GATE_COMMAND_NOT_DECLARED', tier: 'MISSING_GATE_ID', detail: `门禁命令未引用任何 gateId：${cmd || '(空命令)'}。每条命令必须逐条回传它对应 TASK_SPEC 声明的 gateId。` }
+    const d = idx[id]
+    if (!d) return { code: 'GATE_COMMAND_NOT_DECLARED', tier: 'UNDECLARED_GATE_ID', detail: `执行手提交了 TASK_SPEC 未声明的门禁 '${id}'（已声明集合=[${Object.keys(idx).join(', ')}]）。未声明即非法，即便 exitCode=0。` }
+    if (normGateCommand(d.command) !== cmd) {
+      return { code: 'GATE_COMMAND_NOT_DECLARED', tier: 'SUBSTITUTE_COMMAND_FOR_GATE', detail: `门禁 '${id}' 的实际命令与冻结声明不一致：声明='${normGateCommand(d.command)}'，提交='${cmd}'。禁止在某条声明的门禁下换用另一条命令（尤其是一条"会绿"的命令）顶替。` }
+    }
+    if (effGateKind(c) !== String(d.kind)) {
+      return { code: 'GOVERNANCE_POLICY_VIOLATION', tier: 'GATE_KIND_MUTATION', detail: `门禁 '${id}' 的 kind 与冻结声明不一致：声明=${d.kind}，提交=${effGateKind(c)}。实施者无权改 kind（record→required 同属擅改冻结合同）。` }
+    }
+    submitted[id] = true
+  }
+  const missing = Object.keys(idx).filter((id) => !submitted[id])
+  if (missing.length) {
+    return { code: 'BLOCKED_GATE_COMMAND_NOT_EXECUTED', tier: 'GATE_OMISSION', detail: `TASK_SPEC 声明的门禁未被提交（沉默省略）：${missing.join(', ')}。只提交若干条绿色命令 + 自报 allPassed:true 不构成门禁通过。` }
   }
   return null
 }
@@ -873,8 +947,22 @@ const SPEC_SCHEMA = {
         required: ['id', 'criterion', 'verification'],
       },
     },
-    MANDATORY_TESTS: { type: 'array', items: { type: 'string' } },
-    REGRESSION_TESTS: { type: 'array', items: { type: 'string' } },
+    MANDATORY_TESTS: { type: 'array', items: { type: 'string' }, description: '语义清单（人类/Max 可读）：本任务必须满足的验证意图。FIX-GOV-001-R1 起不再参与与 shell 命令字节串的机器对账。' },
+    REGRESSION_TESTS: { type: 'array', items: { type: 'string' }, description: '语义清单（人类/Max 可读）：回归保护意图。不参与机器字符串对账（A3）。' },
+    MACHINE_GATE_COMMANDS: {
+      type: 'array',
+      description: 'FIX-GOV-001-R1：Machine Gate 的冻结门禁合同（由 Max 撰写、执行手无权改动）。门禁只按 gateId 对账：每条命令必须引用其中一个 gateId；未声明的命令/门禁、改 kind、换命令一律 fail-closed。kind=record 只表示"采集基线事实"（红/缺安全环境入 findings，不阻断本 Task），绝不表示降级。',
+      items: {
+        type: 'object',
+        properties: {
+          gateId: { type: 'string', description: '稳定、非空、本 Task 内唯一的门禁标识，如 G-TARGET / G-BASE-PYTEST' },
+          kind: { type: 'string', enum: ['required', 'record'], description: 'required=本 Task 必须成功；record=采集当前基线事实。kind 由 Max 在 SPEC 中冻结，执行手无权更改。' },
+          command: { type: 'string', description: '真实可运行的命令原文；执行手提交的 command 必须与此逐字（折叠空白后）一致' },
+          purpose: { type: 'string', description: '这条门禁验证什么（一句话）' },
+        },
+        required: ['gateId', 'kind', 'command'],
+      },
+    },
     ROLLBACK_PLAN: { type: 'string' },
     KNOWN_RISKS: { type: 'array', items: { type: 'string' } },
     DELIVERABLES: { type: 'array', items: { type: 'string' } },
@@ -918,6 +1006,7 @@ const GATE_SCHEMA = {
         type: 'object',
         properties: {
           command: { type: 'string' },
+          gateId: { type: 'string', description: 'FIX-GOV-001-R1：本条命令对应 TASK_SPEC.MACHINE_GATE_COMMANDS 中哪一条门禁。每条命令必须逐条回传其声明的 gateId；引用未声明的 gateId、或提交未声明的命令，脚本判 GATE_COMMAND_NOT_DECLARED（即便 exitCode=0）。除声明的门禁外不要提交任何其他命令（预读/核实过程写入 notes）。' },
           purpose: { type: 'string' },
           kind: { type: 'string', enum: ['required', 'record'], description: 'required=本 Task 自身必须成功的验证（exitCode!==0 → MACHINE_FAIL；缺安全环境无法执行 → 顶层 blockedMissingSafeTestEnv）；record=采集当前基线事实（红/缺环境只入 findings，不阻断本 Task）。kind 由 Max 在 TASK_SPEC/Gate Schema 指定，Flash 无权把 required 降级为 record 或降低门禁。命令缺省 kind 时按 required 处理（向后兼容）。' },
           exitCode: { type: 'number', description: 'required 命令必须有数值 exitCode；record 命令安全不执行时可省略' },
@@ -1443,11 +1532,16 @@ ${task}
 分类：${j(cls, 2000)}
 探索结果：
 ${j({ CURRENT_STATE: exp.CURRENT_STATE, RELATED_FILES: exp.RELATED_FILES, DEPENDENCIES: exp.DEPENDENCIES, RISKS: exp.RISKS, EXISTING_TESTS: exp.EXISTING_TESTS, POTENTIAL_REGRESSIONS: exp.POTENTIAL_REGRESSIONS, TEST_COMMANDS: exp.TEST_COMMANDS }, 14000)}
-生成不可变任务合同 TASK_SPEC，包含全部字段：TASK_ID（短横线小写 slug，如 kb-pdf-parser）、TITLE、OBJECTIVE、CONTEXT、DEPENDENCIES、IN_SCOPE、OUT_OF_SCOPE、EXPECTED_FILES、FILES_FORBIDDEN_TO_CHANGE、DATABASE_IMPACT、API_IMPACT、FRONTEND_IMPACT、SECURITY_IMPACT、PRIVACY_IMPACT、MEDICAL_IMPACT、KNOWLEDGE_IMPACT、MIGRATION_REQUIREMENTS、ACCEPTANCE_CRITERIA、MANDATORY_TESTS、REGRESSION_TESTS、ROLLBACK_PLAN、KNOWN_RISKS、DELIVERABLES（可选 ALLOWED_WRITE_PATHS：授权写入的目录前缀）。
+生成不可变任务合同 TASK_SPEC，包含全部字段：TASK_ID（短横线小写 slug，如 kb-pdf-parser）、TITLE、OBJECTIVE、CONTEXT、DEPENDENCIES、IN_SCOPE、OUT_OF_SCOPE、EXPECTED_FILES、FILES_FORBIDDEN_TO_CHANGE、DATABASE_IMPACT、API_IMPACT、FRONTEND_IMPACT、SECURITY_IMPACT、PRIVACY_IMPACT、MEDICAL_IMPACT、KNOWLEDGE_IMPACT、MIGRATION_REQUIREMENTS、ACCEPTANCE_CRITERIA、MANDATORY_TESTS、REGRESSION_TESTS、MACHINE_GATE_COMMANDS、ROLLBACK_PLAN、KNOWN_RISKS、DELIVERABLES（可选 ALLOWED_WRITE_PATHS：授权写入的目录前缀）。
 要求：
 - ACCEPTANCE_CRITERIA 必须可验证、可观察，尽量可通过测试判断（示例：AC-01 未认证请求必须返回 401）。禁止"功能正常"这类模糊描述。每条含 id/criterion/verification。
 - EXPECTED_FILES 必须逐条列出本任务允许创建/修改的确切路径（含写入 pre-existing 未跟踪目录内的文件）；如任务确需在整个目录内写入，另填 ALLOWED_WRITE_PATHS 目录前缀。二者都不含治理文件。
 - MANDATORY_TESTS 必须使用 TEST_COMMANDS 中真实存在的命令体系；medicalSensitive=true 时必须包含医疗安全回归测试（若项目暂无对应测试，则把"补齐该测试"写入 IN_SCOPE 与 MANDATORY_TESTS）。
+- MACHINE_GATE_COMMANDS 是 Machine Gate 的**冻结门禁合同**（FIX-GOV-001-R1），必须逐条声明本任务真正要运行的命令，每条含 gateId + kind + command + purpose：
+  · gateId：稳定、非空、本 Task 内唯一（如 G-TARGET / G-BASE-PYTEST / G-MIGRATION），执行手无权新增/删除/改名。
+  · kind：'required' = 本 Task 自身必须成功（目标测试、Scope/forbidden-file/HEAD/指纹校验、build、迁移 up/down/up、安全与医疗回归）；'record' = 采集当前基线事实（全量 pytest/ruff 等**本任务并不负责修红**的存量检查），其红色只入 findings、不阻断本 Task（D1 双真相），"缺安全环境"记 SAFELY_NOT_EXECUTED_AND_RECORDED。
+  · 把 MANDATORY_TESTS 的每一项都落成 kind=required 的门禁；把 REGRESSION_TESTS 落成 required 或 record 并在 purpose 说明理由。**禁止**把本应 required 的目标测试声明为 record 来规避失败——Review/Verify 会把"目标测试被声明为 record"视为 blocker。
+  · command 必须是项目真实支持的命令原文（执行手提交时会逐字比对，改写即 GATE_COMMAND_NOT_DECLARED）。
 - privacySensitive=true 时 PRIVACY_IMPACT 必须覆盖：数据最小化、授权、访问控制、日志脱敏、数据隔离、删除路径、导出路径、审计。
 - 数据库结构变更必须通过 MIGRATION_REQUIREMENTS 描述（含 downgrade 要求）。
 - 将完整 TASK_SPEC JSON 写入文件 .qoder/workflow-state/<TASK_ID>.spec.json（这是你唯一允许写入的文件），并在 specPath 返回该路径。若该文件已存在（历史运行留痕），禁止覆盖：改用 .qoder/workflow-state/<TASK_ID>-<git短SHA>.spec.json（短 SHA 用 git rev-parse --short HEAD 获取）。
@@ -1455,6 +1549,26 @@ TASK_SPEC 一旦进入 IMPLEMENT，实施者禁止修改。`,
   { label: 'task-spec', phase: 'Task Spec', model: modelFor('planner'), effort: 'high', schema: SPEC_SCHEMA })
 if (!spec) return modelBlocked('Task Spec', mname(modelFor('planner')))
 log(`TASK_SPEC 生成：${spec.TASK_ID} — ${spec.TITLE}（AC ${spec.ACCEPTANCE_CRITERIA.length} 条，落盘 ${spec.specPath}）`)
+
+// FIX-GOV-001-R1 A4：SPEC 门禁声明完整性 = 实施之前的 fail-closed 前置条件（0 个实施 agent）。
+// 声明缺失/为空、gateId 空或非法或重复、kind 非法、command 为空 → GATE_SPEC_MALFORMED，
+// 不启动 Worker、不跑门禁、不进入修复循环（"合同本身不完整"不允许靠实施者来回试错蒙混）。
+{
+  const gs = validateGateSpec(spec)
+  if (gs) {
+    return blocked(gs.code, 'Task Spec', {
+      TASK_ID: spec.TASK_ID,
+      SPEC_PATH: spec.specPath,
+      DEFECTS: gs.defects,
+      DETAIL: 'TASK_SPEC 的 MACHINE_GATE_COMMANDS 无法作为冻结门禁合同执行：' + gs.defects.join('；'),
+      MANDATORY_TESTS: spec.MANDATORY_TESTS || [],
+      REGRESSION_TESTS: spec.REGRESSION_TESTS || [],
+      FILES_CURRENTLY_CHANGED: [],
+      SAFE_NEXT_ACTION: '由 Max（治理阶段）补全/修正 MACHINE_GATE_COMMANDS（每条 = gateId + kind + command + purpose，gateId 稳定唯一，kind 只允许 required|record）后重跑本任务。本 Workflow 未启动任何实施 Agent，未修改任何文件。禁止由执行手在运行时补声明或改 kind。',
+    })
+  }
+}
+log(`GATE_SPEC 校验通过：声明 ${gateDecls(spec).length} 条门禁（required ${gateDecls(spec).filter(d => d.kind === 'required').length} / record ${gateDecls(spec).filter(d => d.kind === 'record').length}），gateId 全部唯一合法，对账键 = gateId`)
 
 // ---------- D4 §26–§30：同任务重试产物归属（在任何写动作之前判定）----------
 // 只有 retryOfTaskId == 本任务 且路径在两版 TASK_SPEC 允许写集合内 且非治理 且
@@ -1558,6 +1672,12 @@ function gateRequirements() {
   if (spec.REGRESSION_TESTS && spec.REGRESSION_TESTS.length) req.push(`TASK_SPEC REGRESSION_TESTS：${j(spec.REGRESSION_TESTS, 800)}`)
   if (!req.length) req.push('至少运行与本次改动相关、项目真实支持的检查（相关测试子集 / lint / build）。')
   return req
+}
+
+// FIX-GOV-001-R1：把冻结门禁合同渲染成执行手必须逐条回传 gateId 的表格（对账键 = gateId，不是命令字符串）。
+function gateContractTable() {
+  const decls = gateDecls(spec)
+  return decls.map(d => `· gateId=${d.gateId} | kind=${d.kind} | command=${normGateCommand(d.command)} | purpose=${d.purpose || '-'}`).join('\n')
 }
 
 // D4：确定性字节取证执行器（替换 D2 的"LLM 自报 hash"快照）。
@@ -1792,8 +1912,15 @@ async function runMachineGate(round) {
   return await agent(`${PROJECT_RULES}
 ${FLASH_RULES}
 [Machine Gate 执行器 · 第 ${round} 轮] 你是客观裁判的执行手：只真实运行命令并如实记录退出码。禁止修改任何文件（测试运行自身产生的临时产物除外）、禁止修改任何业务代码或测试、禁止凭感觉判断、禁止虚报退出码（Max 会在 Verify 阶段抽查重跑）。
-必跑门禁项（按分类与 TASK_SPEC 计算）：
+[验证意图（语义清单，来自任务分类与 TASK_SPEC 的 MANDATORY/REGRESSION）—— 不直接提交，其机器化形态就是下方冻结合同：合同必须逐条覆盖本清单的每一项 required 意图，缺项由 Review/Verify 出 blocker]
 ${gateRequirements().map((r, i) => `${i + 1}. ${r}`).join('\n')}
+[冻结门禁合同（TASK_SPEC.MACHINE_GATE_COMMANDS）—— 本轮唯一命令集合，逐条执行、逐条回传 gateId]
+${gateContractTable()}
+硬约束（违反即终态阻塞，不进入修复循环，脚本侧按 gateId 对账）：
+· 上面每一条门禁都必须真实运行并在 commands[] 中以同一 gateId 回传；command 原文须与声明逐字一致（只允许空白折叠差异）。
+· 禁止提交合同之外的任何命令（预读 pyproject/package.json、核实命令是否存在等过程写入 notes，不进 commands[]）；引用未声明的 gateId 或提交未声明的命令 → GATE_COMMAND_NOT_DECLARED，即便 exitCode=0。
+· 禁止省略合同中的任何一条 → BLOCKED_GATE_COMMAND_NOT_EXECUTED。"只交几条绿色命令 + 自报 allPassed:true" 从不构成门禁通过。
+· 禁止改 kind（声明 required 就按 required 回传，声明 record 就按 record 回传）。
 [命令分类 kind —— 由 TASK_SPEC 指定，你无权更改]
 · kind=required —— 本 Task 自身必须成功的验证（产物存在、Scope/forbidden-file 校验、Git HEAD/branch 校验、pre-existing untracked 指纹校验、Feature/Bugfix 的目标测试/build/migration 等）。required 命令 exitCode!==0 → 本 Task MACHINE_FAIL；required 命令因缺安全测试环境无法执行 → 置顶层 blockedMissingSafeTestEnv=true。
 · kind=record —— 采集当前基线事实（全量 pytest、全量 ruff、安全扫描、性能探针、迁移安全环境可用性等）。record 命令 exitCode!==0 属正常基线发现，写入 findings，绝不使本 Task MACHINE_FAIL，也绝不触发修复。record 命令必须"真执行并记录"（recordStatus=EXECUTED_AND_RECORDED）或"安全地不执行并记录原因+环境证据"（recordStatus=SAFELY_NOT_EXECUTED_AND_RECORDED）。
@@ -1802,7 +1929,7 @@ ${gateRequirements().map((r, i) => `${i + 1}. ${r}`).join('\n')}
 · record 命令采集本身失败（命令不存在 / 输出无法解析 / 报告无法落盘）→ recordStatus=RECORD_COLLECTION_FAILED，并在 stderrSummary 说明。
 规则：
 - 首先核对 pyproject.toml / package.json / README / docs / CI，确认命令真实存在；只运行项目真实支持的命令；项目不支持的门禁项记入 skippedGates 并说明原因，不得凭空假设 npm test / ruff / mypy 存在。
-- 每条命令记录 command / kind / purpose / exitCode / recordStatus / stdoutSummary / stderrSummary（摘要即可，禁止贴超长输出，禁止输出任何 Secret）。
+- 每条命令记录 gateId / command / kind / purpose / exitCode / recordStatus / stdoutSummary / stderrSummary（摘要即可，禁止贴超长输出，禁止输出任何 Secret）。
 - 数据库相关测试优先使用项目已有的安全测试配置/mock；required 命令无法安全运行（缺安全测试环境且无法 mock）→ blockedMissingSafeTestEnv=true；record 命令无法安全运行 → recordStatus=SAFELY_NOT_EXECUTED_AND_RECORDED + finding，不置 blockedMissingSafeTestEnv。
 - record 命令发现的基线问题（测试红/lint 债/安全缺口/性能缺口/缺安全环境）逐条写入 findings（Finding ID|Severity|Evidence|Affected Area|Follow-up），不得静默丢弃。
 - [D2-C Scope 判定归属] Scope / forbidden-file / 治理文件 / pre-existing / HEAD / index 的权威判定由**编排器脚本**基于 Task Delta（WORKTREE_BASELINE↔当前工作区指纹快照）完成，不由你按裸 git status 判定。你若运行 scope 类 required 命令，必须对照 Preflight 基线：**任务前已存在且指纹未变的改动（PRE_EXISTING_UNCHANGED）不算本任务越界**，不得据此判失败；只有本任务新建/新改的文件才计入 Scope。禁止用 git checkout/restore/reset/clean/stash 去"消除"任何 diff。
@@ -1854,8 +1981,9 @@ function gateFailSummary(g) {
   return parts.join('\n---\n')
 }
 
-// D3 反作弊门禁守卫：在任何修复之前，对执行手返回的每条命令做扫描——
-// ① 是否把 required 降级为 record；② 是否指向 :5432 破坏性数据库目标。命中即返回终态 blocked()，绝不进入修复循环。
+// D3/FIX-GOV-001-R1 反作弊门禁守卫：在任何修复之前，对执行手返回的每条命令做扫描——
+// ① 是否指向 :5432 破坏性数据库目标；② 是否把声明为 required 的门禁降级为 record（I1）；
+// ③ 提交面与冻结声明面的对账（I2 省略 / I3 未声明或顶替 / kind 擅改）。命中即返回终态 blocked()，绝不进入修复循环。
 function gateGuardViolation(g) {
   const cmds = (g && Array.isArray(g.commands)) ? g.commands : []
   for (const c of cmds) {
@@ -1873,9 +2001,21 @@ function gateGuardViolation(g) {
     TASK_ID: spec.TASK_ID,
     GIT_TIER: dg.tier,
     DETAIL: dg.detail,
+    GATE_CONTRACT_DECLARED: gateDecls(spec).map(d => `${d.gateId}:${d.kind}`),
+    GATE_CONTRACT_SUBMITTED: cmds.map(c => `${(c && c.gateId) || '(无 gateId)'}:${effGateKind(c)}`),
     GOVERNANCE_PROTECTED_PATHS: GOVERNANCE_PROTECTED_PATHS.concat([SELF_WORKFLOW_PATH]),
     FILES_CURRENTLY_CHANGED: (impl.FILES_MODIFIED || []).concat(impl.FILES_CREATED || []),
-    SAFE_NEXT_ACTION: '执行手无权把 required 门禁降级为 record（这是 GOVERNANCE/MODEL POLICY VIOLATION）。required 失败必须进入修复或 BLOCKED，绝不能改记为 record 蒙混过关。普通 Feature Task 的目标测试/build/migration 默认全部 required。',
+    SAFE_NEXT_ACTION: '执行手无权把 TASK_SPEC 冻结声明为 required 的门禁降级为 record（GOVERNANCE/MODEL POLICY VIOLATION）。required 失败必须进入修复或 BLOCKED，绝不能改记为 record 蒙混过关。普通 Feature Task 的目标测试/build/migration 默认全部 required；若 Max 认为该门禁应属 record（采集基线事实），那是 SPEC 层决策，须由 Max 治理阶段修订合同，而非由执行手改标。',
+  })
+  const dc = detectGateDeclaration(cmds, spec)
+  if (dc) return blocked(dc.code, 'Machine Gate', {
+    TASK_ID: spec.TASK_ID,
+    GIT_TIER: dc.tier,
+    DETAIL: dc.detail,
+    GATE_CONTRACT_DECLARED: gateDecls(spec).map(d => `${d.gateId}:${d.kind} = ${normGateCommand(d.command)}`),
+    GATE_CONTRACT_SUBMITTED: cmds.map(c => `${(c && c.gateId) || '(无 gateId)'}:${effGateKind(c)} = ${normGateCommand(c && c.command)}`),
+    FILES_CURRENTLY_CHANGED: (impl.FILES_MODIFIED || []).concat(impl.FILES_CREATED || []),
+    SAFE_NEXT_ACTION: 'Machine Gate 只执行 TASK_SPEC.MACHINE_GATE_COMMANDS 冻结声明过的门禁：每条命令必须逐条回传其 gateId、命令原文须与声明一致、kind 不得改动、声明过的门禁一条都不能少。沉默省略（只提交若干条绿色命令 + 自报 allPassed:true）与"换一条会绿的命令顶替红门禁"同样构成终态阻塞。若确需增删门禁，由 Max 在治理阶段修订合同后重跑，执行手无权改动。',
   })
   return null
 }
@@ -1980,7 +2120,7 @@ ${j(rca.FIX_SPEC, 8000)}
     })
   }
 }
-log(`MACHINE_PASS：required 门禁全部通过（${gc.required.length} 条 required，0 失败）；record 基线采集完整（${gc.record.length} 条 record，其中红/安全不执行 ${gc.recordRed.length} 条已入 findings，不阻断本 Task）。GATE_HEALTH=PASS｜PROJECT_BASELINE_HEALTH=${gc.baselineHealth}`)
+log(`MACHINE_PASS：required 门禁全部通过（${gc.required.length} 条 required，0 失败）；record 基线采集完整（${gc.record.length} 条 record，其中红/安全不执行 ${gc.recordRed.length} 条已入 findings，不阻断本 Task）；门禁合同对账通过（声明 ${Object.keys(gateIndex(spec)).length} 条 = 提交 ${gc.cmds.length} 条，逐条 gateId 一致、kind 未被改动、无未声明命令、无省略）。GATE_HEALTH=PASS｜PROJECT_BASELINE_HEALTH=${gc.baselineHealth}`)
 
 // ---------- PHASE 8/9 — MAX REVIEW + FIX ----------
 phase('Max Review')
@@ -1995,10 +2135,11 @@ ${decisionRules()}
 - TASK_SPEC：${spec.specPath}
 - git diff（全部改动）与 changed files
 - 相关 tests
-- Machine Gate 结果（区分 required/record）：${j({ COMPUTED: { requiredPassed: gc.requiredPassed, recordCollectionComplete: gc.recordCollectionComplete, blockedMissingSafeTestEnv: gc.blockedMissingSafeTestEnv, requiredFailures: gc.requiredFailed.length, baselineHealth: gc.baselineHealth }, commands: gate.commands, findings: gc.findings, skippedGates: gate.skippedGates || [] }, 7000)}
+- Machine Gate 结果（区分 required/record）：${j({ COMPUTED: { requiredPassed: gc.requiredPassed, recordCollectionComplete: gc.recordCollectionComplete, blockedMissingSafeTestEnv: gc.blockedMissingSafeTestEnv, requiredFailures: gc.requiredFailed.length, baselineHealth: gc.baselineHealth }, GATE_CONTRACT_DECLARED: gateDecls(spec).map(d => ({ gateId: d.gateId, kind: d.kind, command: normGateCommand(d.command), purpose: d.purpose || '-' })), commands: gate.commands, findings: gc.findings, skippedGates: gate.skippedGates || [] }, 7000)}
 - Implementation Report：${j(impl, 4000)}
 逐条检查 ACCEPTANCE_CRITERIA（每条给出 met 与 evidence）。
 判读约定：record 型命令红色（exitCode!==0）或缺安全环境属"基线发现"，应核对是否已如实落入 findings，不得据此判 REQUEST_CHANGES（基线红 ≠ 实现缺陷）；只有 required 命令失败、Scope 越界、 forbidden 文件被改、验收标准未满足、虚报 exitCode 才构成 blocker。
+门禁合同审查（FIX-GOV-001-R1：机器只按 gateId 对账"执行手 ↔ 冻结合同"，合同本身的定性错误只有你能发现）：逐条核对 MANDATORY_TESTS 是否都落成了 kind=required 的门禁。若本任务自己的目标测试/构建/迁移被声明为 kind=record（借"基线"之名规避失败），或 CONTRACT_DECLARED 与实际改动面明显不匹配（漏声明关键校验），必须出 blocker（REQUIRED_GATE_MISDECLARED_AS_RECORD / GATE_CONTRACT_UNDER_DECLARED），并在 REQUIRED_FIX 里写明应改的 SPEC 条目。反之，把与本次改动无关的存量全量检查声明为 record 是正确做法，不得因它红而判 REQUEST_CHANGES。
 至少 Review：Correctness / Scope Compliance / Regression Risk / Architecture Compliance / Database Safety / API Compatibility / Error Handling / Logging / Security / Privacy / Test Quality / Maintainability${extra.length ? ' / ' + extra.join(' / ') : ''}。
 最终只能返回 PASS 或 REQUEST_CHANGES。禁止"基本通过/看起来可以/建议以后优化/应该没问题"。
 REQUEST_CHANGES 时每个 blocker 必须含 BLOCKER_ID/LOCATION/EVIDENCE/IMPACT/REQUIRED_FIX/VERIFICATION_METHOD；另可给 nonBlockingNotes（不阻止 PASS）。`
@@ -2220,7 +2361,7 @@ return {
     SNAPSHOT: mname(modelFor('snapshot')),
   },
   FILES_CHANGED: ver.changedFiles || (impl.FILES_MODIFIED || []).concat(impl.FILES_CREATED || []),
-  TESTS_RUN: (gate.commands || []).map(c => `[${c.kind || 'required'}] ${c.command}`),
+  TESTS_RUN: (gate.commands || []).map(c => `[${effGateKind(c)}][${c.gateId || '-'}] ${c.command}`),
   MACHINE_GATE: 'MACHINE_PASS',
   GATE_HEALTH: {
     status: 'PASS',
@@ -2232,6 +2373,27 @@ return {
     recordCollectionComplete: gc.recordCollectionComplete,
     recordCollectionFailed: gc.recordFailed.length,
     blockedMissingSafeTestEnv: gc.blockedMissingSafeTestEnv,
+  },
+  GATE_CONTRACT: {
+    AUTHORITY: 'TASK_SPEC.MACHINE_GATE_COMMANDS（冻结合同）—— 对账键 = gateId，不与 shell 命令字节串跨层比对（A3）',
+    DECLARED_COUNT: Object.keys(gateIndex(spec)).length,
+    SUBMITTED_COUNT: gc.cmds.length,
+    DECLARED: gateDecls(spec).map(d => ({ gateId: d.gateId, kind: d.kind, command: normGateCommand(d.command) })),
+    SUBMITTED: gc.cmds.map(c => ({ gateId: c.gateId || null, kind: effGateKind(c), command: normGateCommand(c.command), exitCode: (typeof c.exitCode === 'number' ? c.exitCode : null) })),
+    RECONCILED: (function () {
+      const idx = gateIndex(spec)
+      const seen = {}
+      for (const c of gc.cmds) {
+        const id = normGateCommand(c.gateId)
+        if (!id || !idx[id]) return false
+        if (normGateCommand(idx[id].command) !== normGateCommand(c.command)) return false
+        if (effGateKind(c) !== String(idx[id].kind)) return false
+        seen[id] = true
+      }
+      return Object.keys(idx).every(id => seen[id])
+    })(),
+    SPEC_VALIDATION: 'GATE_SPEC_MALFORMED_NOT_RAISED (pre-Implement fail-closed passed)',
+    SEMANTIC_LISTS_NOT_MACHINE_RECONCILED: ['MANDATORY_TESTS', 'REGRESSION_TESTS'],
   },
   PROJECT_BASELINE_HEALTH: gc.baselineHealth,
   BASELINE_RECORD_RESULTS: gc.record.map(c => ({ command: c.command, exitCode: (typeof c.exitCode === 'number' ? c.exitCode : null), recordStatus: c.recordStatus || (typeof c.exitCode === 'number' ? 'EXECUTED_AND_RECORDED' : 'SAFELY_NOT_EXECUTED_AND_RECORDED') })),
@@ -2273,7 +2435,7 @@ return {
     DESTRUCTIVE_GIT_HARD_DENY: GIT_HARD_DENY_SUBCOMMANDS,
     FLASH_FORBIDDEN_GIT_MUTATING: GIT_MUTATING_SUBCOMMANDS,
     SCOPE_JUDGE: 'SCRIPT_TASK_DELTA (baseline↔deterministic byte evidence), not raw git status, not LLM self-reported hash',
-    DEFENSE_LAYERS: ['prompt(FLASH_REPAIR_RULES)', 'orchestrator-precheck(SELF_REPAIR_ELIGIBILITY/REPAIR_SCOPE)', 'command-denylist(gitCommandsRun scan, bypass-aware)', 'post-repair-fingerprint-verify', 'D3-gate-anti-cheat(required-downgrade + unsafe-:5432 scan)', 'D4-deterministic-byte-evidence(script-pinned command + verbatim rawStdout + format/self-consistency validation + dual-independent-rehash adjudication)', 'immediate-BLOCK-on-violation'],
+    DEFENSE_LAYERS: ['prompt(FLASH_REPAIR_RULES)', 'orchestrator-precheck(SELF_REPAIR_ELIGIBILITY/REPAIR_SCOPE)', 'command-denylist(gitCommandsRun scan, bypass-aware)', 'post-repair-fingerprint-verify', 'D3-gate-anti-cheat(unsafe-:5432 scan + required-downgrade by gateId)', 'FIX-GOV-001-R1-gate-contract(pre-Implement GATE_SPEC_MALFORMED fail-closed + gateId reconciliation: GATE_COMMAND_NOT_DECLARED / GATE_OMISSION / GATE_KIND_MUTATION)', 'D4-deterministic-byte-evidence(script-pinned command + verbatim rawStdout + format/self-consistency validation + dual-independent-rehash adjudication)', 'immediate-BLOCK-on-violation'],
     TOOL_LEVEL_HARD_BLOCK_AVAILABLE: false,
   },
   // ---- D4：内容身份证据链 + 同任务重试产物归属 ----
