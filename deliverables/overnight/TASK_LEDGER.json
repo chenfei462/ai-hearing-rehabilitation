@@ -2,11 +2,11 @@
   "goalStartedAt": "2026-10-06T19:03:00Z",
   "goalObjective": "Autonomous Delivery Orchestrator: M0 -> M0 Gate -> ... -> M10 -> M10 Gate -> Release Gate -> PROJECT_READY (no fake completion; stop at PAUSED_FOR_HUMAN or BLOCKED if unsafe).",
   "currentMilestone": "M0",
-  "currentTask": "FIX-GOV-001-R1 (seal withheld: independent qmodel_38max Verify has produced 0 verdicts in 4 attempts; v2 retry running)",
-  "goalStatus": "PAUSED_FOR_HUMAN",
-  "lastSafeCommit": "77fdb32",
-  "currentHead": "77fdb32",
-  "headPointerNote": "HEAD 77fdb32（\"chore(overnight): record F-26 un-implementability, adopt FIX-GOV-001 amendment R1\"）。账本记录口径 = 本次 seal commit 的父提交；本次**没有 seal commit**：FIX-GOV-001-R1 的两个治理文件改动仍完整留在工作区未提交（见 fixGov001R1.uncommittedWorktree）。任务侧最后一次交付提交仍是 a78b10f（M0-004）。",
+  "currentTask": "M0-006 安全基线重跑（HIGH risk ⇒ 独立 Review A+B）",
+  "goalStatus": "RUNNING-M0-DAG",
+  "lastSafeCommit": "317341b",
+  "currentHead": "317341b",
+  "headPointerNote": "账本的 lastSafeCommit/currentHead 在写入时点是真相；紧随其后的账本提交本身无法自引用，故以 git log -1 为准。",
   "branch": "feature/m0-baseline",
   "modelPolicy": {
     "allowed": [
@@ -102,28 +102,19 @@
         "ENV-DRIFT local Py3.12.10/alembic1.13.1/pytest9.1.1 vs CI Py3.11/pytest8.x"
       ],
       "note": "Read-only audit; zero code/schema/API/frontend change. TASK_PASS verified by Goal Orchestrator (Max Verify): independent spot-check re-ran 'alembic current' on isolated :55432 -> exit 0 / base, confirming F-16 and no false report; qgraphflow fingerprints unchanged. Two SPEC_CONFLICT relaunches (ATTEMPTS=0 each, NOT repair cycles per §126) + one transient BLOCKED_MODEL_UNAVAILABLE (flash probe) all resolved without model switch."
+    },
+    {
+      "id": "M0-005",
+      "title": "集成测试基线（postgres+redis CI 同款三连真实测量）",
+      "status": "TASK_PASS",
+      "commit": "317341b",
+      "deliverable": "deliverables/baseline/INTEGRATION_BASELINE.md",
+      "runId": "wf_5a685efc-fc6",
+      "executionMode": "FULL",
+      "verifiedBy": "Machine Gate(真实 exitCode) + 独立 qmodel_38max Review + 独立 qmodel_38max Verify"
     }
   ],
   "blockedTasks": [
-    {
-      "taskId": "M0-005",
-      "runId": "wf_bd5d9d4f-2c7",
-      "workflowTaskId": "wf-2f194400-ed3",
-      "executionMode": "FULL",
-      "attempts": 0,
-      "workflowStatus": "BLOCKED",
-      "blockReason": "GOVERNANCE_POLICY_VIOLATION",
-      "gitTier": "REQUIRED_DOWNGRADE",
-      "failedPhase": "Machine Gate",
-      "misattribution": "detail blames 执行手, but the record tier was authored by the Max Task Spec itself (.qoder/workflow-state/m0-005-integration-test-baseline.spec.json MANDATORY_TESTS[2] literal contains \"| record |\")",
-      "rootCause": "detectRequiredDowngrade (.qoder/workflows/project-feature-delivery.js:727-743) treats any kind=record command matching a MANDATORY/REGRESSION spec substring as a downgrade; Gate Schema (:1798-1799) simultaneously REQUIRES baseline-measurement commands to be kind=record. Mutually unsatisfiable for audit-type tasks.",
-      "machineProof": "guard replicated verbatim from source and run against 4 spec shapes: M0-005 pull / M0-006 ruff / M0-007 perf / M0-008 docker-build all -> BLOCKED REQUIRED_DOWNGRADE; all-required control -> PASS",
-      "artifactSha256": "56ad863926343581084faf487f7b8b600c57bde800375e2977e66d0cd0e68def",
-      "artifactBytes": 29672,
-      "committed": false,
-      "commitReason": "TASK_PASS_FORMULA not satisfied (no MACHINE_GATE_PASS / no Max Review / no Max Verify verdict for this run); deliverable retained untracked as evidence, NOT staged",
-      "independentReproduction": "Max Verify re-ran the full chain: postgres CI-parity trio CMD6_EXIT=1 with 4 failed, 8 passed, 20 errors in 16.78s (worker 17.04s) — bit-exact; sqlite control 31 passed exit 0; cleanup exit 0; residue 0; :5432 grep 0 matches; protected md5 unchanged"
-    },
     {
       "taskId": "M0-006",
       "title": "安全基线（只读审查，不修复）",
@@ -230,7 +221,8 @@
     "M0-001": "abc6a78",
     "M0-002": "7be3c50",
     "M0-003": "f73cb01",
-    "M0-004": "a78b10f"
+    "M0-004": "a78b10f",
+    "M0-005": "317341b"
   },
   "milestoneGateResults": {},
   "m0Dag": {
@@ -270,8 +262,10 @@
         "M0-004"
       ],
       "pri": "P0",
-      "status": "BLOCKED",
-      "note": "deps satisfied but blocked by F-20 (executed instance #1); blocked pending FIX-GOV-001"
+      "status": "TASK_PASS",
+      "note": "重跑 TASK_PASS（FIX-GOV-001-R1 新门禁合同首次实战：required 7/7 exit 0、record 9/9 采集完成、双独立 Review 0 blocker、独立 Verify 复跑复现红项）；deliverable commit=317341b",
+      "runId": "wf_5a685efc-fc6",
+      "commit": "317341b"
     },
     "M0-006": {
       "deps": [
@@ -398,7 +392,7 @@
     },
     "F-20": {
       "summary": "Workflow governance defect: anti-downgrade guard and Gate Schema are mutually unsatisfiable for baseline/audit tasks, and the guard message misattributes planner-authored tiers to executor tampering",
-      "status": "FIX-IMPLEMENTED-MACHINE-VERIFIED-NOT-SEALED",
+      "status": "FIXED-AND-VERIFIED-IN-FIELD",
       "severity": "P1-BLOCKING",
       "disposition": "UNCHANGED + ESCALATED: FIX-GOV-001 (repair A or B) stays NOT_STARTED, owner = Max governance phase / human. .qoder/workflows/** is Flash-forbidden and the Night Chain forbids auto-fixing governance defects at night. Repair C remains evaluated-and-declined (see candidateRepairs_C). Two executed instances now replace prediction with evidence.",
       "candidateRepairs_C": "C (evaluated and DECLINED unattended): keep the guard untouched and author the TASK_SPEC so MANDATORY_TESTS/REGRESSION_TESTS contain only genuinely must-pass commands, moving baseline probes (full pytest/ruff/docker pull/migration availability) out of those arrays into ACCEPTANCE_CRITERIA + record-tier gate commands. Mechanically viable — retry-ownership preconditions were verified satisfiable (prior spec EXPECTED_FILES/ALLOWED_WRITE_PATHS contain the artifact; priorRunSha256 56ad8639...8def confirmed 64-hex; journal.jsonl#L18 of run wf_bd5d9d4f-2c7 records Worker IMPLEMENTED/FILES_CREATED for it). Declined because it silently redefines the semantics of MANDATORY_TESTS from \"must be executed\" (:1450/:1492) to \"must pass\", relocating enforcement of \"probe truly executed\" from a machine-checkable array into AC prose + Review judgment. That is a gate-shape change, i.e. exactly the governance decision the Night Chain reserves for a human (\"governance defects found at night must NOT be auto-fixed\"), so choosing it at 03:00 unattended would be circumvention, not compliance.",
@@ -434,7 +428,9 @@
         "proofBasis": "Derived deterministically from the guard source (substring set built only from MANDATORY∪REGRESSION, trip condition cmd===m || cmd.includes(m) || m.includes(cmd)), plus two executed instances. The \"omit and pass\" branch was NOT executed — it is a code-level consequence, stated as such, not as observed output."
       },
       "misattributionReproduced": "DETAIL again attributes a planner-authored tier to the executor (\"执行手把…记为 record…属动态降级，禁止\"). In FULL mode the tier was written by the qmodel_38max Task Spec (m0-006-security-baseline.spec.json REGRESSION_TESTS[0]/[1] are literally prefixed [GATE-RECORD]).",
-      "resolution": "子串双向包含匹配整体移除，改由 gateId 精确对账；d6-01-record-prefix-not-blocked 作为 F-20 假红回归哨兵（诚实 record 与 required 命令互为字节前缀仍 TASK_PASS）。（FIX-GOV-001-R1：已实施、机器 115/115 全绿、独立 Max Review PASS；未封存 —— 独立 Max Verify 被账户额度拦下）"
+      "resolution": "子串双向包含匹配整体移除，改由 gateId 精确对账；d6-01-record-prefix-not-blocked 作为 F-20 假红回归哨兵（诚实 record 与 required 命令互为字节前缀仍 TASK_PASS）。（FIX-GOV-001-R1：已实施、机器 115/115 全绿、独立 Max Review PASS；未封存 —— 独立 Max Verify 被账户额度拦下）",
+      "verification": "FIX-GOV-001-R1 封存 d2d7ddb；M0-005 重跑 run wf_5a685efc-fc6 以 16 条 gateId 合同（required 7 / record 9）走通 Machine Gate ⇒ TASK_PASS，正是 F-20 时代必 BLOCK 的形态。M0-006 的 F-20 阻塞随之解除（重跑待执行）。",
+      "verifiedAt": "2026-10-09T17:07:46Z"
     },
     "F-21": {
       "summary": "Explore 阶段的产物未被任何校验即被接受：M0-006 run wf_6b00bd56-a7c 的 Explore invocation（journal.jsonl idx 17, agentId aworkflow-subagent-db2a1cf5fe9224a0）返回 5/7 字段为字面量 \"TEST\" 占位符，TEST_COMMANDS 五类全为空数组，RELATED_FILES 仅 1 个文件（backend/app/api/deps.py）；其 rawResult.content 记录了一次畸形标签重试（\"The closing tag for RELATED_FILES was malformed. Retrying with correct syntax.\"）。Workflow 未做任何占位符/空值/文件数合理性检查，直接输出日志\"探索完成：1 个相关文件，parallelSafe=true\"并继续推进。",
@@ -689,6 +685,78 @@
       },
       "haltRule": "If v2 also yields no verdict, stop retrying and hand to human — do not burn a third attempt on the same failure mode.",
       "effectOnGates": "Fix still NOT PASS-eligible; seal withheld; M0-005/006/007/008 still forbidden to restart."
+    },
+    "F-31": {
+      "id": "F-31",
+      "severity": "P1-GOVERNANCE",
+      "foundBy": "independent qmodel_38max Verify (residual risk 3)",
+      "at": "2026-10-09T17:07:46Z",
+      "title": "补偿控制只落在 Review 层，不在 Verify 层（与 amendmentR1 文案 \"Review/Verify\" 不符）",
+      "detail": "blocker 类 REQUIRED_GATE_MISDECLARED_AS_RECORD / GATE_CONTRACT_UNDER_DECLARED 位于 reviewPrompt（:2142），由 Reviewer A(:2155)/Reviewer B(:2159) 消费；Verify 提示词(:2284-2304) 收到 gate.commands 与 COMPUTED，但收不到 GATE_CONTRACT_DECLARED，也没有等价指令 ⇒ Max 把本应 required 的目标测试误声明为 record 时，只有 Review 一层能抓（普通风险下仅一层）。",
+      "proposedFix": "Verify 提示词补入 DECLARED 合同 + 同一 blocker 类；属治理变更，需人工授权后走独立 Review/Verify（不得顺手改，会使 d2d7ddb 的 PASS 失效）",
+      "status": "OPEN-BACKLOG (FIX-GOV-002)"
+    },
+    "F-32": {
+      "id": "F-32",
+      "severity": "P2-TEST-GAP",
+      "foundBy": "independent qmodel_38max Verify (residual risk 1)",
+      "at": "2026-10-09T17:07:46Z",
+      "title": "两个 fail-closed 分支无专属回归场景",
+      "detail": "MISSING_GATE_ID（project-feature-delivery.js:801，提交命令完全不带 gateId）与 GATE_KIND_MUTATION（:807-809，record→required 反向篡改）在 dryrun-harness.mjs 中 grep 零命中；A6 的\"未声明命令\"只覆盖了 undeclared-gateId 形态（d6-05），未覆盖 no-gateId 形态。两分支按检视均 fail-closed，但无测试钉住。",
+      "status": "OPEN-BACKLOG"
+    },
+    "F-33": {
+      "id": "F-33",
+      "severity": "P3-DOC",
+      "foundBy": "independent qmodel_38max Verify (residual risk 2)",
+      "at": "2026-10-09T17:07:46Z",
+      "title": "d6 场景区间注释夸大覆盖率",
+      "detail": "harness:37-43 把头注释写成 \"d6-01..d6-13\"，实际只存在 9 条（编号跳 d6-06→09→12→13，缺 07/08/10/11）。NEW_SCENARIOS_ADDED=9 本身准确，但区间记法会让后来人误判覆盖面。",
+      "status": "OPEN-BACKLOG"
+    },
+    "F-34": {
+      "id": "F-34",
+      "severity": "P1-ENVIRONMENT",
+      "at": "2026-10-09T17:07:46Z",
+      "title": "模型服务传输层不稳定（与本项目代码无关，但冻结了自治链）",
+      "evidence": [
+        "wf_375e92e7-2b8 (v1): 4 次 Max 调用 0 verdict — \"Sorry, something went wrong\" ×3, \"connection to the model service was interrupted\" ×1, 1 次 stalled after 180000ms",
+        "wf_5a685efc-fc6 agent[8] task-spec: 18.8min 后 \"other side closed\" → BLOCKED_MODEL_UNAVAILABLE(qmodel_38max)，零写入",
+        "同 run 续跑：task-spec 成功（27min, 67955B spec），agent[9] implement 25min 后 \"other side closed\" → BLOCKED_MODEL_UNAVAILABLE(qfmodel)，零写入（交付物 sha 仍 56ad8639）",
+        "smoke probe wf_b8413f35-914: MAX PASS / FLASH FAIL — 失败与模型种类无关",
+        "第 3 次续跑（本次）: status=TASK_PASS, agents=15, toolCalls=177, durationMs=2453177, failures=[]"
+      ],
+      "mitigationProven": "resumeFromRunId + 逐字相同 args ⇒ 已成功阶段命中缓存，每次重试只补失败的那一相（实测有效，不是猜）；brief 限定读取窗口后 Review/Verify 一次通过",
+      "policyNote": "全程未换模型、未 fallback、未启用 FLASH_ONLY；BLOCKED_MODEL_UNAVAILABLE 按政策如实终止，ATTEMPTS 未虚增",
+      "status": "MITIGATED-OPERATIONALLY (not a code defect)"
+    },
+    "F-35": {
+      "id": "F-35",
+      "severity": "P2-ENVIRONMENT",
+      "at": "2026-10-09T17:07:46Z",
+      "title": "Docker Desktop 守护进程未运行阻塞 M0-005/006（已人工授权后由 Orchestrator 启动）",
+      "detail": "10-09 探测：docker CLI 存在但 npipe 不可达；:5432 由 PID 6740 监听（政策禁区，全程零接触）；上一批一次性容器 :55432/:15432/:16379 随守护进程停止而消失。人工选择\"让 Orchestrator 执行命令启动 Docker Desktop\"后启动成功（Server 29.5.2），dresslens-* 三容器随之自动拉起（属其他会话资产，未停止、未删除）。",
+      "status": "RESOLVED-BY-USER-AUTHORIZATION"
+    },
+    "F-36": {
+      "id": "F-36",
+      "at": "2026-10-09T15:38:52Z",
+      "severity": "P0-GOVERNANCE-POSITIVE",
+      "title": "FIX-GOV-001-R1 新门禁合同的首个实战证据（正面）",
+      "evidence": ".qoder/workflow-state/M0-005-integration-test-baseline-d2d7ddb.spec.json：Max 亲写 16 条 MACHINE_GATE_COMMANDS（required 7 / record 9），validateGateSpec 通过后推进到 Implement —— F-20 时代该形态必 BLOCK 于 REQUIRED_DOWNGRADE。合同自行加入 G-REPORT-NO-5432-URL 与 G-ENV-NO-RESIDUE 两条 required 守护，测试库走 127.0.0.1:55433 / redis:26379 隔离端口。",
+      "namingNote": "同名 spec 已存在 ⇒ 按 §3 追加 git 短 SHA 后缀（-d2d7ddb），未覆盖旧件",
+      "status": "CONFIRMED-FULL-TASK-PASS（本 run 终态 TASK_PASS；required 7/7 exit 0、record 9/9 采集完成、REPAIR_CYCLES_USED=0）"
+    },
+    "F-37": {
+      "id": "F-37",
+      "severity": "P2-TOOLING",
+      "at": "2026-10-09T17:07:46Z",
+      "foundBy": "M0-005 FLASH_WORKER（自曝）+ 独立 Reviewer B 与独立 Verify 逐字复跑证实",
+      "title": "执行工具层对单引号命令追加输出重定向 ⇒ required 门禁可被误判为失败",
+      "detail": "G-ENV-PG-READY 的冻结命令形如 sh -c 'for …; done'。首次经执行工具层运行时被追加了输出重定向，转义破坏后返回 exitCode=127；报告 §3.5 诚实留痕（非环境失败、非容器未就绪），逐字原样重跑 exit 0，required 门禁最终记录 exit=0。风险面：若该重跑未被识别，脚本会按真实 exitCode 判 MACHINE_FAIL，把一个健康任务误 BLOCK —— 这是工具层缺陷冒充项目缺陷的形态。",
+      "nonDefectNote": "非 .qoder/workflows/project-feature-delivery.js 的缺陷（grep 2>&1/重定向包装零命中），属 Agent 外层 shell 工具；实施者未改写冻结命令、未换语义，合规。",
+      "proposedFix": "FIX-GOV-003 候选：门禁命令下发时规避 sh -c 单引号形态（改多行脚本文件或双引号转义），或在 runMachineGate 对 exitCode=127 且命令含 sh -c 单引号者要求执行手逐字复跑一次再计数",
+      "status": "OPEN-BACKLOG (P2, 不阻塞 M0)"
     }
   },
   "humanDecisionsRequired": [
@@ -882,15 +950,7 @@
       "gitWritesByFlash": "none（HEAD 仍 1a62703，staging 空，无破坏性 git 命令）"
     }
   ],
-  "notes": {
-    "resumePrecondition": "前置条件仅剩一步：独立 qmodel_38max Verify 可运行。恢复额度 → 重跑 Verify → TASK_PASS → 按 §28 精确封存两个治理文件 → 才能重启 M0-005。禁止在未封存前让业务 Worker 写治理文件。",
-    "dbSafety": "backend/alembic.ini:5 default sqlalchemy.url points to postgresql://...@localhost:5432/cochlear_rehab (the UNKNOWN listener). Any migration test MUST override the URL to a Goal-created isolated non-5432 container; NEVER touch 5432.",
-    "dockerAvailable": "Docker 29.5.2 / Compose v5.1.4 曾于 M0-004/M0-005/M0-006 批次确认可用（隔离容器 :55432/:55433/:26379）。2026-10-08T07:38Z 复测：`docker info` **失败** —— `failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`（Docker Desktop 守护进程当前未运行）。⇒ H-10（postgres 口径 13 条安全用例直测）此刻不可闭；`ENGINEERING_RELEASE_READY` 的 Docker build/部署冒烟两项证据同样不可采。**决策：不擅自启动 Docker Desktop。** 理由：(1) 带 restart=always 的既有容器可能在启动时被自动复活，其中包括身份未知的 `:5432` 相关实例（SB-28/SB-31 危险面）与他方会话持有的 `dresslens-*`；(2) 拉起机器级服务不属本 Chain 授权范围，属需人工确认的环境变更。本 Chain 全程未因本次观测对 :5432 做任何连接或变更。",
-    "serialPolicy": "Overnight default serial (§18); progress files committed before Workflow launch and updated only after TASK_PASS (§116/§117).",
-    "engineeringReleaseReady": "NO — M0 未过 Gate（4 个 P0 任务 BLOCKED），M1..M5 未启动；criticalPath 首环 M0-001→M0-004 之后的 M0 收口即断。",
-    "realProductionApproved": "NO — 无任何真实人工/授权主体批准；正式生产部署属 HUMAN_REQUIRED，夜间不自动批准。",
-    "bookkeepingIgnore": "夜间账本（deliverables/overnight/**）在 .gitignore 的 `deliverables/*` 之下且无例外；提交账本必须显式 `git add -- <已跟踪的两个文件路径>`，新增记录文件须先由人工加 `!deliverables/overnight/` 例外，否则会被静默忽略（见 findings.F-23）。"
-  },
+  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。",
   "pausedAt": "2026-10-09T14:28:05Z",
   "timestampCorrections": [
     {
@@ -972,7 +1032,7 @@
   "pausedAtCorrection": "原标签为陈旧时间戳（见 findings.F-25）；权威值来自 `date -u`，由 argv 传入本脚本",
   "fixGov001R1": {
     "authorizedBy": "HD-N-01（37 节人工授权，2026-10-08）：显式采纳 amendmentR1，显式否决旧版 FIX-GOV-001",
-    "status": "IMPLEMENTED-AND-MACHINE-VERIFIED-BUT-INDEPENDENT-VERIFY-NOT-YET-OBTAINED",
+    "status": "SEALED-TASK_PASS",
     "scope": [
       ".qoder/workflows/project-feature-delivery.js",
       ".qoder/workflow-state/dryrun-harness.mjs"
@@ -1041,7 +1101,7 @@
       ],
       "cause": "账户级 credit 用量上限（外部计费状态），非模型政策违规、非代码缺陷"
     },
-    "notSealedBecause": "§27 规定 FIX_GOV_001_R1_STATUS=PASS 必须 Machine ∧ 106 保留 ∧ 新 D6 ∧ Max Review ∧ Max Verify ∧ Task Delta ∧ Governance Guard 同时成立；§26 指定 Verify 必须由独立 qmodel_38max 执行。Verify 未运行 ⇒ 无 PASS 资格 ⇒ 不执行 §28 的 git add / §29 的 commit。禁止用 qfmodel 代替 Max Verify（D3 降级需人工显式授权，Night Chain 不自动降级）。",
+    "notSealedBecause": null,
     "uncommittedWorktree": [
       {
         "path": ".qoder/workflows/project-feature-delivery.js",
@@ -1085,11 +1145,31 @@
         "runId": "wf_3855e53c-a89",
         "script": "v2-bounded-reads-sequential",
         "outcome": "IN_PROGRESS"
+      },
+      {
+        "at": "2026-10-09T14:11Z",
+        "runId": "wf_3855e53c-a89",
+        "script": "v2-bounded-reads-sequential",
+        "outcome": "TASK_PASS",
+        "note": "Review PASS + Verify TASK_PASS; sealed as d2d7ddb"
       }
-    ]
+    ],
+    "sealedCommit": "d2d7ddb",
+    "sealedAt": "2026-10-09T14:31Z",
+    "sealScope": [
+      ".qoder/workflows/project-feature-delivery.js",
+      ".qoder/workflow-state/dryrun-harness.mjs"
+    ],
+    "taskPassFormula": {
+      "MACHINE_GATE_PASS": "115/115 exitCode 0 (Verifier re-ran; digest recomputed from baseline blob == cecf72bc...)",
+      "INDEPENDENT_MAX_REVIEW_PASS": "qmodel_38max, Q1..Q11 all YES, 0 blockers, 9 non-blocking notes, aborted=false",
+      "INDEPENDENT_MAX_VERIFY_TASK_PASS": "qmodel_38max, verdict TASK_PASS, aborted=false, 9 spotChecks all matchesClaim=true",
+      "TASK_DELTA_PASS": "git status --porcelain == exactly the two authorized governance files",
+      "GOVERNANCE_GUARD_PASS": "HD-N-01 amendmentR1 authorization; :5432 zero contact; no business file touched"
+    }
   },
   "worktreeAtPause": {
-    "head": "29f2775",
+    "head": "317341b",
     "porcelain": [
       "M .qoder/workflow-state/dryrun-harness.mjs",
       " M .qoder/workflows/project-feature-delivery.js",
@@ -1097,17 +1177,99 @@
       "?? deliverables/baseline/SECURITY_BASELINE.md",
       "?? docs/qgraphflow/dialogue-turn-sequence/"
     ],
-    "reVerifiedAt": "2026-10-09T14:28:05Z",
+    "reVerifiedAt": "2026-10-09T17:07:46Z",
     "sha256": {
       ".qoder/workflows/project-feature-delivery.js": "5512598f1714f276ee6957b36e7f266686e747dbd5b06bc89fa29fff1d0b8fbf",
       ".qoder/workflow-state/dryrun-harness.mjs": "441daf2392f32f5fe1987d9214fa21cc8c42a7d7e4c414cb7daed43e118e1d78",
-      "deliverables/baseline/INTEGRATION_BASELINE.md": "56ad863926343581084faf487f7b8b600c57bde800375e2977e66d0cd0e68def",
+      "deliverables/baseline/INTEGRATION_BASELINE.md": "b2d2f04aa1250a31bc5f49eb8c48cdb3f2bad972ffa4f98aa7ce5821fc7358f4",
       "deliverables/baseline/SECURITY_BASELINE.md": "72fd898f4b5add01ad8dc13e4ffc5c81c67b69033ea1012dc036d008461d34f7",
       "docs/qgraphflow/dialogue-turn-sequence/graph.json": "5f12d3d4503d2305f352b21b8d275bb5e2ea544a32f3d539ea6909951373f138",
       "docs/qgraphflow/dialogue-turn-sequence/index.html": "2bd127b7c22c25b20e04804cc5c745f686f7f462cae96649aa9b47612d4bf600"
     },
     "governanceFilesIdenticalBetween": "77fdb32..29f2775 (git diff --stat empty) ⇒ verify baseline git show 77fdb32:<path> == HEAD:<path>",
-    "readOnlyAgentsWroteNothing": true
+    "readOnlyAgentsWroteNothing": true,
+    "bytes": {
+      "deliverables/baseline/INTEGRATION_BASELINE.md": 43027,
+      "deliverables/baseline/SECURITY_BASELINE.md": 97758,
+      "docs/qgraphflow/dialogue-turn-sequence/graph.json": 34972,
+      "docs/qgraphflow/dialogue-turn-sequence/index.html": 794348
+    }
   },
-  "pausedReasonCurrent": "F-30 — Max calls reachable but unstable; independent verification not yet obtained"
+  "pausedReasonCurrent": null,
+  "m005LatestRun": {
+    "taskId": "M0-005-integration-test-baseline",
+    "runId": "wf_5a685efc-fc6",
+    "executionMode": "FULL",
+    "at": "2026-10-09T17:07:46Z",
+    "WORKFLOW_STATUS": "TASK_PASS",
+    "BLOCK_REASON": null,
+    "FAILED_PHASE": null,
+    "REPAIR_CYCLES_USED": 0,
+    "HIGH_RISK": true,
+    "reviewInvocations": [
+      "max-review",
+      "max-review-b"
+    ],
+    "gateHealth": {
+      "status": "PASS",
+      "requiredTotal": 7,
+      "requiredPassed": true,
+      "requiredFailures": 0,
+      "requiredBlockedSafeEnv": 0,
+      "recordTotal": 9,
+      "recordCollectionComplete": true,
+      "recordCollectionFailed": 0,
+      "blockedMissingSafeTestEnv": false
+    },
+    "gateContractCounts": {
+      "declared": 16,
+      "submitted": 16
+    },
+    "projectBaselineHealth": "DEGRADED",
+    "filesChanged": [
+      "deliverables/baseline/INTEGRATION_BASELINE.md"
+    ],
+    "baselineFindings": [
+      "F-M0005-02 (Major|集成基线红项|G-INT-PG-RUN record exit=1: postgres 口径三连 4 failed/8 passed/20 errors，根因 conftest.py:53-100 asyncpg 'another operation is in progress'|Backend integration conftest|Follow-up: M1 FIX-* 修复 conftest asyncpg 事务/连接复用，OUT_OF_SCOPE 本任务)",
+      "F-M0002-MW (Minor|既有单测红项|G-BASE-PYTEST record exit=1: 1 failed/231 passed，唯一红项 tests/test_middleware.py:34 test_metrics_endpoint_is_available assert 401==200（/api/metrics 受认证保护返回 401），与 M0-002 基线形态一致，无新增红项|Backend middleware/metrics|Follow-up: FIX-* 复核 /api/me",
+      "F-M0002-LINT (Minor|存量 lint 债|G-BASE-RUFF record exit=1: Found 291 errors，I001=65 import 未排序 / B008=56 默认参数函数调用 / UP045=55+UP006=54 类型现代化等，199 可自动 --fix|Backend app/ lint|Follow-up: 独立 FIX-* 分批清理，禁止混入本任务)",
+      "ENV-DEGRADED (Info|基线健康度|三处 record 红（集成三连/全量 pytest/ruff）均与既有基线一致，非本任务改动引入（本任务零代码改动，唯一交付物为基线报告）→ PROJECT_BASELINE_HEALTH=DEGRADED；sqlite 三连与全量绿项无漂移|Project baseline|Follow-up: 记录留痕，无阻断)"
+    ],
+    "knownNonBlockingRisks": [
+      "G-ENV-PG-READY 首次经执行 harness 出现 exitCode=127（工具层对单引号命令追加重定向的转义缺陷）已在报告 §3.5 与 DEVIATIONS 诚实留痕，逐字命令重跑 exit 0、冻结命令未改写——建议 Max Verify 抽查重跑时再次核实该 required 门禁（重建一次性容器路径），并建议治理侧把该 harness 转义缺陷立为工具层 Finding 以免后续任务复现。",
+      "F-M0005-08（test_full_adaptive_session flaky，10 次观测 4 红）为本轮新增 P1 基线发现，报告建议'全量 pytest 基线计数按区间 1F~2F 理解'——建议 M1 的 FIX-BE-FLAKY-01 SPEC 落地前，后续任务门禁对 G-BASE-PYTEST 的红项判定沿用该区间口径，避免误判新红。",
+      "报告 §3.11 的 psql/redis-cli 取证不在 SPEC 辅助操作显式枚举（'启动 Docker Desktop、docker tag、docker logs、docker ps 对比、重复就绪探测、镜像 digest 查询'）之内，但 SPEC 枚举为非穷尽且关键纪律（不混入 commands[]）已满足——后续 SPEC 建议把容器内 SQL 只读取证列入辅助操作枚举以消除歧义。",
+      "§2.2 将 CI runner 的 DATABASE_URL 以 @<ci-runner> 掩码表述是超出 G-REPORT-NO-5432-URL 最低要求的谨慎做法，值得在后续基线文档中沿用。",
+      "本机 venv312（Python 3.12.10/pytest 9.1.1）与 CI Python 3.11 的版本漂移意味着 FIX-INT-01（conftest 事件循环修复）落地时须在 SPEC 中同时钉住 pytest-asyncio 版本（F-M0005-02 与 1.4.0 per-test loop 行为直接相关），否则修复可能在 CI 与本机呈现不同形态。",
+      "§3.5 披露的 G-ENV-PG-READY 首次 exitCode=127（执行 harness 对单引号命令追加重定向的转义缺陷）属工具层问题而非本任务过错，执行手以逐字冻结命令重跑成功且未改写命令，处置正确；建议 Workflow 维护者跟踪该 harness 转义缺陷（可立 FIX-GOV-* 观察项），避免后续 sh -c 形态门禁再现歧义。",
+      "F-M0005-08（test_full_adaptive_session flaky，10 次观测 4 红）使 G-BASE-PYTEST 计数在 1F/231P 与 2F/230P 间漂移：报告已建议门禁按区间理解且禁止 skip/xfail，处置合规；FIX-BE-FLAKY-01（随机源固定）应纳入 M1 清偿清单优先处理，否则后续所有以全量 pytest 为 record 的基线任务都会继承该噪声。",
+      "postgres 口径三连的容器重建式复核（AC-01 verification 第三段）按 SPEC 属 Max Verify 抽查职责；本 Review 以计数自洽性交叉核对 + sqlite/ruff/required 门禁共 7 条命令独立重跑覆盖了虚报排查面。Verify 阶段若 Docker daemon 再次漂移（F-M0005-07 已预警），以当轮实测为准即可，不构成本报告缺陷。",
+      "§2.2 将 CI env 中 runner 本地端口以 @<ci-runner> 掩码表述是满足 G-REPORT-NO-5432-URL 的合理写法，未损失信息（CI 服务容器语义已说明）。"
+    ],
+    "taskPassFormula": {
+      "MACHINE_GATE_PASS": true,
+      "INDEPENDENT_FLASH_REVIEW_PASS": true,
+      "INDEPENDENT_REVIEW_INVOCATIONS": [
+        "max-review",
+        "max-review-b"
+      ],
+      "DOUBLE_REVIEW_REQUIRED": true,
+      "FLASH_VERIFY_PASS": true,
+      "TASK_DELTA_PASS": true,
+      "GOVERNANCE_GUARD_PASS": true,
+      "ALL_CLAUSES_TRUE": true
+    },
+    "maxReview": {
+      "verdict": "PASS",
+      "rounds": 1
+    },
+    "specPath": "D:/systemDir/Desktop/听觉康复/.qoder/workflow-state/M0-005-integration-test-baseline-d2d7ddb.spec.json",
+    "rollback": "本任务唯一仓库改动 = 覆写 deliverables/baseline/INTEGRATION_BASELINE.md（上一 run 产物 sha256=56ad863926343581084faf487f7b8b600c57bde800375e2977e66d0cd0e68def 由 Workflow RETRY_OWNED/manifest 机制留痕，如需恢复上一 run 版本由人工/Max 治理阶段依 manifest 处置；Flash 禁止任何破坏性 git 命令）。测试环境为一次性自建：回滚 = docker rm -f aiear-m0005-pg-test aiear-m0005-redis（G-ENV-CLEANUP 收尾本身即回滚动作，G-ENV-NO-RESIDUE 机器验证无残留）；无命名卷、无网络残留、无 schema 产物、无迁移、无代码/配置改动，不存在数据或环境回滚面。宿主 :5432、:55432、:15432、:16379 全程零接触，无需也不得对其做任何回滚操作。若本 run 以 BLOCKED_MISSING_SAFE_TEST_ENV 终止：无容器产物（或仅残留 aiear-m0005-* 由清理门禁兜底），交付物记录环境证据后保留，不回滚。",
+    "suggestedNextTask": "M0-006 安全基线（重跑）：以本轮 INTEGRATION_BASELINE.md 为输入，在 sqlite 口径先行恢复 RBAC/IDOR 断言层裁决能力（17 条全绿口径），并显式引用 F-M0005-01（P0，postgres 口径 13 条安全用例断言层未触达）作为已知验证缺口；同时把 FIX-INT-01（conftest.py:53-100 事件循环/连接池生命周期修复，钉住 pytest-asyncio 版本）列为 M1 首批清偿项——它是恢复 postgres/CI 同款口径安全回归验证能力的前置条件。",
+    "agentCount": 15,
+    "totalToolCalls": 177,
+    "durationMs": 2453177,
+    "failures": [],
+    "transportNote": "本 run 经历 3 次上游断连后分段续跑（见 F-34）；缓存命中使每次只补失败的那一相"
+  }
 }

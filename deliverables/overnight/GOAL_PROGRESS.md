@@ -22,6 +22,8 @@
 
 ## FIX-GOV-001-R1（人工授权治理修复：**未封存**，卡在独立 Verify；2026-10-08T11:05Z，HEAD `77fdb32`）
 
+> 本节为**当时时点**的真实记录，保留不改写。该 Fix 已于 `2026-10-09T14:31Z` 取得独立 Verify 并封存为 `d2d7ddb`，见下文「FIX-GOV-001-R1 封存 + M0-005 首次实战 TASK_PASS」。
+
 - **机器证据（本 Orchestrator 于记账前复跑）**：`node .qoder/workflow-state/dryrun-harness.mjs test` → `REGRESSION: 115/115 passed`、exitCode 0；`SCENARIO_ROSTER: OLD_SCENARIO_COUNT=106 NEW_SCENARIOS_ADDED=9 TOTAL_SCENARIOS=115`；`OLD_EXPECTATION_DIGEST=cecf72bcb036d66b319f6dfd8c77d119bf2a4bdd8a63fea913394bfb0272a7bf`（与工作区版本及 `git show 77fdb32` 侧同法计算逐字节相等 ⇒ A1「断言语义零改动」机器证明）。
 - **独立 `qmodel_38max` Review = PASS**：runId `wf_375e92e7-2b8` / taskId `wf-f131bca2-d3c`，Q1..Q11 全 YES、0 blocker、6 条 non-blocking notes。逐条核实了：C2 精确匹配保留（d3-10 命令仍与 `MANDATORY_TESTS[0]` 字节相同且仍被拦）、旧跨层子串对账整段删除（Grep `indexOf(m)` 无残留）、对账只发生在 gateId 层、`validateGateSpec` 在任何实施 Agent 之前（d6-02/09/12 实测 `gateCalls=0`）、三类攻击路径均被拦（未声明 gateId／顶替会绿命令／沉默省略）、四个 `runMachineGate` 调用点全部覆盖且 `:5432` 破坏扫描仍排在最前、无隐藏 required→record 削弱、D1–D5 全数原样通过。
 - **独立 `qmodel_38max` Verify = 未运行**：两次尝试（`1791457040380`、`1791457150414`）同一错误 "You've reached your credit usage limit"。绝不以 `qfmodel` 代替（D3 降级须人工显式授权；Night Chain 禁止自动降级）。
@@ -43,7 +45,36 @@
   2. **并行改串行**：Review 不再可用（agent 失败或自报 `aborted=true`）或 verdict≠PASS 时**不启动 Verify**——省额度，且杜绝"Review 缺失却合成 PASS"。
   3. **反假绿加固**：两个 schema 新增 `aborted`/`abortReason`，prompt 明写"证据不足时绝不给 PASS/TASK_PASS"；`BLOCKS_SEAL` 由脚本按 `verify.verdict==='TASK_PASS' ∧ !aborted` 计算。
 - **工作区完整性复核（`13:32Z`，失败的两个只读 invocation 之后）**：HEAD 仍 `29f2775`；`git status --porcelain` 与 `TASK_LEDGER.worktreeAtPause` 逐条一致；6 个关键文件 SHA-256 实测 `5512598f…`(workflow) / `441daf23…`(harness) / `56ad8639…`(INTEGRATION_BASELINE.md) / `72fd898f…`(SECURITY_BASELINE.md) / `5f12d3d4…`+`2bd127b7…`(qgraphflow) 全部与既有记录相等 ⇒ **只读取证未落任何写入**，无 `GOVERNANCE_POLICY_VIOLATION`。另机器核实：这两文件在 `77fdb32..29f2775` 之间逐字节未变 ⇒ 验收基线取 `git show 77fdb32:<path>` 与 HEAD 等价。
-- **仍未变的事实**：M0-005/006/007/008 禁止重启；Goal 状态仍 `PAUSED_FOR_HUMAN`，暂停根因由 F-29（额度）改为 **F-30（Max 调用不稳定，独立验收 0/4 取得 verdict）**。若 v2 再次无 verdict，则停止自动重试交人工（不在同一失效形态上连烧第三次）。
+- **仍未变的事实**（`2026-10-09T14:31Z` 之后由 v2 脚本推翻，见下一节）：M0-005/006/007/008 禁止重启；Goal 状态仍 `PAUSED_FOR_HUMAN`，暂停根因由 F-29（额度）改为 **F-30（Max 调用不稳定，独立验收 0/4 取得 verdict）**。若 v2 再次无 verdict，则停止自动重试交人工（不在同一失效形态上连烧第三次）。
+
+## FIX-GOV-001-R1 封存 + M0-005 首次实战 TASK_PASS（2026-10-09，Orchestrator 亲自执行）
+
+### A. v2 一次通过：F-30 的根因确实是 brief，不是 Fix
+
+- runId `wf_3855e53c-a89`（`qmodel_38max`，未换模型、未降级、未降判据）：**Review = PASS**（Q1..Q11 全 YES、0 blocker、9 条 non-blocking notes、`aborted=false`）→ **Verify = TASK_PASS**（harness exit 0 `115/115`；`OLD_EXPECTATION_DIGEST=cecf72bc…` 由 Verifier **从 baseline blob 独立重算**得到同一值；9 条抽查重跑 `matchesClaim` 全 true；106 条非 d6 EXPECT 行全字段空 diff；scope CLEAN；rollback HOLDS；7 条诚实 residualRisks）。
+- 与 v1 的唯一差异是**读取方式**（限窗 ≤200 行 + 逐字行锚点、Review→Verify 串行）⇒ 上一节"4 次尝试 0 verdict"的成因确认为我的 brief 要求整读 178 KB + 130 KB 两文件，不是实现质量，也不是额度。
+- **封存 = `d2d7ddb`**（仅两个授权治理文件；`git show --stat` 可核）。Task PASS 五判据逐条落账：115/115 exit 0 ∧ 独立 Review PASS ∧ 独立 Verify TASK_PASS ∧ Task Delta 恰为这两文件 ∧ 治理授权 HD-N-01 + `:5432` 零接触。
+
+### B. M0-005 重跑：F-20 的现场证明（不只是单元测试）
+
+- runId `wf_5a685efc-fc6`，`ACTIVE_EXECUTION_MODE=FULL`，终态 **`TASK_PASS`**；`REPAIR_CYCLES_USED=0`；HIGH risk ⇒ **双独立 Review**（`max-review` + `max-review-b`，各 8 条 AC 全 met、各 0 blocker，B 独立重跑 7 条命令）。
+- **新门禁合同首次实战**：Max 亲写 16 条 `MACHINE_GATE_COMMANDS`（gateId+kind+命令原文），`validateGateSpec` 通过 ⇒ 推进到 Implement。这正是 F-20 时代必 BLOCK 于 `REQUIRED_DOWNGRADE` 的形态。**对账键 = gateId**，`DECLARED_COUNT=16 == SUBMITTED_COUNT=16`，沉默省略不再免费。
+- 双真相成立：`GATE_HEALTH=PASS`（required 7/7 exit 0、record 9/9 采集完成）**与** `PROJECT_BASELINE_HEALTH=DEGRADED`（`G-INT-PG-RUN` exit 1 = 4 failed/8 passed/20 errors；`G-BASE-PYTEST` 1 failed/231 passed；`G-BASE-RUFF` 291 errors）——三条 record 红全部如实入 Findings，**未删测/未 skip/未降断言/未触发修复循环**。
+- 环境自律：一次性自建容器 `aiear-m0005-*`（postgres:16-alpine @ `127.0.0.1:55433`、redis:7-alpine @ `127.0.0.1:26379`），SPEC 自行加了两条 required 守护 `G-REPORT-NO-5432-URL`（报告内不得出现 `@…:5432/`）与 `G-ENV-NO-RESIDUE`（`aiear-m0005-` 前缀零残留），宿主 `:5432` 全程零接触。
+- Verify 的独立复现是关键一环：它**重建同款一次性容器逐字重跑**核心链路，`G-INT-PG-RUN` 再次 exit 1 且 summary `4 failed, 8 passed, 20 errors in 17.40s` 与门禁记录（17.34s）一致 ⇒ 红项被真实复现，不是转述。
+- 唯一仓库改动 = `deliverables/baseline/INTEGRATION_BASELINE.md`（`56ad8639…`/29672 B → `b2d2f04aa1250a31…`/43027 B），经 `RETRY_OWNED_APPLIED` 归属本任务；`SECURITY_BASELINE.md`（`72fd898f…`）与 qgraphflow 树单元两个成员指纹逐字不变（`5f12d3d4…`/`2bd127b7…`）。交付物提交 = **`317341b`**。
+
+### C. 传输不稳定（F-34）与执行工具层转义缺陷（F-37，新）
+
+- 本 run 前两次阶段各遇一次 `other side closed`（Task Spec 一次、Implement 一次），`resumeFromRunId` + 逐字相同 args 分段续跑，**每次只补失败的那一相**（已成功 Agent 命中缓存），三次续跑合计 15 agents / 177 tool uses / 2453 s。全程未换模型、未启用 `FLASH_ONLY`。
+- **F-37**：`G-ENV-PG-READY` 的冻结命令是 `sh -c 'for …'` 单引号形态，首次经**执行工具层**被追加输出重定向 ⇒ `exitCode=127`。Worker 在报告 §3.5 诚实留痕且**未改写冻结命令**，逐字原样重跑 exit 0；Reviewer B 与 Verify 各自复跑亦 exit 0。风险在于：若这次复跑没发生，脚本会按真实 exitCode 判 `MACHINE_FAIL`，**把工具层缺陷冒充成项目缺陷而误 BLOCK 一个健康任务**。`.qoder/workflows/project-feature-delivery.js` 内 grep 重定向包装零命中 ⇒ 属 Agent 外层 shell 工具，非治理脚本缺陷。候选 FIX-GOV-003：门禁命令规避 `sh -c` 单引号形态，或对 `exitCode=127` 且命令含单引号 `sh -c` 者要求逐字复跑一次再计数。
+
+### D. 现在的状态
+
+- `goalStatus: PAUSED_FOR_HUMAN → RUNNING-M0-DAG`；`blockedTasks` 仅剩 M0-006（其 F-20 阻塞已随 `d2d7ddb` 解除，待重跑）；`completedTasks` = M0-001..M0-005。
+- 下一步（DAG 顺序）：**M0-006 安全基线重跑**（HIGH risk ⇒ Review A+B 双独立 + 医疗安全回归；sqlite 口径先行恢复 RBAC/IDOR 裁决层，显式引用 F-M0005-01 作为 postgres 口径的已知验证缺口）。
+- M0 里程碑门禁仍需人工：**HD-N-04**（把 FIX-* 行写入 `docs/workflow/TASK_CATALOG.md`，属治理写）、**HD-N-05**（基线文档 8 vs 7 口径）。
+- 记账工具自纠：`patch-ledger-seal.mjs` 在沙箱里跑了 BLOCKED / PASS-缺提交号 / PASS-带提交号三条路径，含新守卫「TASK_PASS 却无交付物提交号 ⇒ `REJECTED`、零写入」——避免账本写下指向不存在 commit 的 `completedTasks`。
 
 ## Pre-existing untracked（§8，PRE_EXISTING_UNCHANGED）
 
