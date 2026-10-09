@@ -114,6 +114,44 @@
 - `m0Dag`：M0-007、M0-008 → **READY**。原 BLOCKED 记录以 `priorBlockedNote` 原样保留（M0-008 当时的阻塞理由是"引用 `blockedTasks[M0-005].machineProof` 推断会撞同一堵墙"，该推断随 F-20 修复失效）。
 - 下一个：`currentTask = 下一个：M0-007（deps=["M0-005"]）`。M0 里程碑门禁仍需人工 **HD-N-04**（把 FIX-*/SEC-*/OPS-*/PRIV-* 行写入目录，属治理写）与 **HD-N-05**（基线文档 8 vs 7 口径）。
 
+> 本行是 M0-006 入账时点的状态；M0-007 已于 `2026-10-09T20:03:41Z` TASK_PASS 入账，见下节。
+
+## M0-007 性能基线：**TASK_PASS**（2026-10-09T20:03:41Z 入账，交付物 commit `7dcf2f8`）
+
+### A. 终态与五判据（runId `wf_cc12b79d-5be`，`ACTIVE_EXECUTION_MODE=FULL`，`HIGH_RISK=true`）
+
+- **门禁合同**：Max 亲写 8 条 `MACHINE_GATE_COMMANDS`，`DECLARED_COUNT=8 == SUBMITTED_COUNT=8`，`validateGateSpec` 在 Implement 之前通过（`GATE_SPEC_MALFORMED_NOT_RAISED`）。`GATE_HEALTH=PASS`：required 6/6 exit 0（`G-INTERPRETER`/`G-PERF-TARGET`/`G-LINK-SAMPLE`/`G-MEDICAL-SAFETY`/`G-DELIVERABLE`/`G-SCOPE`）、record 2/2 采集完成、`blockedMissingSafeTestEnv=false`。
+- **双真相**：`PROJECT_BASELINE_HEALTH=DEGRADED` —— `G-BASE-PYTEST` exit 1（`1 failed, 231 passed, 33 warnings in 2.14s`，签名 = F-01 `test_middleware.py:34 assert 401==200`）、`G-BASE-RUFF` exit 1（291 errors，199 fixable；CI 窄口径仍绿）。两条均为存量、本任务零代码改动，未删测/未 skip。
+- **一次干净跑完**：`REPAIR_CYCLES_USED=0`、`ATTEMPT_HISTORY=[]`、`agents=15`、`tool_uses=127`、`duration=1779557ms`（约 29.7 分钟），本 run 无上游断连（对比 F-34 时代的分段续跑）。HIGH risk ⇒ `max-review` + `max-review-b` **两个相互不可见的 `qmodel_38max` invocation**，`MAX_REVIEW.verdict=PASS rounds=1`，独立 Verify `TASK_PASS`。
+- **Task Delta 恰好一份**：唯一 `taskChanged = deliverables/baseline/PERF_BASELINE.md`；`taskGovernance=[]`、`externalChangedDuringTask=[]`、`treeUnitChanges=[]`、`headChanged=false`、`stagedAppeared=[]`；`RETRY_OWNERSHIP=NOT_A_RETRY`（全新文件，不涉 F-39 覆写路径）。D4 三次取证（Preflight/Implement/Verify）全部 `evidenceValid=true`、`commandVerbatim=true`，`ADJUDICATION_COUNT=0`（无需仲裁）。pre-existing qgraphflow 树单元 `9eb05078…` 逐字不变。
+- **交付物身份**：200 行 / 29586 B / sha256 `78d6eb265121d5c5938ed9069809ffeff173dbb2087fefbf16e1ddf1a511e2b7`，提交 `7dcf2f8`（该文件此前不存在，属新增）。
+- **Orchestrator 亲自复跑核实**（入账前，只读）：`G-PERF-TARGET` → `7 passed in 0.72s` / exit 0；`G-BASE-PYTEST` → `1 failed, 231 passed, 33 warnings in 2.54s` / exit 1（与门禁记录签名逐字一致）。F-38 的偶发项 `test_adaptive_engine.py::test_full_adaptive_session` 本轮亦**未复现**（与报告 §8 记录一致）。
+
+### B. 报告的真实结论（不粉饰）
+
+- **三条链路只有"进程内 mock 口径"有读数**：全部数字来自 `httpx ASGITransport` 进程内 + `sqlite+aiosqlite://` 内存库 + `_MemoryRedis` 替身（`conftest.py:24/:135-136/:190-229`），零网络。§4 与 §5 强制声明：这些读数**不得外推为生产 SLA**，且工程指标与临床指标分离（延迟/准确率是待验证工程目标，禁止写成医学规律或"听力恢复程度"）。
+- **ASR 流式首包 <500ms（PRD:118）＝ 零验证**：仓库无该专项计时测试（`grep 首包|first_packet|streaming_latency|first_chunk backend/tests` = 0 命中，Reviewer 独立复核），真实 dashscope 调用属 `80-testing.md` 规则 5 禁止项且未获人工授权 ⇒ NF-03/PF-05 记 `missing_evidence`。**M0-007 通过 ≠ 该目标有证据**，Milestone Gate 与 EVAL-001 引用时必须携带这一限定。
+- 未执行清单 NF-01..NF-09 全部写明原因（授权禁止 / 环境缺失 / 属 OPS-003 或前端范畴），报告不含任何"已实测真实 API"表述。
+- 对话 <3s、发音评分 <2s：mock 口径形式达标（直读 0.81/0.86ms；`test_pronunciation.py` 49 passed/0.41s），但端到端链路（录音上传→ASR→DTW）与大数据量 DTW 未覆盖（NF-04/PF-06）。
+- `SAMPLE_COUNT=3` + 中位数对机器噪声敏感（首轮 18.72/13.45/9.79ms 离群被中位数吸收），阈值与采样次数**零改动**（`git diff --exit-code HEAD` exit 0，门禁与 Review 各验一次）。
+
+### C. 本任务新增 Findings（F-44..F-47）
+
+- **F-44（P1 测量可信性，价值最高）**：`test_performance.py:38-45` 的 `_measure` 丢弃响应对象，只断言 `median_ms < threshold_ms`；`test_metrics_performance:137` 用无 auth 的 `client` 直取 `/api/metrics`，而 `app/api/metrics.py:14-25` 要求 `get_current_user` + therapist ⇒ **三次请求全落 401 错误路径，用例仍 PASSED 并"通过 100ms 阈值"**。我已在源码逐行核实该链路（并复跑确认 7 passed）。危害不止 metrics：任何 401/403/422 端点都能以"比错误处理还快"的名义被判性能达标 —— 这是**门禁断言语义缺陷**，与 F-01 同源但影响面更大。
+- **F-45（P2 可观测性）**：性能用例不导出任何读数，AC-01 的 ms 只能靠门禁之外的两次不落盘只读插桩取得（Reviewer 另用等价内联插件独立复现全部 7 项，读数同量级）。证据成立但不自包含 ⇒ 建议 `FIX-PERF-01`（未落库）或并入 OBS-002，在不降断言强度的前提下导出 raw/median ms。
+- **F-46（P1 验证缺口）**：见 B 节首包零验证；并含"读数外推纪律"——下游（OPS-003/EVAL-001/OBS-002）引用本报告数字必须携带"进程内口径"限定。
+- **F-47（P3 执行手卫生，与 F-37 同族）**：首次插桩因**执行手自身**闭包晚绑定触发 `RecursionError`，产生一次 7 failed 的非门禁辅助运行；未触碰任何仓库文件，修正后复跑 7 passed，且 traceback 中的 fixture JWT 未被摘录进报告。风险形态与 F-37 一致：非门禁运行的红色若不留痕，会被后来人当成项目缺陷。治理候选并入 FIX-GOV-003。
+
+### D. 一次我自己的操作留痕（诚实记录）
+
+- 本任务**第一次启动的 Workflow 被我主动取消**：`args.task` 在序列化时被截断成半句（brief 缺了 dashscope 禁令、`:5432` 禁触达、gateId 合同等关键约束）。`TaskStop` 后立即复核：HEAD 仍 `ac3b0ae`、无新 spec、无 perf 产物 ⇒ 取消那一枪零写入（符合"cancel 不启动新 Agent、不改文件"的语义）。随后以完整 brief 重发，才得到本节的 `wf_cc12b79d-5be`。
+
+### E. 状态（M0-007 后）
+
+- `completedTasks` = M0-001..M0-007（`abc6a78`/`7be3c50`/`f73cb01`/`a78b10f`/`317341b`/`8c81df5`/`7dcf2f8`）；`blockedTasks` 空；findings = 46 条；`goalStatus=RUNNING-M0-DAG`。
+- `currentTask = 下一个：M0-008（deps=["M0-003","M0-004"]）`，它是 M0 基线 DAG 的最后一个节点；完成后即可进入 M0 Milestone Gate，但该门禁仍需人工 **HD-N-04**（目录治理写）与 **HD-N-05**（基线文档 8 vs 7 口径）。
+- 串行未破：M0-008 依赖 docker 与 compose 构建，与 M0-007 同工作树并发会互触 D4 外部改动误判，故按 §18 串行推进。
+
 ## Pre-existing untracked（§8，PRE_EXISTING_UNCHANGED）
 
 - `docs/qgraphflow/dialogue-turn-sequence/` — 2 文件

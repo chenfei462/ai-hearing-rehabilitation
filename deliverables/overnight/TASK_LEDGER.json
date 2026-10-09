@@ -2,10 +2,10 @@
   "goalStartedAt": "2026-10-06T19:03:00Z",
   "goalObjective": "Autonomous Delivery Orchestrator: M0 -> M0 Gate -> ... -> M10 -> M10 Gate -> Release Gate -> PROJECT_READY (no fake completion; stop at PAUSED_FOR_HUMAN or BLOCKED if unsafe).",
   "currentMilestone": "M0",
-  "currentTask": "下一个：M0-007（deps=[\"M0-005\"]）",
+  "currentTask": "下一个：M0-008（deps=[\"M0-003\",\"M0-004\"]）",
   "goalStatus": "RUNNING-M0-DAG",
-  "lastSafeCommit": "8c81df5",
-  "currentHead": "8c81df5",
+  "lastSafeCommit": "7dcf2f8",
+  "currentHead": "7dcf2f8",
   "headPointerNote": "账本的 lastSafeCommit/currentHead 在写入时点是真相；紧随其后的记账提交无法自引用，故以 git log -1 为准。",
   "branch": "feature/m0-baseline",
   "modelPolicy": {
@@ -124,6 +124,18 @@
       "runId": "wf_6c897bee-ab8",
       "executionMode": "FULL",
       "verifiedBy": "Machine Gate(真实 exitCode) + 独立 Review A+B（HIGH risk 双独立） + 独立 Verify"
+    },
+    {
+      "id": "M0-007",
+      "title": "性能基线（只读基线审计，产出 deliverables/baseline/PERF_BASELINE.md）",
+      "status": "TASK_PASS",
+      "commit": "7dcf2f8",
+      "deliverables": [
+        "deliverables/baseline/PERF_BASELINE.md"
+      ],
+      "runId": "wf_cc12b79d-5be",
+      "executionMode": "FULL",
+      "verifiedBy": "Machine Gate(真实 exitCode) + 独立 Review A+B（HIGH risk 双独立） + 独立 Verify"
     }
   ],
   "blockedTasks": [],
@@ -136,7 +148,8 @@
     "M0-003": "f73cb01",
     "M0-004": "a78b10f",
     "M0-005": "317341b",
-    "M0-006": "8c81df5"
+    "M0-006": "8c81df5",
+    "M0-007": "7dcf2f8"
   },
   "milestoneGateResults": {},
   "m0Dag": {
@@ -196,10 +209,12 @@
         "M0-005"
       ],
       "pri": "P0",
-      "status": "READY",
-      "note": "READY：deps M0-005 已 TASK_PASS（317341b）；原 BLOCKED 根因（自身 record 形态会自触 REQUIRED_DOWNGRADE）随 F-20 修复消失，且 M0-005/M0-006 已两次现场验证新门禁合同",
+      "status": "TASK_PASS",
+      "note": "TASK_PASS：required 6/6 exit 0、record 2/2 采集完成、REPAIR_CYCLES_USED=0、双独立 Review=[\"max-review\",\"max-review-b\"]、独立 Verify TASK_PASS；deliverable commit=7dcf2f8",
       "priorBlockedNote": "blockedBy M0-005 (BLOCKED) + own record-tier spec shape already machine-proven to self-trip REQUIRED_DOWNGRADE",
-      "overrideAt": "2026-10-09T19:22:47Z"
+      "overrideAt": "2026-10-09T19:22:47Z",
+      "runId": "wf_cc12b79d-5be",
+      "commit": "7dcf2f8"
     },
     "M0-008": {
       "deps": [
@@ -741,6 +756,46 @@
       "detail": "第一版 enumerateWorktree() 两处偏差：(1) 成员路径用 `dir/` + `/` + name 拼接出双斜杠；(2) manifest 只写 path\\tsize\\tsha256，漏掉协议里的第 4 字段 md5。结果 docs/qgraphflow/dialogue-turn-sequence/ 内容逐字未变却算出 treeSha256=37b7e3706c4735d1956b784a645dc8d2dc304f341d21c2171f9452c7c5b09af5，而 Workflow 取证记录为 9eb05078952d3b82cb53850404821449c518b3d70f491d5beaeaacdb795f82e0。修正算法后（成员名去尾斜杠 + manifest 补 md5 + 先 sort 后拼）精确复现 9eb05078…，证明差异纯属算法而非字节。",
       "impact": "若保留错误口径，下一次任何工具以记账脚本的 treeSha256 与 Workflow 快照比对，都会把一个未变化的 pre-existing 目录判为 EXTERNAL_CHANGED ⇒ 假 BLOCK，正是 D4 要防的失效形态。",
       "status": "FIXED-IN-SCRIPT (账本已按修正算法重写)"
+    },
+    "F-44": {
+      "at": "2026-10-09T20:03:41Z",
+      "severity": "P1-MEASUREMENT-INTEGRITY",
+      "foundBy": "M0-007 deliverable PF-01 + 独立 qmodel_38max Review 实测（http_status=[401,401,401] 而用例 PASSED）",
+      "title": "性能用例的断言不校验状态码 ⇒ 错误路径可以伪装成达标",
+      "detail": "backend/tests/test_performance.py:38-45 的 _measure 把响应对象丢弃，只做 `assert median_ms < threshold_ms`（:33-37）。实测 /api/metrics 计时用例的三次请求全部返回 401，用例仍 PASSED 并通过 100ms 阈值。app/api/metrics.py:14-25 要求 get_current_user + role==therapist（否则 403/401），而 conftest.py:154 的 token fixture 是 role=patient。Orchestrator 独立复核（2026-10-09，只读）：test_metrics_performance 在 :137 直接取 `client: AsyncClient` 且不附 auth 头 ⇒ 三次 GET /api/metrics 全落 401 错误路径，pytest 仍报 7 passed / exit 0。危害不止 metrics：任何返回 401/403/422 的端点都可能以『比错误处理还快』的名义被判性能达标，属门禁断言语义缺陷（与 F-01/CT-1 的鉴权口径同源，但影响面更大）。",
+      "proposedFix": "性能用例必须先断言 2xx 再计量（或 status in (200,201) 后才计入样本）；补 therapist 角色 fixture 的真实数据路径计时用例；与 F-01 的鉴权口径决策合并清偿。属测试代码改动 ⇒ 需独立 task 走 project-feature-delivery，本基线任务无权修改。",
+      "status": "OPEN-BACKLOG (建议编号 FIX-PERF-03，待 HD-N-04 落库)",
+      "id": "F-44"
+    },
+    "F-45": {
+      "at": "2026-10-09T20:03:41Z",
+      "severity": "P2-OBSERVABILITY",
+      "foundBy": "M0-007 deliverable PF-02 + 独立 Review NB-03",
+      "title": "性能用例不导出任何读数 ⇒ 基线证据必须靠门禁之外的只读插桩，无法自包含",
+      "detail": "test_performance.py 的 -v 输出只有 PASSED，median ms 只进断言即被丢弃。本轮 AC-01 的逐用例中位数由两次不落盘的只读插桩复现（原值透传、断言不变，权威结论仍以原样门禁 exit 0 为准），Reviewer 亦用等价内联插件独立复现全部 7 项。证据成立，但代价高且下次仍要重复。",
+      "proposedFix": "FIX-PERF-01（建议新增，未占用）或并入 OBS-002：让性能用例在不降低断言强度的前提下导出逐用例 raw/median ms（结构化输出或 JSON 报告），使一条 required 门禁命令即可取证。",
+      "status": "OPEN-BACKLOG",
+      "id": "F-45"
+    },
+    "F-46": {
+      "at": "2026-10-09T20:03:41Z",
+      "severity": "P1-VERIFICATION-GAP",
+      "foundBy": "M0-007 独立 Review（grep backend/tests 首包/first_packet/streaming_latency/first_chunk = 0 命中）",
+      "title": "ASR 流式首包 <500ms（PRD:118）在 M0 阶段完全未验证；M0-007 通过不等于该目标有证据",
+      "detail": "仓库不存在该专项计时测试，而真实 dashscope 调用属 80-testing.md 规则5 禁止项（未获人工授权）。报告以 NF-03/PF-05 = missing_evidence 如实记录。EVAL-001 的依赖『M0-007』因此语义上是『依赖其读数缺失这一事实』。另：全部读数均为 httpx ASGITransport 进程内 + sqlite 内存 + _MemoryRedis 口径（零网络），系统性低估生产端到端延迟；SAMPLE_COUNT=3 的中位数亦不足以支撑 P95/P99（本轮首轮 18.72/13.45/9.79ms 离群被中位数吸收，印证 F-38 的噪声敏感性）。",
+      "policy": "M0 Milestone Gate 与 OPS-003/EVAL-001/OBS-002 引用 PERF_BASELINE.md 数字时，必须同时携带『进程内口径』限定与 NF-01..NF-09 缺失证据清单；禁止把该报告摘述为性能达标证据。",
+      "status": "OPEN-BACKLOG (EVAL-001/OPS-003 承接)",
+      "id": "F-46"
+    },
+    "F-47": {
+      "at": "2026-10-09T20:03:41Z",
+      "severity": "P3-EXECUTOR-HYGIENE",
+      "foundBy": "M0-007 Implementation Report §9 自曝 + Review NB-1",
+      "title": "审计工具自身缺陷产生的一次非门禁红色（与 F-37 同族：易被误读为项目缺陷）",
+      "detail": "首次插桩因执行手自身闭包晚绑定（同模块被逐 item 重复打补丁）触发 RecursionError，导致一次 7 failed 的辅助运行；未触碰任何仓库文件，修正后复跑 7 passed（0.66s/0.63s），同 traceback 中的 fixture JWT 未被摘录进报告。与 F-37（执行工具 shell 层把 required 命令改成假 exitCode=127）属同一风险形态：非门禁运行的红色若无留痕，后来人会当成项目缺陷处理。",
+      "proposedFix": "治理候选（并入 FIX-GOV-003 讨论）：基线/审计类 SPEC 强制要求『所有非门禁运行的失败必须标注 审计工具缺陷/非项目红 并附复跑证据』；门禁判定只认原样 required 命令的 exitCode。",
+      "status": "OPEN-BACKLOG",
+      "id": "F-47"
     }
   },
   "humanDecisionsRequired": [
@@ -934,7 +989,7 @@
       "gitWritesByFlash": "none（HEAD 仍 1a62703，staging 空，无破坏性 git 命令）"
     }
   ],
-  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。\n[2026-10-09T19:20:37Z] M0-006 = TASK_PASS（run wf_6c897bee-ab8，mode=FULL，agents=27，toolUses=427，7597134ms，repair=2）。",
+  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。\n[2026-10-09T19:20:37Z] M0-006 = TASK_PASS（run wf_6c897bee-ab8，mode=FULL，agents=27，toolUses=427，7597134ms，repair=2）。\n[2026-10-09T20:03:41Z] M0-007 = TASK_PASS（run wf_cc12b79d-5be，mode=FULL，agents=15，toolUses=127，1779557ms，repair=0）。",
   "pausedAt": "2026-10-09T14:28:05Z",
   "timestampCorrections": [
     {
@@ -1153,7 +1208,7 @@
     }
   },
   "worktreeAtPause": {
-    "head": "8c81df5",
+    "head": "7dcf2f8",
     "porcelain": [
       "M .qoder/workflow-state/dryrun-harness.mjs",
       " M .qoder/workflows/project-feature-delivery.js",
@@ -1161,16 +1216,12 @@
       "?? deliverables/baseline/SECURITY_BASELINE.md",
       "?? docs/qgraphflow/dialogue-turn-sequence/"
     ],
-    "reVerifiedAt": "2026-10-09T19:22:47Z",
-    "sha256": {
-      "deliverables/overnight/TASK_LEDGER.json": "b0d4069dce3033449b2004a8a9951ef0310e5247971bf427b03110818fd9670d"
-    },
+    "reVerifiedAt": "2026-10-09T20:03:41Z",
+    "sha256": {},
     "governanceFilesIdenticalBetween": "77fdb32..29f2775 (git diff --stat empty) ⇒ verify baseline git show 77fdb32:<path> == HEAD:<path>",
     "readOnlyAgentsWroteNothing": true,
-    "bytes": {
-      "deliverables/overnight/TASK_LEDGER.json": 122337
-    },
-    "porcelainCount": 2,
+    "bytes": {},
+    "porcelainCount": 1,
     "treeUnits": {
       "docs/qgraphflow/dialogue-turn-sequence/": {
         "fileCount": 2,
@@ -1393,6 +1444,102 @@
     "agentCount": 27,
     "totalToolCalls": 427,
     "durationMs": 7597134,
+    "failures": []
+  },
+  "lastRun_M0_007": {
+    "taskId": "m0-007-perf-baseline",
+    "title": "性能基线（只读基线审计，产出 deliverables/baseline/PERF_BASELINE.md）",
+    "runId": "wf_cc12b79d-5be",
+    "executionMode": "FULL",
+    "at": "2026-10-09T20:03:41Z",
+    "WORKFLOW_STATUS": "TASK_PASS",
+    "BLOCK_REASON": null,
+    "FAILED_PHASE": null,
+    "HIGH_RISK": true,
+    "REPAIR_CYCLES_USED": 0,
+    "reviewInvocations": [
+      "max-review",
+      "max-review-b"
+    ],
+    "maxReview": {
+      "verdict": "PASS",
+      "rounds": 1
+    },
+    "gateHealth": {
+      "status": "PASS",
+      "requiredTotal": 6,
+      "requiredPassed": true,
+      "requiredFailures": 0,
+      "requiredBlockedSafeEnv": 0,
+      "recordTotal": 2,
+      "recordCollectionComplete": true,
+      "recordCollectionFailed": 0,
+      "blockedMissingSafeTestEnv": false
+    },
+    "gateContractCounts": {
+      "declared": 8,
+      "submitted": 8
+    },
+    "projectBaselineHealth": "DEGRADED",
+    "filesChanged": [
+      "deliverables/baseline/PERF_BASELINE.md"
+    ],
+    "taskDelta": {
+      "taskChanged": [
+        "deliverables/baseline/PERF_BASELINE.md"
+      ],
+      "taskGovernance": [],
+      "preExistingUnchanged": [
+        "docs/qgraphflow/dialogue-turn-sequence"
+      ],
+      "externalChangedDuringTask": [],
+      "preExistingReverted": [],
+      "retryOwnedArtifacts": [],
+      "treeUnitChanges": [],
+      "headChanged": false,
+      "stagedAppeared": []
+    },
+    "retryOwned": {
+      "status": "NOT_A_RETRY",
+      "artifacts": []
+    },
+    "baselineFindings": [
+      "F-01|Low(存量基线红)|tests/test_middleware.py::test_metrics_endpoint_is_available assert 401==200，全量 pytest 1 failed/231 passed|后端中间件 metrics 鉴权|Follow-up：属既有基线红（本任务 M0-007 只读、不负责修红），记录入 PROJECT_BASELINE_HEALTH，由后续鉴权/metrics 专项任务处理；G-BASE-PYTEST 为 record kind，不阻断本 Task",
+      "RUFF-BASELINE|Low(存量 lint 债)|ruff check app/ Found 291 errors（199 fixable），与基线 ~291 一致|后端 lint|Follow-up：非本任务引入，入基线健康记录，由 lint 债务专项清理；G-BASE-RUFF 为 record kind，不阻断本 Task",
+      "HTTPX-DEPRECATION|Info(无害告警)|test_dialogue_api 等共 6~33 条 DeprecationWarning：httpx per-request cookies=<...> 已弃用，建议设置于 client 实例|测试/HTTP 客户端用法|Follow-up：不影响退出码，非本任务范围，记录留痕"
+    ],
+    "nonBlockingRisks": [
+      "NB-01（引用准确性，建议下次修正）：PERF_BASELINE.md §7 PF-01 处置建议列写『即 TASK_CATALOG.md:184 F-01 既有处置路径』，但我 grep docs/workflow/TASK_CATALOG.md 中 `F-01` = 0 命中，第 184 行实为『并行组（可 Worktree 隔离）』表头；F-01 的正确出处是 deliverables/baseline/REPO_INVENTORY.md:184（报告 §4.2/§8 已准确引用）。不影响任何结论，属交叉引用笔误。",
+      "NB-02（内部行号口径小不一致）：_MemoryRedis 的范围在 §0/§11 写作 conftest.py:190-221，在 §1 写作 :190-230；实测 `class _MemoryRedis` 在 :190、`sys.modules[\"redis\"]` 注入在 :229，两种写法都可辩护，建议统一为『:190-229（含 sys.modules 注入）』以免下游读者困惑。",
+      "NB-03（可观测性债务应尽快落库，非本任务缺陷）：AC-01 的 ms 读数目前只能由门禁命令之外的只读插桩取得（报告 PF-02 已记账）。我已用等价的内联插件独立复现全部 7 项中位数，证明读数真实；但为使下次基线的 AC-01 证据自包含，建议在治理阶段把 PF-02 落为正式任务（报告建议的 FIX-PERF-01 或并入 OBS-002），要求性能用例在不降低断言强度的前提下导出逐用例 raw/median ms（结构化输出或 JSON 报告），使一条 required 门禁命令即可取证。",
+      "NB-04（PF-01 的下游归属需 Max/人工决策，注意其安全面而不仅是性能面）：app/api/metrics.py 文档串称『用于 Grafana / Prometheus 拉取』，但实现要求 `Depends(get_current_user)` 且 `role == \"therapist\"`（:15/:21-25），导致既有测试 test_middleware.py:34 断言 200 实得 401（F-01 存量红），且 test_performance.py 的 metrics 读数长期落在 401 错误路径（我已实测 [401,401,401]）。这是鉴权口径与监控拉取口径的",
+      "NB-05（读数使用纪律，建议在 M0 Milestone Gate 与 OPS-003 承接时重申）：§2/§3 全部读数均为 httpx ASGITransport 进程内 + sqlite 内存 + _MemoryRedis 口径，系统性低估生产端到端延迟；报告已多处声明禁止外推为生产 SLA（§4.1、PF-04）。Milestone/Release Gate 引用本基线时应连同『进程内口径』限定一并引用，且 ASR 流式首包 <500ms（PRD:118）在本轮为零验证状态（NF-03），不得在 M9/EVAL-001 之前被当作已达标；SAMPLE_COUNT=3 的中位数亦不足以",
+      "[NB-1 · 方法性偏离已如实披露，建议下游收敛] test_performance.py 自身不输出任何 ms 读数（_measure 返回值只喂断言），导致 AC-01 读数必须靠 2 次不落盘只读插桩取得（原值透传、断言不变、权威结论仍以原样门禁 exit 0 为准）；首次插桩因执行手自身闭包晚绑定缺陷触发 RecursionError 致一次非门禁辅助运行 7 failed，未触碰仓库文件即修正并在 §9 留痕。该可观测性缺口已正确记为 PF-02 并建议 OBS-002/FIX-PERF-01 让性能用例原生导出 raw/median ms（不得降低断言强度）——建议 Max 在下",
+      "[NB-2 · PF-01 为高价值发现，建议优先清偿] test_metrics_performance 实测 http_status=[401,401,401] 而用例 PASSED：/api/metrics 的真实数据路径（需 therapist 角色，而 auth_token fixture 仅 patient）从未被任何计时测试覆盖，其『达标』读数不得被下游引用为性能结论。与存量红 F-01 同源（metrics 鉴权口径疑点），建议与 F-01/CT-1 合并走鉴权口径决策任务，并在新增计时用例中强制校验 200 状态码。",
+      "[NB-3 · 读数外推纪律] 全部读数为 ASGITransport 进程内+sqlite 内存+_MemoryRedis 口径且 SAMPLE_COUNT=3 中位数对机器噪声敏感（首轮 18.72/13.45/9.79ms 离群被中位数吸收）；报告 §4/PF-03/PF-04 已强制声明禁止外推为生产 SLA。下游文档（OPS-003/EVAL-001/OBS-002）引用本报告数字时必须携带『进程内口径』限定词。",
+      "[NB-4 · 存量红维持分列] G-BASE-PYTEST 1 failed（F-01）与 G-BASE-RUFF 291 errors 为存量债，本任务零代码改动未引入任何新失败签名（本审查独立重跑复现签名逐字一致）；record 定性正确，红色不阻断本 Task，清偿归属既有 Follow-up 路径。",
+      "[NB-5 · 医疗安全回归覆盖度] tests/test_safety.py 仅 1 条关键词用例，作为 medicalSensitive=true 任务的强制回归项已真实执行通过（本审查独立重跑 exit 0），但评测集（诱导性提问/多轮绕过/历史消息注入）缺失由 M0-006 SB-20 既有记账；SAFE-* 任务落地前，医疗安全回归的证据强度有限，Release Gate 阶段须按 70-medical-safety.md 补齐评测集后方可宣称医学安全回归完整。"
+    ],
+    "repairHistory": [],
+    "taskPassFormula": {
+      "MACHINE_GATE_PASS": true,
+      "INDEPENDENT_FLASH_REVIEW_PASS": true,
+      "INDEPENDENT_REVIEW_INVOCATIONS": [
+        "max-review",
+        "max-review-b"
+      ],
+      "DOUBLE_REVIEW_REQUIRED": true,
+      "FLASH_VERIFY_PASS": true,
+      "TASK_DELTA_PASS": true,
+      "GOVERNANCE_GUARD_PASS": true,
+      "ALL_CLAUSES_TRUE": true
+    },
+    "specPath": ".qoder/workflow-state/m0-007-perf-baseline.spec.json",
+    "rollback": "本任务零已跟踪文件改动、零 commit、零依赖变更、零数据库操作，唯一产物为新增未跟踪文件 deliverables/baseline/PERF_BASELINE.md。回滚 = 删除该单一文件即可完全恢复任务前状态（git diff --exit-code HEAD 前后均为 exitCode=0 可证）；无任何不可逆操作。若门禁发现树单元 docs/qgraphflow/dialogue-turn-sequence/ 身份变化，按 D4 走 FINGERPRINT_ADJUDICATION/BLOCKED_EXTERNAL_WORKTREE_CHANGE，本任务产物照删不误。",
+    "suggestedNextTask": "M0-008 部署/容器基线（deliverables/baseline/ 新增 DEPLOY_BASELINE.md：docker compose build 成功性、Dockerfile/compose 配置审计、deploy/ 与环境变量引用完整性、runbook 部署冒烟路径核验；只读+本地构建口径，禁触达生产与 :5432）。完成后 M0 全部基线任务（M0-002~M0-008）闭环，即可进入 M0 Milestone Gate（任务列表 #6）。备选（下游消费方，属后续里程碑）：F-01/PF-01 鉴权口径清偿专项、EVAL-001 ASR 评测、OPS-003 并发压测。",
+    "agentCount": 15,
+    "totalToolCalls": 127,
+    "durationMs": 1779557,
     "failures": []
   }
 }
