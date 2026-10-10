@@ -231,8 +231,13 @@ class TestDifficultyRecommendation:
 class TestAdaptiveEngineIntegration:
     """集成测试：完整自适应流程"""
 
-    def test_full_adaptive_session(self, engine):
+    def test_full_adaptive_session(self, engine, monkeypatch):
         """测试完整的自适应训练会话"""
+        seeded_random = random.Random(1)
+        monkeypatch.setattr(
+            "app.ai.adaptive_engine.random.random",
+            seeded_random.random,
+        )
         state = engine.initialize_knowledge()
         total_reward = 0
 
@@ -248,8 +253,13 @@ class TestAdaptiveEngineIntegration:
         assert 0.0 <= state.confidence <= 1.0
         assert total_reward > 0
 
-    def test_learning_curve(self, engine):
+    def test_learning_curve(self, engine, monkeypatch):
         """测试学习曲线"""
+        seeded_random = random.Random(1)
+        monkeypatch.setattr(
+            "app.ai.adaptive_engine.random.random",
+            seeded_random.random,
+        )
         state = engine.initialize_knowledge()
         mastery_history = [state.mastery]
 
