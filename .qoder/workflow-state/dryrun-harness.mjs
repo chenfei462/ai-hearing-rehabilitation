@@ -327,6 +327,23 @@ if (cmd === 'test' || cmd === 'regression') {
     { scenario: 'd6-12-duplicate-gate-id', status: 'BLOCKED', block: 'GATE_SPEC_MALFORMED', maxGateCalls: 0, mode: 'FULL', activeMode: 'FULL', forbidLabels: ['implement', 'machine-gate'] },
     // 13 FULL 默认模式下 required→record 降级 → 治理级违规（与 d3-10 同判据，不因执行模式而放松）
     { scenario: 'd6-13-required-to-record-under-full', status: 'BLOCKED', block: 'GOVERNANCE_POLICY_VIOLATION', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', forbidLabels: ['max-review', 'verify'] },
+    // ---- FIX-GOV-008（D4-2）：命令自身 argv 身份回显的互证 + 不确定证据 fail-closed ----
+    // 14 A 行缺失（执行手只回传 body、没跑包装器）→ argv 互证无从建立；二次取证仍缺失 → UNCERTAIN（绝不重建基线）
+    { scenario: 'd6-14-argv-echo-missing', status: 'BLOCKED', block: 'BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN', maxGateCalls: 0, mode: 'FULL', activeMode: 'FULL', rehashPair: true, adjudication: 'BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN', invalidEvidenceContains: 'ARGV_ECHO_MISSING' },
+    // 15 A 行只在空白上与期望不同（字段前后多空格）→ 严格路径逐字符失配、宽松 norm 会放过 ⇒ WHITESPACE → UNCERTAIN
+    { scenario: 'd6-15-argv-whitespace-mutation', status: 'BLOCKED', block: 'BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN', maxGateCalls: 0, mode: 'FULL', activeMode: 'FULL', rehashPair: true, adjudication: 'BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN', invalidEvidenceContains: 'ARGV_NOT_VERBATIM:WHITESPACE' },
+    // 16 A 行内容被改写（b64 指向另一段 payload）→ ARGV_NOT_VERBATIM:CONTENT → UNCERTAIN
+    { scenario: 'd6-16-argv-content-mutation', status: 'BLOCKED', block: 'BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN', maxGateCalls: 0, mode: 'FULL', activeMode: 'FULL', rehashPair: true, adjudication: 'BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN', invalidEvidenceContains: 'ARGV_NOT_VERBATIM:CONTENT' },
+    // 17 顶替 argv：gateId 与 command 字段都与声明【逐字一致】（绝不撞 gateId 对账），只有 argvEcho 的 b64 解码指向另一条命令
+    //     ⇒ 命令字符串层面"诚实"，由命令自身的 Q 行暴露 → GATE_ARGV_NOT_VERBATIM（与 d6-06 判据不串位）
+    { scenario: 'd6-17-gate-id-same-command-changed', status: 'BLOCKED', block: 'GATE_ARGV_NOT_VERBATIM', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', forbidLabels: ['max-review', 'verify'] },
+    // 18 执行手自报绿灯（allPassed:true + 全 0），但【record 型】门禁的 argvEcho 指向另一条命令 → record 同样不得放行
+    { scenario: 'd6-18-executor-claims-green-with-wrong-argv', status: 'BLOCKED', block: 'GATE_ARGV_NOT_VERBATIM', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', forbidLabels: ['max-review', 'verify'] },
+    // 19 取证链路自相矛盾：主取证 argv 被改 + 两个独立 rehash 各自合法但签名互不相同 → 禁止猜测 → UNCERTAIN
+    { scenario: 'd6-19-evidence-disagreement', status: 'BLOCKED', block: 'BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN', maxGateCalls: 0, mode: 'FULL', activeMode: 'FULL', rehashPair: true, adjudication: 'BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN' },
+    // 20 ★正向对照（诚实执行手不得被误杀）★：逐字运行下发命令、V/A 行与每条门禁的 Q 行都原样回传 → 新互证必须判为可信 → TASK_PASS
+    //     A/Q 行的 b64 由 harness【独立】实现算出（btoa，退路为第二份纯 JS 位运算），与 workflow 自实现编码器逐字符相等才可能 PASS
+    { scenario: 'd6-20-honest-exact-command-passes', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', formula: true, noAdjudication: true, rehashNone: true, gateContract: { RECONCILED: true, DECLARED_COUNT: 2, SUBMITTED_COUNT: 2 } },
   ]
 
   const ALLOWED_MODELS = new Set(['qmodel_38max', 'qfmodel'])
@@ -573,6 +590,11 @@ const SCEN_GATES = {
   'd6-09-missing-gate-declaration': 'EMPTY',
   'd6-12-duplicate-gate-id': 'DUP_GATE_ID',
   'd6-13-required-to-record-under-full': 'DOWNGRADE',
+  // ---- FIX-GOV-008（D4-2）----
+  // d6-17 沿用 BASE 声明（gateId/command 均与声明逐字一致，仅 argvEcho 被顶替）
+  'd6-17-gate-id-same-command-changed': 'BASE',
+  // d6-18 需要一条【record】声明才能证明"record 的证据不确定同样 BLOCK"
+  'd6-18-executor-claims-green-with-wrong-argv': 'AUDIT_LINT_RED',
 }
 
 const specObj = {
@@ -731,10 +753,68 @@ D2_SELFREPAIR_GIT['d3-20-selfreport-pass-gate-fail'] = ['git status']
 // Workflow 侧用真实解析器 parseFingerprintEvidence 解析它，因此这些回归测的是【真解析 + 真校验 + 真仲裁】，
 // 而不是把结论直接喂给 stub。
 // ============================================================
+// ============================================================
+// D4-2（FIX-GOV-008）：harness 侧【独立】base64 + argv 回显渲染。
+// 关键约束：绝不允许调用 workflow 的编码器 —— 回显值必须由第二份实现算出。
+// 主实现取运行时原生 btoa（与 workflow 的自实现查表/位运算完全无关）；
+// 万一 btoa 不可用，退到 harness 自己的第二份纯 JS 实现（写法与 workflow 那份不同：逐字符累加位串再切 6 位）。
+// 两份实现只要有任何一处不一致，正向对照 d6-20 就会立刻变红 ⇒ 这就是对 D1 编码器的交叉校验。
+// ============================================================
+const FP_PROTOCOL = 'D4-2'
+const HB64_ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+function hb64Fallback(s) {
+  let bits = ''
+  for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); if (c > 127) return null; bits += c.toString(2).padStart(8, '0') }
+  let out = ''
+  for (let i = 0; i + 6 <= bits.length; i += 6) out += HB64_ALPHA.charAt(parseInt(bits.slice(i, i + 6), 2))
+  const rest = bits.length % 6
+  if (rest === 2) out += HB64_ALPHA.charAt(parseInt(bits.slice(bits.length - 2).padEnd(6, '0'), 2)) + '=='
+  else if (rest === 4) out += HB64_ALPHA.charAt(parseInt(bits.slice(bits.length - 4).padEnd(6, '0'), 2)) + '='
+  else if (rest !== 0) return null
+  return out
+}
+function hb64(s) {
+  const t = String(s == null ? '' : s)
+  for (let i = 0; i < t.length; i++) if (t.charCodeAt(i) > 127) return null
+  if (typeof globalThis.btoa === 'function') { try { return globalThis.btoa(t) } catch (e) { return null } }
+  return hb64Fallback(t)
+}
+// 从 workflow 逐字下发的命令里还原 argv 回显覆盖的 payload（B='…' 单引号字面量，'\'' 为唯一合法内嵌引号形态）。
+function pinnedPayload(cmd) {
+  const all = String(cmd == null ? '' : cmd).split('\n')
+  let at = -1
+  for (let i = 0; i < all.length; i++) { if (all[i].slice(0, 3) === "B='") { at = i; break } }
+  if (at < 0) return null
+  const s = all.slice(at).join('\n').slice(3)
+  let out = ''
+  for (let i = 0; i < s.length;) {
+    if (s.charAt(i) !== "'") { out += s.charAt(i); i++; continue }
+    if (s.slice(i, i + 4) === "'\\''") { out += "'"; i += 4; continue }
+    return out
+  }
+  return null
+}
+// A 行：真实形态是 `printf 'A|%s|%s\n' "${#B}" "$(printf %s "$B" | base64 | tr -d '\n')"`。
+function argvEchoFor(cmd, ex) {
+  if (ex.argvEchoMissing) return null
+  const payload = pinnedPayload(cmd)
+  const b = payload === null ? null : hb64(payload)
+  if (b === null) return 'A|0|' // 取不到/非 ASCII：渲染一条必然失配的 A 行（fail-closed，不做任何近似）
+  if (ex.argvWhitespace) return 'A| ' + payload.length + '| ' + b + '  '
+  if (ex.argvContent) return 'A|' + payload.length + '|' + hb64(payload + '#FINGERPRINT_TAMPERED')
+  return 'A|' + payload.length + '|' + b
+}
+// Q 行：门禁同构互证（声明原文即 payload，gateId 即回显里的那个）。诚实条目由声明算出。
+function qEcho(d) {
+  const cmd = String((d && d.command) == null ? '' : d.command)
+  const b = hb64(cmd)
+  return 'Q|' + String((d && d.gateId) || '') + '|' + cmd.length + '|' + (b === null ? '__HARNESS_NONASCII__' : b)
+}
 function findFp(s, path) { for (const f of (s.fingerprints || [])) if (f.path === path) return f; return null }
 function fileLine(xy, f) { return 'F|' + xy + '|' + f.path + '|' + sizeOf(f) + '|' + digestOf(f.path, f.hash, 'sha') + '|' + digestOf(f.path, f.hash, 'md5') }
-function renderEvidence(s) {
-  const L = ['V|D4-1', 'H|' + s.head, 'B|' + s.branch]
+function renderEvidence(s, pinned) {
+  const ex = s.exec || {}
+  const L = ['V|' + FP_PROTOCOL, 'H|' + s.head, 'B|' + s.branch]
   const syn = (p) => findFp(s, p) || { path: p, hash: 'implicit:' + p }
   for (const p of s.staged) L.push(fileLine('M ', syn(p)))
   for (const p of s.trackedModified) L.push(fileLine(' M', syn(p)))
@@ -758,8 +838,15 @@ function renderEvidence(s) {
   if (s.exec && s.exec.duplicatePath) L.push(L[L.length - 1])
   if (s.exec && s.exec.treeFileCountLie) { const i = L.findIndex((l) => l.startsWith('E|')); if (i >= 0) { const a = L[i].split('|'); a[2] = String(Number(a[2]) + 1); L[i] = a.join('|') } }
   if (s.exec && s.exec.memberOrphan) L.push('t|outside/dir/file.py|10|' + sha64('orphan') + '|' + md532('orphan'))
+  // truncate 模拟"输出流被截断"：截的是 body，包装器与 A 行一并缺失 ⇒ 必然不合法（fail-closed）。
   if (s.exec && s.exec.truncate) return L.slice(0, Math.max(2, L.length - 3)).join('\n')
-  return L.join('\n')
+  // D4-2 真实 stdout 形态：包装器先打印 V，再打印 A，然后 eval 让 body 打印自己的第二个 V。
+  // 上面所有既有变异开关都只作用在 body（L）上，索引语义（L[1]=H、digest 循环从 i=2 起）逐字节保持原样。
+  const a = argvEchoFor(pinned, ex)
+  const out = []
+  if (!ex.dropProtocolLine) out.push('V|' + FP_PROTOCOL)
+  if (a !== null) out.push(a)
+  return out.concat(L).join('\n')
 }
 // 从 Workflow 提示词中提取"脚本逐字下发的命令"，原样回传（证明逐字校验路径，而非 harness 自行拼命令）。
 function pinnedCommandFrom(prompt) {
@@ -772,7 +859,7 @@ function executorEvidence(label, prompt, s) {
   const out = {
     purpose: label, command: ex.rewriteCommand ? cmd + '\necho tampered' : cmd,
     exitCode: typeof ex.exitCode === 'number' ? ex.exitCode : 0,
-    rawStdout: renderEvidence(s), rawStderr: ex.rawStderr || '',
+    rawStdout: renderEvidence(s, cmd), rawStderr: ex.rawStderr || '',
     filesWritten: ex.filesWritten || [],
     gitCommandsRun: ex.gitCommandsRun || ['git rev-parse HEAD', 'git branch --show-current', 'git -c core.quotepath=false status --porcelain=v1 --untracked-files=normal'],
   }
@@ -896,6 +983,31 @@ const D4_SNAPS = {
   ],
   // 20 D1 保持：required 门禁永远失败 → BLOCKED_REPAIR_LIMIT
   // 21/23/24 复用默认队列（见 D3 集合）
+  // ============================================================
+  // FIX-GOV-008（D4-2）：argv 自回显互证的对抗队列。
+  // 变异同时覆盖【主取证队列】与【D4_REHASH A/B】（见下方同名条目），否则仲裁会像 d4-11 那样
+  // 用可信二次取证重建基线，得到 BASELINE_REESTABLISHED_BY_CONVERGENCE 而不是 UNCERTAIN。
+  // ============================================================
+  // 14 执行手没跑包装器：只有 body 的 V/H/B/F 行，没有 A 行 → ARGV_ECHO_MISSING
+  'd6-14-argv-echo-missing': [
+    snap({ exec: { argvEchoMissing: true } }),
+    snap({ exec: { argvEchoMissing: true } }),
+  ],
+  // 15 A 行与期望仅在空白上不同 → 严格逐字符比较必须失配（宽松 norm 会放过，正是本 Fix 修的弱点）
+  'd6-15-argv-whitespace-mutation': [
+    snap({ exec: { argvWhitespace: true } }),
+    snap({ exec: { argvWhitespace: true } }),
+  ],
+  // 16 A 行的 b64 被改写成另一段 payload 的编码 → ARGV_NOT_VERBATIM:CONTENT
+  'd6-16-argv-content-mutation': [
+    snap({ exec: { argvContent: true } }),
+    snap({ exec: { argvContent: true } }),
+  ],
+  // 19 主取证（post）的 A 行被改写 ⇒ 当前证据不可信；两个独立 rehash 各自合法但签名互不相同 ⇒ 无从收敛
+  'd6-19-evidence-disagreement': [
+    snap({ trackedModified: ['backend/app/pre.py'], fingerprints: [fp('backend/app/pre.py', 'pre0')] }),
+    snap({ trackedModified: ['backend/app/pre.py', 'backend/app/kb/parser.py'], untracked: ['backend/app/kb/pdf.py'], fingerprints: [fp('backend/app/pre.py', 'pre0'), fp('backend/app/kb/pdf.py', 'pdf1'), fp('backend/app/kb/parser.py', 'par1')], exec: { argvContent: true } }),
+  ],
 }
 // 仲裁（REHASH_A / REHASH_B）证据队列：默认 = 主队列最后一项（代表"当前真实工作区状态"）。
 const D4_REHASH = {
@@ -940,6 +1052,15 @@ const D4_REHASH = {
   'd4-06-dir-deleted-file': { a: [D4_SNAPS['d4-06-dir-deleted-file'][1]], b: [D4_SNAPS['d4-06-dir-deleted-file'][1]] },
   'd4-07-dir-renamed-file': { a: [D4_SNAPS['d4-07-dir-renamed-file'][1]], b: [D4_SNAPS['d4-07-dir-renamed-file'][1]] },
   'd4-19-governance-retry-never-owned': { a: [D4_SNAPS['d4-19-governance-retry-never-owned'][1]], b: [D4_SNAPS['d4-19-governance-retry-never-owned'][1]] },
+  // FIX-GOV-008 D4-2：二次取证复现同一种 argv 缺陷 ⇒ 仲裁后仍不 VALID ⇒ UNCERTAIN（绝不重建基线）
+  'd6-14-argv-echo-missing': { a: [D4_SNAPS['d6-14-argv-echo-missing'][0]], b: [D4_SNAPS['d6-14-argv-echo-missing'][0]] },
+  'd6-15-argv-whitespace-mutation': { a: [D4_SNAPS['d6-15-argv-whitespace-mutation'][0]], b: [D4_SNAPS['d6-15-argv-whitespace-mutation'][0]] },
+  'd6-16-argv-content-mutation': { a: [D4_SNAPS['d6-16-argv-content-mutation'][0]], b: [D4_SNAPS['d6-16-argv-content-mutation'][0]] },
+  // d6-19：A/B 都通过确定性校验（含合法 A 行），但字节签名互不相同 → 取证链路本身不可信 → UNCERTAIN
+  'd6-19-evidence-disagreement': {
+    a: [snap({ trackedModified: ['backend/app/pre.py', 'backend/app/kb/parser.py'], untracked: ['backend/app/kb/pdf.py'], fingerprints: [fp('backend/app/pre.py', 'pre0'), fp('backend/app/kb/pdf.py', 'pdf1'), fp('backend/app/kb/parser.py', 'par1')] })],
+    b: [snap({ trackedModified: ['backend/app/pre.py', 'backend/app/kb/parser.py'], untracked: ['backend/app/kb/pdf.py'], fingerprints: [fp('backend/app/pre.py', 'pre0-OTHER'), fp('backend/app/kb/pdf.py', 'pdf1'), fp('backend/app/kb/parser.py', 'par1')] })],
+  },
 }
 // 16/17/18/19：同任务重试产物归属（需 retryOfTaskId + retryArtifacts + spec 允许写该路径）
 const D4_RETRY = {
@@ -1084,11 +1205,14 @@ function stubAgent(prompt, opts) {
       const byId = {}
       DECL.forEach((d) => { byId[d.gateId] = d })
       const decl = (gateId) => byId[gateId] || { gateId, command: '__FIXTURE_ERROR_UNDECLARED_GATE__:' + gateId, kind: 'required', purpose: '' }
-      const greq = (gateId, exitCode, purpose) => { const d = decl(gateId); return { gateId, command: d.command, purpose: purpose || d.purpose, kind: 'required', exitCode, stdoutSummary: exitCode === 0 ? 'ok' : 'FAIL', stderrSummary: exitCode === 0 ? '' : 'non-zero' } }
-      const greqBlocked = (gateId, purpose) => { const d = decl(gateId); return { gateId, command: d.command, purpose: purpose || d.purpose, kind: 'required', recordStatus: 'SAFELY_NOT_EXECUTED_AND_RECORDED', stderrSummary: 'no provably-safe one-time test env' } }
-      const grec = (gateId, exitCode, purpose, recordStatus) => { const d = decl(gateId); const o = { gateId, command: d.command, purpose: purpose || d.purpose, kind: 'record', stdoutSummary: '' }; if (typeof exitCode === 'number') o.exitCode = exitCode; o.recordStatus = recordStatus || (typeof exitCode === 'number' ? 'EXECUTED_AND_RECORDED' : 'SAFELY_NOT_EXECUTED_AND_RECORDED'); return o }
+      // FIX-GOV-008 D4：诚实执行手回传的 argvEcho = 由【声明原文】算出的 Q 行（harness 独立 base64）。
+      // 真实形态是 B='声明原文' / printf Q / eval ⇒ argvEcho 的内容只与"该条声明命令"有关，与门禁红绿无关。
+      const greq = (gateId, exitCode, purpose) => { const d = decl(gateId); return { gateId, command: d.command, purpose: purpose || d.purpose, kind: 'required', exitCode, argvEcho: qEcho(d), stdoutSummary: exitCode === 0 ? 'ok' : 'FAIL', stderrSummary: exitCode === 0 ? '' : 'non-zero' } }
+      const greqBlocked = (gateId, purpose) => { const d = decl(gateId); return { gateId, command: d.command, purpose: purpose || d.purpose, kind: 'required', recordStatus: 'SAFELY_NOT_EXECUTED_AND_RECORDED', argvEcho: '', stderrSummary: 'no provably-safe one-time test env' } }
+      const grec = (gateId, exitCode, purpose, recordStatus) => { const d = decl(gateId); const o = { gateId, command: d.command, purpose: purpose || d.purpose, kind: 'record', argvEcho: qEcho(d), stdoutSummary: '' }; if (typeof exitCode === 'number') o.exitCode = exitCode; o.recordStatus = recordStatus || (typeof exitCode === 'number' ? 'EXECUTED_AND_RECORDED' : 'SAFELY_NOT_EXECUTED_AND_RECORDED'); return o }
       // 偏差样本：gateId/command/kind 可任意组合，用于构造「未声明 gateId / 换命令顶替 / required→record 降级」等违规提交
-      const dev = (gateId, command, kind, exitCode, purpose) => { const o = { command, purpose: purpose || '（偏差样本）', kind, exitCode, stdoutSummary: exitCode === 0 ? 'ok' : 'FAIL', stderrSummary: exitCode === 0 ? '' : 'non-zero' }; if (gateId) o.gateId = gateId; return o }
+      // argvEcho 一律按"本条目实际提交的命令"诚实回显 ⇒ 这些场景的理由仍归既有判据（gateId 对账/降级），不被新终态抢占。
+      const dev = (gateId, command, kind, exitCode, purpose) => { const o = { command, purpose: purpose || '（偏差样本）', kind, exitCode, argvEcho: qEcho({ gateId, command }), stdoutSummary: exitCode === 0 ? 'ok' : 'FAIL', stderrSummary: exitCode === 0 ? '' : 'non-zero' }; if (gateId) o.gateId = gateId; return o }
       // ---- D3：FLASH_ONLY 门禁裁判 / 反作弊场景（优先于 D2）----
       if (D3_GATE_FAIL_ALWAYS.has(scenario)) return Promise.resolve({ commands: [greq('G-TARGET', 1)], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
       if (D3_GATE_FAIL_UNTIL[scenario]) return Promise.resolve(gateCalls < D3_GATE_FAIL_UNTIL[scenario] ? { commands: [greq('G-TARGET', 1), greq('G-LINT', 0)], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] } : { commands: [greq('G-TARGET', 0), greq('G-LINT', 0)], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
@@ -1126,9 +1250,28 @@ function stubAgent(prompt, opts) {
       if (scenario === 'd6-06-substitute-green-command') return Promise.resolve({ commands: [dev('G-TARGET', 'pytest backend/tests/kb --collect-only', 'required', 0, '顶替声明命令的"会绿"变体'), greq('G-LINT', 0)], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
       // d6-13 FULL 默认模式下把 required 门禁降级为 record（与 d3-10 同判据，执行模式不同）
       if (scenario === 'd6-13-required-to-record-under-full') return Promise.resolve({ commands: [greq('G-LINT-APP', 0), Object.assign(dev('G-TARGET', decl('G-TARGET').command, 'record', 1, '目标测试降级为 record'), { stdoutSummary: '1 failed', recordStatus: 'EXECUTED_AND_RECORDED' })], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      // ---- FIX-GOV-008 D4-2：argv 自回显互证的攻防样本 ----
+      // d6-17 gateId 相同、command 字段与声明逐字一致（绝不撞 :804），只让 argvEcho 的 b64 指向另一条命令
+      //        ⇒ 命令字符串层面完全"诚实"，只有命令自身的 argv 回显暴露真相 → GATE_ARGV_NOT_VERBATIM
+      if (scenario === 'd6-17-gate-id-same-command-changed') {
+        const d = decl('G-TARGET')
+        const forged = { gateId: 'G-TARGET', command: d.command, purpose: d.purpose, kind: 'required', exitCode: 0, stdoutSummary: 'ok', stderrSummary: '', argvEcho: 'Q|G-TARGET|' + d.command.length + '|' + hb64('pytest backend/tests/kb --collect-only') }
+        return Promise.resolve({ commands: [forged, greq('G-LINT', 0)], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      }
+      // d6-18 自报绿灯（allPassed:true + 全部 exitCode=0），但【record 型】门禁的 argvEcho 指向另一条命令
+      //        ⇒ 证明 record 命令的证据不确定同样 BLOCK，绝不因 kind=record 而静默放行
+      if (scenario === 'd6-18-executor-claims-green-with-wrong-argv') {
+        const r = grec('G-BASE-RUFF2', 0)
+        const rr = decl('G-BASE-RUFF2')
+        return Promise.resolve({ commands: [greq('G-SCOPE', 0), Object.assign(r, { argvEcho: 'Q|' + rr.gateId + '|' + rr.command.length + '|' + hb64('ruff check app --statistics') })], findings: [], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      }
       // ---- 既有场景（向后兼容：无 kind 字段的命令按 required 处理）----
-      if (scenario === 'gatealwaysfail' || (scenario === 'gatefail' && gateCalls === 1)) return Promise.resolve({ commands: [{ gateId: 'G-TARGET', command: 'pytest backend/tests/kb', purpose: 'target tests', exitCode: 1, stdoutSummary: '1 failed', stderrSummary: 'AssertionError' }, { gateId: 'G-LINT', command: 'ruff check backend', purpose: 'lint', exitCode: 0 }], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
-      return Promise.resolve({ commands: [{ gateId: 'G-TARGET', command: 'pytest backend/tests/kb', purpose: 'target tests', exitCode: 0, stdoutSummary: '12 passed' }, { gateId: 'G-LINT', command: 'ruff check backend', purpose: 'lint', exitCode: 0 }], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      // 裸对象形态 = 最朴素的诚实执行手：command 与 argvEcho 都由它真正运行的那条声明命令算出。
+      // 保持"无 kind 字段"的向后兼容形态原样不动（缺省按 required 处理），只补 argvEcho 这一个字段。
+      const BARE_TARGET = { gateId: 'G-TARGET', command: 'pytest backend/tests/kb', purpose: 'target tests', argvEcho: qEcho({ gateId: 'G-TARGET', command: 'pytest backend/tests/kb' }) }
+      const BARE_LINT = { gateId: 'G-LINT', command: 'ruff check backend', purpose: 'lint', argvEcho: qEcho({ gateId: 'G-LINT', command: 'ruff check backend' }) }
+      if (scenario === 'gatealwaysfail' || (scenario === 'gatefail' && gateCalls === 1)) return Promise.resolve({ commands: [Object.assign({}, BARE_TARGET, { exitCode: 1, stdoutSummary: '1 failed', stderrSummary: 'AssertionError' }), Object.assign({}, BARE_LINT, { exitCode: 0 })], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
+      return Promise.resolve({ commands: [Object.assign({}, BARE_TARGET, { exitCode: 0, stdoutSummary: '12 passed' }), Object.assign({}, BARE_LINT, { exitCode: 0 })], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
     }
     case 'self-repair': return Promise.resolve({ status: 'FIXED', summary: '修正断言', filesChanged: ['backend/app/kb/pdf.py'], gitCommandsRun: D2_SELFREPAIR_GIT[scenario] || [] })
     case 'rca': return Promise.resolve({ ROOT_CAUSE: '接口签名不一致', FIX_SPEC: '统一 parse() 签名', affectedFiles: ['backend/app/kb/pdf.py'] })

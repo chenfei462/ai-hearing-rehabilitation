@@ -236,7 +236,12 @@ function isGovernancePath(p) {
 //     ⑥ 未通过校验的证据一律不得参与 Task Delta。
 //   实测可用的确定性命令：/usr/bin/sha256sum（Git Bash coreutils，输出恰为 64 位小写 hex）。
 // ============================================================
-const FP_PROTOCOL = 'D4-1'
+// ============================================================
+// FIX-GOV-008（D4-2）：取证命令与门禁命令都自带 argv 身份回显（A 行 / Q 行），脚本侧逐字符复核。
+//   协议行：V 协议版本 / A 包装器 argv 自回显 / H HEAD / B 分支 / F 文件 / E 目录树单元 / t 树成员 / X 路径已消失 / '#' 注释。
+//   D4-1 → D4-2 的差别只多两行自回显（V/A 与 Q），能力边界事实一字未改：脚本仍不能自读文件字节。
+// ============================================================
+const FP_PROTOCOL = 'D4-2'
 const FP_SHA256_RE = /^[0-9a-f]{64}$/
 const FP_MD5_RE = /^[0-9a-f]{32}$/
 const FP_HEX40_RE = /^[0-9a-f]{40}$/
@@ -265,12 +270,88 @@ function canonicalPath(p) {
 function taskIdentityOf(id) {
   return String(id == null ? '' : id).trim().toLowerCase().replace(/\\/g, '/').replace(/^[./]+/, '').replace(/-[0-9a-f]{7,8}$/, '')
 }
+// ============================================================
+// FIX-GOV-008 D1：脚本侧纯 JS RFC4648 base64 编码器/解码器（argv 自回显互证唯一依赖的计算件）。
+// 事实边界：本脚本沙箱【没有】自读文件字节的能力（SCRIPT_SIDE_HASH_AVAILABLE 仍为 false），
+// 这里只对"脚本自己拼出来的字符串"做纯计算：不触碰任何文件、不使用任何平台编码 API、不引入任何外部能力。
+// 输入域严格限定 ASCII（每字符恰 1 字节 ⇒ 字符数 == 字节数，与 bash ${#B} 在同一取值上自洽）；
+// 含非 ASCII 时编码器返回 null（fail-closed），绝不做有损近似、绝不"看起来差不多"就放行。
+// 实现方式：自实现查表 + 位运算 + '=' 补位（解码侧同样自实现，用于独立复核"b64 解码逐字符等于原文"）。
+// ============================================================
+const B64_ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+function isAsciiText(s) {
+  const t = String(s == null ? '' : s)
+  for (let i = 0; i < t.length; i++) if (t.charCodeAt(i) > 127) return false
+  return true
+}
+function base64EncodeAscii(s) {
+  const t = String(s == null ? '' : s)
+  if (!isAsciiText(t)) return null
+  let out = ''
+  for (let i = 0; i < t.length; i += 3) {
+    const c0 = t.charCodeAt(i)
+    const has1 = i + 1 < t.length
+    const has2 = i + 2 < t.length
+    const c1 = has1 ? t.charCodeAt(i + 1) : 0
+    const c2 = has2 ? t.charCodeAt(i + 2) : 0
+    out += B64_ALPHA.charAt(c0 >> 2)
+    if (!has1) return out + B64_ALPHA.charAt((c0 & 3) << 4) + '=='
+    out += B64_ALPHA.charAt(((c0 & 3) << 4) | (c1 >> 4))
+    if (!has2) return out + B64_ALPHA.charAt((c1 & 15) << 2) + '='
+    out += B64_ALPHA.charAt(((c1 & 15) << 2) | (c2 >> 6))
+    out += B64_ALPHA.charAt(c2 & 63)
+  }
+  return out
+}
+function base64DecodeAscii(s) {
+  const t = String(s == null ? '' : s)
+  if (!t.length) return ''
+  if (t.length % 4 !== 0) return null
+  let pad = 0
+  if (t.charAt(t.length - 1) === '=') { pad = 1; if (t.charAt(t.length - 2) === '=') pad = 2 }
+  if (pad > 0 && t.indexOf('=') !== t.length - pad) return null // '=' 只允许出现在末尾
+  let acc = 0
+  let bits = 0
+  let out = ''
+  const lim = t.length - pad
+  for (let i = 0; i < lim; i++) {
+    const v = B64_ALPHA.indexOf(t.charAt(i))
+    if (v < 0) return null
+    acc = (acc << 6) | v
+    bits += 6
+    if (bits >= 8) { bits -= 8; out += String.fromCharCode((acc >> bits) & 255) }
+  }
+  if (out.length !== (t.length / 4) * 3 - pad) return null
+  if (bits !== 0 && (acc & ((1 << bits) - 1)) !== 0) return null // 非规范的补位残值
+  if (!isAsciiText(out)) return null
+  return out
+}
+// 从"脚本自己下发的五行包装命令"里取回 argv 回显所覆盖的 payload 原文（B='…' 单引号字面量）。
+// 单引号字面量内不可能出现裸 '，唯一合法出现是 '\'' 转义 ⇒ 逐字符扫描即可无歧义还原。
+function argvPayloadFromCommand(cmd) {
+  const all = String(cmd == null ? '' : cmd).split('\n')
+  let at = -1
+  for (let i = 0; i < all.length; i++) { if (all[i].indexOf("B='") === 0) { at = i; break } }
+  if (at < 0) return null
+  const s = all.slice(at).join('\n').slice(3)
+  let out = ''
+  for (let i = 0; i < s.length;) {
+    const ch = s.charAt(i)
+    if (ch === "'") {
+      if (s.slice(i, i + 4) === "'\\''") { out += "'"; i += 4; continue }
+      return out // 闭引号：payload 到此结束
+    }
+    out += ch
+    i++
+  }
+  return null // 引号未闭合：包装器被改写，无法确定 payload
+}
 // 确定性指纹命令：脚本生成、逐字下发；git 只读 + sha256sum/md5sum/wc/find/LC_ALL=C sort。
-// 协议行：V 协议版本 / H HEAD / B 分支 / F 文件 / E 目录树单元 / t 树成员 / X 路径已消失 / '#' 注释（解析器忽略，mtime 等诊断信息只能走注释，绝不参与内容身份）。
-function buildFingerprintCommand(root) {
-  const q = String(root == null ? '.' : root).replace(/'/g, "'\\''")
+// D4-2 五行形态：cd / B='<payload>' / printf V / printf A / eval "$B"。
+// payload = body（【不含 cd 行】：本仓库根含中文，cd 行入 payload 会让所有派发立刻非 ASCII）；
+// A 行由命令自身用 GNU base64 算出，脚本侧用 D1 编码器算出期望值并逐字符复核 —— 两条独立实现互证。
+function fingerprintBody() {
   return [
-    "cd '" + q + "'",
     "printf 'V|" + FP_PROTOCOL + "\\n'",
     "printf 'H|%s\\n' \"$(git rev-parse HEAD)\"",
     "printf 'B|%s\\n' \"$(git branch --show-current)\"",
@@ -291,6 +372,18 @@ function buildFingerprintCommand(root) {
     "    printf 'X|%s|%s\\n' \"$XY\" \"$P\"",
     '  fi',
     'done',
+  ]
+}
+function fingerprintArgvPayload() { return fingerprintBody().join('\n') }
+function buildFingerprintCommand(root) {
+  const q = String(root == null ? '.' : root).replace(/'/g, "'\\''")
+  const payload = fingerprintArgvPayload()
+  return [
+    "cd '" + q + "'",
+    "B='" + payload.replace(/'/g, "'\\''") + "'",
+    "printf 'V|" + FP_PROTOCOL + "\\n'",
+    "printf 'A|%s|%s\\n' \"${#B}\" \"$(printf %s \"$B\" | base64 | tr -d '\\n')\"",
+    'eval "$B"',
   ].join('\n')
 }
 
@@ -316,17 +409,46 @@ function parseFingerprintEvidence(ex, pinnedCommand) {
     const u = scanUnsafeDbCommand(c)
     if (u) problems.push(u.code + ':' + String(c).slice(0, 80))
   }
+  // '#' 开头的行是注释（mtime 等诊断信息只能走注释，解析器一律忽略，绝不参与内容身份）。
   const lines = norm(ex.rawStdout).split('\n').map((l) => l.trim()).filter((l) => l.length && l.charAt(0) !== '#')
   out.rawLineCount = lines.length
   if (!lines.length) problems.push('FINGERPRINT_EVIDENCE_INVALID:EMPTY_STDOUT')
   if (lines.length && lines[0] !== 'V|' + FP_PROTOCOL) problems.push('FINGERPRINT_EVIDENCE_INVALID:PROTOCOL_MISMATCH:' + String(lines[0]).slice(0, 24))
   if (lines.length) out.protocol = String(lines[0]).slice(2)
+  // ---- FIX-GOV-008 D2：argv 自回显（A 行）严格校验，独立于上面的宽松 norm ----
+  // 上面 :307/:319 的 norm 会 trim 每行、剥行尾空白并 trim 整体 —— 那正是本批要堵住的盲区，
+  // 故 A 行绝不从 lines 取，另起一条严格解析路径：只剥 \r，只剥整体末尾的一个换行，其余逐字符比较。
+  const strictRaw = String(ex.rawStdout == null ? '' : ex.rawStdout).replace(/\r/g, '')
+  const strictLines = (strictRaw.length && strictRaw.charAt(strictRaw.length - 1) === '\n' ? strictRaw.slice(0, -1) : strictRaw).split('\n')
+  const aIdx = []
+  for (let i = 0; i < strictLines.length; i++) { const tag = strictLines[i].split('|')[0]; if (tag === 'A') aIdx.push(i) }
+  const argvPayload = argvPayloadFromCommand(pinnedCommand)
+  if (argvPayload === null) {
+    problems.push('FINGERPRINT_EVIDENCE_INVALID:ARGV_PAYLOAD_UNPARSEABLE（脚本下发的命令里取不到 B= 单引号 payload，argv 基准无法确定）')
+  } else if (!isAsciiText(argvPayload)) {
+    problems.push('FINGERPRINT_EVIDENCE_INVALID:PAYLOAD_NONASCII（argv 回显只覆盖 ASCII 字节域，非 ASCII payload 一律不可信）')
+  } else {
+    const expectedA = 'A|' + argvPayload.length + '|' + base64EncodeAscii(argvPayload)
+    // 逐字符等于期望值，已同时蕴含"长度字段与 ${#B} 自洽"与"解码结果逐字符等于脚本持有的 payload"；
+    // 命中后再独立解码复核一次（两条实现互相牵制，任一方漂移都会立刻失配），仍属 fail-closed。
+    if (aIdx.length !== 1 || aIdx[0] !== 1) {
+      problems.push('FINGERPRINT_EVIDENCE_INVALID:ARGV_ECHO_MISSING（A 行必须恰好一条且紧跟第一个 V 行，实测命中位置=' + JSON.stringify(aIdx.slice(0, 4)) + '）')
+    } else if (strictLines[1] !== expectedA) {
+      const squash = (t) => String(t).replace(/\s+/g, '')
+      problems.push('FINGERPRINT_EVIDENCE_INVALID:ARGV_NOT_VERBATIM:' + (squash(strictLines[1]) === squash(expectedA) ? 'WHITESPACE' : 'CONTENT'))
+    } else {
+      const f = strictLines[1].split('|')
+      const dec = base64DecodeAscii(f[2])
+      if (f.length !== 3 || f[0] !== 'A' || !/^[0-9]+$/.test(f[1]) || Number(f[1]) !== argvPayload.length || dec !== argvPayload) problems.push('FINGERPRINT_EVIDENCE_INVALID:ARGV_NOT_VERBATIM:SELF_INCONSISTENT')
+    }
+  }
   const seen = {}
   const members = []
   for (const l of lines) {
     const f = l.split('|')
     const tag = f[0]
-    if (tag === 'V') continue // 协议头已在上面逐字校验（V|D4-1），不参与逐行语义解析
+    if (tag === 'V') continue // 协议头已在上面逐字校验（V|D4-2），不参与逐行语义解析；包装器与 body 各打印一条 V，都属预期重复。
+    if (tag === 'A') continue // argv 自回显走上面的严格校验路径（逐字符），绝不在此处放宽
     if (tag === 'H') {
       out.head = String(f[1] || '')
       if (!FP_HEX40_RE.test(out.head)) problems.push('FINGERPRINT_EVIDENCE_INVALID:HEAD_NOT_40HEX:' + out.head.slice(0, 12))
@@ -816,6 +938,62 @@ function detectGateDeclaration(cmds, specObj) {
   return null
 }
 
+// FIX-GOV-008 D4：门禁命令同构 argv 自回显 —— 每条声明的门禁都包一层，让命令自身先打印
+//   Q|<gateId>|<byteLen>|<b64(该门禁声明命令原文)> 再 eval 执行原文（已实测：Q 行不影响真实退出码）。
+// 这样"提交面声称跑的是哪条命令"不再靠执行手自报字符串，而由命令自身的输出来作证；脚本侧用 D1 编码器
+// 独立算出期望 Q 行并逐字符复核。转义与取证侧同一形态（单引号 → '\''），payload 必须是 ASCII。
+function gateArgvPayload(command) { return String(command == null ? '' : command) }
+function buildGateWrappedCommand(gateId, command) {
+  const payload = gateArgvPayload(command)
+  return [
+    "B='" + payload.replace(/'/g, "'\\''") + "'",
+    "printf 'Q|" + String(gateId) + "|%s|%s\\n' \"${#B}\" \"$(printf %s \"$B\" | base64 | tr -d '\\n')\"",
+    'eval "$B"',
+  ].join('\n')
+}
+// 可安全包装（gateId 合法且声明命令为 ASCII）才下发包装形态；否则原样下发，由校验层 fail-closed。
+function gateWrappedCommandForDecl(d) {
+  const id = normGateCommand(d && d.gateId)
+  const payload = gateArgvPayload(d && d.command)
+  if (!id || !GATE_ID_RE.test(id) || !isAsciiText(payload)) return String(payload)
+  return buildGateWrappedCommand(id, payload)
+}
+
+// D4 校验落点：逐条验证 Q 行的 gateId == 提交条目 gateId、b64 解码逐字符等于 TASK_SPEC 冻结声明的 command、
+// 长度自洽。required 与 record 同样不得放行 —— 证据不确定即 BLOCK，绝不因 record 而静默通过。
+// 未真实执行（无数字 exitCode）的条目属"安全不执行/采集失败"形态，由既有 gateCompute 分层处理；
+// 未声明的 gateId 由 detectGateDeclaration 归因（本函数绝不抢占其判据，故只在它之后调用）。
+function detectGateArgvEcho(cmds, specObj) {
+  const idx = gateIndex(specObj)
+  for (const c of cmds) {
+    if (!c || typeof c.exitCode !== 'number') continue
+    const id = normGateCommand(c.gateId)
+    const d = id ? idx[id] : null
+    if (!d) continue
+    const declared = gateArgvPayload(d.command)
+    const b64 = base64EncodeAscii(declared)
+    if (b64 === null) return { code: 'GATE_ARGV_NOT_VERBATIM', tier: 'PAYLOAD_NONASCII', gateId: id, detail: `门禁 '${id}' 的冻结声明命令含非 ASCII 字节，argv 自回显无法逐字节成立（${declared.length} 个字符中检出非 ASCII），fail-closed。` }
+    const expected = 'Q|' + id + '|' + declared.length + '|' + b64
+    const raw = String(c.argvEcho == null ? '' : c.argvEcho).replace(/\r/g, '')
+    const one = raw.length && raw.charAt(raw.length - 1) === '\n' ? raw.slice(0, -1) : raw
+    if (!one || one.indexOf('\n') >= 0) {
+      return { code: 'GATE_ARGV_NOT_VERBATIM', tier: 'ARGV_ECHO_MISSING', gateId: id, detail: `门禁 '${id}' 未回传 argvEcho（或回传了多行/空值）：Q 行必须是命令自身打印的那一行原文。声明命令='${normGateCommand(declared)}'。` }
+    }
+    if (one === expected) {
+      const f = one.split('|')
+      const dec = base64DecodeAscii(f[3])
+      if (f.length !== 4 || f[0] !== 'Q' || f[1] !== id || !/^[0-9]+$/.test(f[2]) || Number(f[2]) !== declared.length || dec !== declared) {
+        return { code: 'GATE_ARGV_NOT_VERBATIM', tier: 'SELF_INCONSISTENT', gateId: id, detail: `门禁 '${id}' 的 Q 行长度字段/b64 解码与 TASK_SPEC 冻结声明不自洽（期望 byteLen=${declared.length}，实测='${one.slice(0, 160)}'）。` }
+      }
+      continue
+    }
+    const squash = (t) => String(t).replace(/\s+/g, '')
+    const tier = squash(one) === squash(expected) ? 'ARGV_WHITESPACE' : 'ARGV_CONTENT'
+    return { code: 'GATE_ARGV_NOT_VERBATIM', tier, gateId: id, detail: `门禁 '${id}' 的 argvEcho 与脚本独立算出的期望 Q 行不逐字符相等（tier=${tier}）。期望='${expected.slice(0, 200)}'，实测='${one.slice(0, 200)}'。b64 指向的不是该 gateId 冻结声明的那条命令。` }
+  }
+  return null
+}
+
 // D3 反作弊②：破坏性数据库目标守卫——禁止对未知/生产 :5432 实例执行破坏性操作。
 // 精确匹配 5432（前后非数字），不误伤一次性测试库 :55432。
 function scanUnsafeDbCommand(cmd) {
@@ -1010,11 +1188,12 @@ const GATE_SCHEMA = {
           purpose: { type: 'string' },
           kind: { type: 'string', enum: ['required', 'record'], description: 'required=本 Task 自身必须成功的验证（exitCode!==0 → MACHINE_FAIL；缺安全环境无法执行 → 顶层 blockedMissingSafeTestEnv）；record=采集当前基线事实（红/缺环境只入 findings，不阻断本 Task）。kind 由 Max 在 TASK_SPEC/Gate Schema 指定，Flash 无权把 required 降级为 record 或降低门禁。命令缺省 kind 时按 required 处理（向后兼容）。' },
           exitCode: { type: 'number', description: 'required 命令必须有数值 exitCode；record 命令安全不执行时可省略' },
+          argvEcho: { type: 'string', description: 'FIX-GOV-008 D4：本条门禁【实际运行】的那条包装命令自己打印的 Q 行原文（Q|<gateId>|<byteLen>|<base64(声明命令原文)>），逐字回传，禁止改写、禁止自行拼造、禁止用声明命令字符串代替。脚本会用自实现的 base64 独立算出期望 Q 行并逐字符复核；缺失/不符/多行/空白型改动 → 终态 GATE_ARGV_NOT_VERBATIM（required 与 record 同样不得放行）。安全地未执行（无 exitCode）时也必须如实留空，绝不伪造。' },
           recordStatus: { type: 'string', enum: ['EXECUTED_AND_RECORDED', 'SAFELY_NOT_EXECUTED_AND_RECORDED', 'RECORD_COLLECTION_FAILED'], description: 'record 命令采集状态：真执行并记录 / 安全地不执行并记录原因+环境证据 / 采集本身失败。required 命令因缺安全环境无法执行时也置 SAFELY_NOT_EXECUTED_AND_RECORDED（此时触发 blockedMissingSafeTestEnv）。' },
           stdoutSummary: { type: 'string' },
           stderrSummary: { type: 'string' },
         },
-        required: ['command', 'kind'],
+        required: ['command', 'kind', 'argvEcho'],
       },
     },
     allPassed: { type: 'boolean', description: '执行手自报，脚本不采信；门禁裁判以脚本 gateCompute() 按 kind 分层计算为准' },
@@ -1295,6 +1474,18 @@ FP_REPO_ROOT = (function () {
   if (/^[A-Za-z]:\//.test(r) || r.charAt(0) === '/') return r
   return '.'
 })()
+// FIX-GOV-008 D2：argv 自回显只覆盖 ASCII 字节域（bash 单引号字面量 + ${#B} 字符数须等于字节数）。
+// 本仓库根含中文，故 cd 行【刻意排在 payload 之外】；若 payload 自身出现非 ASCII 字节，
+// 回显互证就失去确定性基准 —— 这是实施前就能静态判定的事实，因此在这里 fail-closed 停止，
+// 绝不带着无法核验的证据进入后续任何阶段（终态经 blocked() 产出，不作为 problems 弱口径）。
+if (!isAsciiText(fingerprintArgvPayload())) {
+  return blocked('BLOCKED_FINGERPRINT_PAYLOAD_NONASCII', 'Preflight', {
+    FINGERPRINT_BACKEND, CONTENT_IDENTITY_AUTHORITY, SCRIPT_SIDE_HASH_AVAILABLE,
+    PINNED_COMMAND_PROTOCOL: FP_PROTOCOL,
+    DETAIL: '确定性取证命令的 argv 回显 payload 含非 ASCII 字节：A 行的 byteLen/base64 与脚本侧纯 JS 编码器的逐字符比较失去确定性基准，证据不可核验。',
+    SAFE_NEXT_ACTION: '请把取证命令 payload 恢复为 ASCII-only（cd 行不入 payload 是本仓库的强制约束），再重跑本 Workflow。本 Workflow 未修改任何文件。',
+  })
+}
 let _baselineRes = await establishWorktreeBaseline('Preflight')
 if (!_baselineRes) return modelBlocked('Preflight', mname(modelFor('snapshot')))
 if (_baselineRes.blocked) return blocked(_baselineRes.blocked.code, 'Preflight', {
@@ -1675,9 +1866,14 @@ function gateRequirements() {
 }
 
 // FIX-GOV-001-R1：把冻结门禁合同渲染成执行手必须逐条回传 gateId 的表格（对账键 = gateId，不是命令字符串）。
+// FIX-GOV-008 D4：每条门禁同时给出【必须逐字运行的包装形态】（B='声明原文' / printf Q / eval），
+// 命令自身先打印 Q|<gateId>|<byteLen>|<b64(声明命令原文)> 再执行原文 ⇒ argv 身份由输出来作证。
 function gateContractTable() {
   const decls = gateDecls(spec)
-  return decls.map(d => `· gateId=${d.gateId} | kind=${d.kind} | command=${normGateCommand(d.command)} | purpose=${d.purpose || '-'}`).join('\n')
+  return decls.map(d => {
+    const head = `· gateId=${d.gateId} | kind=${d.kind} | command=${normGateCommand(d.command)} | purpose=${d.purpose || '-'}`
+    return head + `\n  逐字运行这一条（不得改写其中任何字节；argvEcho 回传它打印的 Q 行原文）：\n${gateWrappedCommandForDecl(d)}`
+  }).join('\n')
 }
 
 // D4：确定性字节取证执行器（替换 D2 的"LLM 自报 hash"快照）。
@@ -1694,7 +1890,7 @@ ${extraConstraint || ''}
 \`\`\`sh
 ${cmd}
 \`\`\`
-回传要求：command = 上述命令原文；exitCode = 真实退出码；rawStdout = stdout 原文（含每一行，保持行序）；rawStderr = stderr 原文；filesWritten 恒为 []；gitCommandsRun = 实际运行过的 git 命令。
+回传要求：command = 上述命令原文；exitCode = 真实退出码；rawStdout = stdout 原文（含每一行，保持行序；命令自带的 V/A 两行同样必须原样回传，删除或改写它们都会让本次证据被判不可信）；rawStderr = stderr 原文；filesWritten 恒为 []；gitCommandsRun = 实际运行过的 git 命令。
 若命令无法执行（shell 不可用/命令不存在/仓库根无法进入）→ 如实报告 exitCode 与 rawStderr，并在 rawStdout 留空，禁止编造输出。`
 }
 
@@ -1914,10 +2110,12 @@ ${FLASH_RULES}
 [Machine Gate 执行器 · 第 ${round} 轮] 你是客观裁判的执行手：只真实运行命令并如实记录退出码。禁止修改任何文件（测试运行自身产生的临时产物除外）、禁止修改任何业务代码或测试、禁止凭感觉判断、禁止虚报退出码（Max 会在 Verify 阶段抽查重跑）。
 [验证意图（语义清单，来自任务分类与 TASK_SPEC 的 MANDATORY/REGRESSION）—— 不直接提交，其机器化形态就是下方冻结合同：合同必须逐条覆盖本清单的每一项 required 意图，缺项由 Review/Verify 出 blocker]
 ${gateRequirements().map((r, i) => `${i + 1}. ${r}`).join('\n')}
-[冻结门禁合同（TASK_SPEC.MACHINE_GATE_COMMANDS）—— 本轮唯一命令集合，逐条执行、逐条回传 gateId]
+[冻结门禁合同（TASK_SPEC.MACHINE_GATE_COMMANDS）—— 本轮唯一命令集合，逐条执行、逐条回传 gateId 与该条命令自带的 Q 行回显]
 ${gateContractTable()}
 硬约束（违反即终态阻塞，不进入修复循环，脚本侧按 gateId 对账）：
 · 上面每一条门禁都必须真实运行并在 commands[] 中以同一 gateId 回传；command 原文须与声明逐字一致（只允许空白折叠差异）。
+· argvEcho 必填：逐字回传该条门禁【包装命令自己打印】的那一行 Q|<gateId>|<byteLen>|<base64(声明命令原文)>。禁止自行拼造、禁止改写空白、禁止把 command 字段抄进 Q 行、禁止回传另一条门禁的 Q 行。脚本会用自实现的 base64 独立重算期望值并逐字符比对 —— 不符即终态 GATE_ARGV_NOT_VERBATIM（required 与 record 同样不得放行）。
+· 安全地无法执行某条门禁（缺安全测试环境）时，如实省略 exitCode 并如实留空 argvEcho，绝不为凑字段而伪造执行痕迹。
 · 禁止提交合同之外的任何命令（预读 pyproject/package.json、核实命令是否存在等过程写入 notes，不进 commands[]）；引用未声明的 gateId 或提交未声明的命令 → GATE_COMMAND_NOT_DECLARED，即便 exitCode=0。
 · 禁止省略合同中的任何一条 → BLOCKED_GATE_COMMAND_NOT_EXECUTED。"只交几条绿色命令 + 自报 allPassed:true" 从不构成门禁通过。
 · 禁止改 kind（声明 required 就按 required 回传，声明 record 就按 record 回传）。
@@ -1929,7 +2127,7 @@ ${gateContractTable()}
 · record 命令采集本身失败（命令不存在 / 输出无法解析 / 报告无法落盘）→ recordStatus=RECORD_COLLECTION_FAILED，并在 stderrSummary 说明。
 规则：
 - 首先核对 pyproject.toml / package.json / README / docs / CI，确认命令真实存在；只运行项目真实支持的命令；项目不支持的门禁项记入 skippedGates 并说明原因，不得凭空假设 npm test / ruff / mypy 存在。
-- 每条命令记录 gateId / command / kind / purpose / exitCode / recordStatus / stdoutSummary / stderrSummary（摘要即可，禁止贴超长输出，禁止输出任何 Secret）。
+- 每条命令记录 gateId / command / kind / purpose / argvEcho（该门禁包装命令打印的 Q 行原文，必填）/ exitCode / recordStatus / stdoutSummary / stderrSummary（摘要即可，禁止贴超长输出，禁止输出任何 Secret）。
 - 数据库相关测试优先使用项目已有的安全测试配置/mock；required 命令无法安全运行（缺安全测试环境且无法 mock）→ blockedMissingSafeTestEnv=true；record 命令无法安全运行 → recordStatus=SAFELY_NOT_EXECUTED_AND_RECORDED + finding，不置 blockedMissingSafeTestEnv。
 - record 命令发现的基线问题（测试红/lint 债/安全缺口/性能缺口/缺安全环境）逐条写入 findings（Finding ID|Severity|Evidence|Affected Area|Follow-up），不得静默丢弃。
 - [D2-C Scope 判定归属] Scope / forbidden-file / 治理文件 / pre-existing / HEAD / index 的权威判定由**编排器脚本**基于 Task Delta（WORKTREE_BASELINE↔当前工作区指纹快照）完成，不由你按裸 git status 判定。你若运行 scope 类 required 命令，必须对照 Preflight 基线：**任务前已存在且指纹未变的改动（PRE_EXISTING_UNCHANGED）不算本任务越界**，不得据此判失败；只有本任务新建/新改的文件才计入 Scope。禁止用 git checkout/restore/reset/clean/stash 去"消除"任何 diff。
@@ -2016,6 +2214,17 @@ function gateGuardViolation(g) {
     GATE_CONTRACT_SUBMITTED: cmds.map(c => `${(c && c.gateId) || '(无 gateId)'}:${effGateKind(c)} = ${normGateCommand(c && c.command)}`),
     FILES_CURRENTLY_CHANGED: (impl.FILES_MODIFIED || []).concat(impl.FILES_CREATED || []),
     SAFE_NEXT_ACTION: 'Machine Gate 只执行 TASK_SPEC.MACHINE_GATE_COMMANDS 冻结声明过的门禁：每条命令必须逐条回传其 gateId、命令原文须与声明一致、kind 不得改动、声明过的门禁一条都不能少。沉默省略（只提交若干条绿色命令 + 自报 allPassed:true）与"换一条会绿的命令顶替红门禁"同样构成终态阻塞。若确需增删门禁，由 Max 在治理阶段修订合同后重跑，执行手无权改动。',
+  })
+  const ae = detectGateArgvEcho(cmds, spec)
+  if (ae) return blocked(ae.code, 'Machine Gate', {
+    TASK_ID: spec.TASK_ID,
+    GIT_TIER: ae.tier,
+    GATE_ID: ae.gateId,
+    DETAIL: ae.detail,
+    GATE_CONTRACT_DECLARED: gateDecls(spec).map(d => `${d.gateId}:${d.kind} = ${normGateCommand(d.command)}`),
+    GATE_CONTRACT_SUBMITTED: cmds.map(c => `${(c && c.gateId) || '(无 gateId)'}:${effGateKind(c)} argvEcho=${String((c && c.argvEcho) == null ? '(缺失)' : c.argvEcho).slice(0, 160)}`),
+    FILES_CURRENTLY_CHANGED: (impl.FILES_MODIFIED || []).concat(impl.FILES_CREATED || []),
+    SAFE_NEXT_ACTION: '门禁的 argv 身份由命令自身回显（Q 行）作证，脚本用自实现的 base64 独立重算期望值并逐字符复核。缺失、空白型改动、或 b64 指向另一条命令，都属证据不确定 → 一律 BLOCK，绝不降级为警告：required 与 record 同样不得放行。执行手无权改写 Q 行；如某条声明命令确实无法安全执行，请如实省略 exitCode 并说明原因，而不是伪造 argvEcho。若确需调整门禁命令，由 Max 在治理阶段修订 TASK_SPEC 合同后重跑。',
   })
   return null
 }
@@ -2435,7 +2644,7 @@ return {
     DESTRUCTIVE_GIT_HARD_DENY: GIT_HARD_DENY_SUBCOMMANDS,
     FLASH_FORBIDDEN_GIT_MUTATING: GIT_MUTATING_SUBCOMMANDS,
     SCOPE_JUDGE: 'SCRIPT_TASK_DELTA (baseline↔deterministic byte evidence), not raw git status, not LLM self-reported hash',
-    DEFENSE_LAYERS: ['prompt(FLASH_REPAIR_RULES)', 'orchestrator-precheck(SELF_REPAIR_ELIGIBILITY/REPAIR_SCOPE)', 'command-denylist(gitCommandsRun scan, bypass-aware)', 'post-repair-fingerprint-verify', 'D3-gate-anti-cheat(unsafe-:5432 scan + required-downgrade by gateId)', 'FIX-GOV-001-R1-gate-contract(pre-Implement GATE_SPEC_MALFORMED fail-closed + gateId reconciliation: GATE_COMMAND_NOT_DECLARED / GATE_OMISSION / GATE_KIND_MUTATION)', 'D4-deterministic-byte-evidence(script-pinned command + verbatim rawStdout + format/self-consistency validation + dual-independent-rehash adjudication)', 'immediate-BLOCK-on-violation'],
+    DEFENSE_LAYERS: ['prompt(FLASH_REPAIR_RULES)', 'orchestrator-precheck(SELF_REPAIR_ELIGIBILITY/REPAIR_SCOPE)', 'command-denylist(gitCommandsRun scan, bypass-aware)', 'post-repair-fingerprint-verify', 'D3-gate-anti-cheat(unsafe-:5432 scan + required-downgrade by gateId)', 'FIX-GOV-001-R1-gate-contract(pre-Implement GATE_SPEC_MALFORMED fail-closed + gateId reconciliation: GATE_COMMAND_NOT_DECLARED / GATE_OMISSION / GATE_KIND_MUTATION)', 'D4-deterministic-byte-evidence(script-pinned command + verbatim rawStdout + format/self-consistency validation + dual-independent-rehash adjudication)', 'D4-2-argv-self-echo(fingerprint A line + per-gate Q line printed by the dispatched command itself, re-computed script-side with a self-implemented base64 and compared char-for-char; uncertain or missing echo → BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN / GATE_ARGV_NOT_VERBATIM, record gates blocked the same as required)', 'immediate-BLOCK-on-violation'],
     TOOL_LEVEL_HARD_BLOCK_AVAILABLE: false,
   },
   // ---- D4：内容身份证据链 + 同任务重试产物归属 ----
@@ -2452,7 +2661,8 @@ return {
     TASK_IDENTITIES: { baseline: identityMap(WORKTREE_BASELINE), current: identityMap(currentSnap) },
     TREE_UNITS: Object.keys(WORKTREE_BASELINE.trees || {}).concat(Object.keys(currentSnap.trees || {})),
     RETRY_OWNERSHIP: { status: RETRY_OWNERSHIP.status, retryOf: RETRY_OWNERSHIP.retryOf, artifacts: RETRY_OWNERSHIP.artifacts.slice(), accepted: RETRY_OWNERSHIP.accepted.slice(), rejected: RETRY_OWNERSHIP.rejected.slice() },
-    REMAINING_LIMITATION: 'byte identity 依赖只读执行手原样回传（脚本沙箱无 fs/crypto，已实测）；以"命令逐字一致 + 严格格式/自洽校验 + 双独立 invocation 签名收敛 + Verifier 抽查重跑"把不可信证据降为可检出风险，而非彻底消除。',
+    REMAINING_LIMITATION: 'byte identity 依赖只读执行手原样回传（脚本沙箱无自读字节能力，已实测，SCRIPT_SIDE_HASH_AVAILABLE 仍为 false）；以"命令逐字一致 + 严格格式/自洽校验 + 双独立 invocation 签名收敛 + Verifier 抽查重跑"把不可信证据降为可检出风险，而非彻底消除。D4-2 的 argv 自回显互证同样有三条残余弱点，如实披露：(a) 取证五行包装里 cd \'<root>\' 行位于回显 payload 之外（本仓库根含中文，cd 行入 payload 会让所有派发立刻非 ASCII），故"只改 cd 行的空白型改写"不在 A 行互证覆盖内，仍只由 :308 的命令逐字比较与 Verifier 抽查兜住；(b) A/Q 行由执行手回传，脚本只能对自己下发的命令重算期望值并逐字符比对 —— 脚本自读字节的能力没有被虚构，回传面若整体缺失则判 UNCERTAIN/GATE_ARGV_NOT_VERBATIM，但"证据是否来自真实一次执行"仍不能由脚本自身证明；未真实执行的门禁条目（无数字 exitCode）不进入 Q 行核验，由 required/record 分层与 blockedMissingSafeTestEnv 口径处理；(c) FLASH_ONLY 降级模式下审查者与被审查的这套机器同为 qfmodel，argv 互证只是将"改令成本"提高到"必须同时改写命令与自实现的 base64 输出"，独立性只剩 invocation 隔离一层（人工已知情承担，HD-N-13 乙）。',
+    ARGV_SELF_ECHO: { protocol: FP_PROTOCOL, covers: ['fingerprint A line (payload = body without cd line)', 'per-gate Q line (payload = 该门禁冻结声明命令原文)'], verifyMode: '脚本侧自实现 base64 重算期望行 + 逐字符比较（不复用宽松 norm）', newTerminals: ['BLOCKED_FINGERPRINT_PAYLOAD_NONASCII', 'GATE_ARGV_NOT_VERBATIM'], newEvidenceCodes: ['FINGERPRINT_EVIDENCE_INVALID:ARGV_ECHO_MISSING', 'FINGERPRINT_EVIDENCE_INVALID:ARGV_NOT_VERBATIM:WHITESPACE', 'FINGERPRINT_EVIDENCE_INVALID:ARGV_NOT_VERBATIM:CONTENT'], recordGatesBlockedToo: true, hashCapabilityFabricated: false },
   },
   GIT: baseline,
 }
