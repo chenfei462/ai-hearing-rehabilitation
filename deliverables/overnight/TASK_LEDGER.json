@@ -8,10 +8,10 @@
     "at": "2026-10-10T16:05:46Z",
     "note": "run wf_079d3071-a11 终态 BLOCKED/BLOCKED_GOVERNANCE_CONFLICT，FAILED_PHASE=Implement，ATTEMPTS=0。0/5 Task PASS 判据由流水线取得；实施产物完整留在工作区且未回退。根因是结构性授权通道缺口（F-61），非执行手作弊、非指纹不确定：baseline 与 post 两次取证均 VALID_DETERMINISTIC、headChanged=false、externalChangedDuringTask=[]、stagedAppeared=[]，守卫只因治理路径归属触发。"
   },
-  "goalStatus": "RUNNING-M0-PRE-GATE-CLEARANCE-PHASE-E-SEALED-NEXT-CATALOG-SYNC-THEN-PHASE-H",
-  "lastSafeCommit": "31c53dfd669b8b8c46046852a4a26df58fb02990",
-  "currentHead": "31c53dfd669b8b8c46046852a4a26df58fb02990",
-  "headPointerNote": "2026-10-10T16:24:59Z：FIX-GOV-008 经 HD-N-15 甲一次性人工 bootstrap 封存为 31c53dfd669b8b8c46046852a4a26df58fb02990（2 files, 376+/23-）；保护目录未被扰动。",
+  "goalStatus": "RUNNING-M0-PRE-GATE-CLEARANCE-PHASE-H-DECISION-PACKAGES-THEN-STOP",
+  "lastSafeCommit": "35cf29babdddb7c2b8f5d6c8e970a46daa690ada",
+  "currentHead": "35cf29babdddb7c2b8f5d6c8e970a46daa690ada",
+  "headPointerNote": "2026-10-10T16:29:29Z：catalog 事实同步封存为 35cf29b；FIX-GOV-008 封存为 31c53df；M0 Milestone Gate 仍 NOT_ENTERED。",
   "branch": "feature/m0-baseline",
   "modelPolicy": {
     "allowed": [
@@ -2562,7 +2562,8 @@
       "push/merge/rebase/生产操作",
       "触碰未知 :5432"
     ],
-    "stopAfter": "Phase H"
+    "stopAfter": "Phase H",
+    "phaseG_catalogStatus": "SEALED (35cf29b)"
   },
   "phaseBInterruptedRun": {
     "runId": "wf_04d857ec-9b9",
@@ -3300,5 +3301,55 @@
       "不声称 FIX-GOV-008 已进入 M0 Milestone Gate（M0 门禁 = NOT_ENTERED）",
       "不声称 G-GOV-HARNESS-STATIC 验证了禁用 API 扫描（见 F-63）"
     ]
+  },
+  "phaseF_catalogSync": {
+    "at": "2026-10-10T16:29:29Z",
+    "TASK_CATALOG_COMMIT_SHA": "35cf29babdddb7c2b8f5d6c8e970a46daa690ada",
+    "commitMessageVerbatim": "docs(workflow): sync M0 remediation status",
+    "stagedPathsExactly": [
+      "docs/workflow/TASK_CATALOG.md"
+    ],
+    "notUsed": [
+      "git add .",
+      "git add -A",
+      "push"
+    ],
+    "cachedWhitespaceCheckExit": 0,
+    "diffStat": "1 file changed, 27 insertions(+), 9 deletions(-)",
+    "readBeforeWrite": "§16 要求：先读 catalog(204 行) + 台账 + GOAL_PROGRESS + 已封存 commit，再按事实同步；未依聊天记忆覆盖文件。",
+    "shaVerification": {
+      "rule": "§19：若真实 git history 与 prompt 所列冲突，以 git history 为准",
+      "result": "十项全部 `git cat-file -e <sha>^{commit}` 命中且 message 语义相符 ⇒ 无冲突，未改写任何 sha",
+      "table": {
+        "M0-001": "abc6a78 docs(baseline): record M0-001 repository inventory",
+        "M0-002": "7be3c50 docs(baseline): record M0-002 backend test baseline",
+        "M0-003": "f73cb01 docs(baseline): record M0-003 frontend build baseline",
+        "M0-004": "a78b10f docs(baseline): record M0-004 API/DB/migration baseline audit",
+        "M0-005": "317341b test(baseline): M0-005 集成测试基线重跑，FIX-GOV-001-R1 新门禁合同首次实战",
+        "M0-006": "8c81df5 test(baseline): M0-006 安全基线重跑，HIGH risk 双独立审查通过",
+        "M0-007": "7dcf2f8 docs(baseline): M0-007 性能基线（PERF_BASELINE.md）",
+        "M0-008": "ed36481 docs(baseline): M0-008 部署基线（DEPLOY_BASELINE.md）",
+        "FIX-PERF-03": "227295d test(performance): require successful responses in latency baselines",
+        "FIX-TEST-FLAKE-001": "a41ac70 test(adaptive): make session tests deterministic",
+        "FIX-GOV-008": "31c53df fix(governance): harden machine gate command evidence"
+      }
+    },
+    "whatChanged": [
+      "M0-001..M0-008 Status: BACKLOG → TASK_PASS + 真实 commit（8 处，表列数 12 未变）",
+      "表头 blockquote「全部任务 Status=BACKLOG」限定为「编制时」，避免与事实冲突",
+      "汇总新增一条计数口径说明：92/49/33/10 指原编号任务，FIX-* 不改计数、不改任务 ID、不参与 DAG",
+      "M0 节末新增：8/8 TASK_PASS 一览、M0 Milestone Gate = NOT_ENTERED（含四项待裁决前置）、基线产物份数口径 = HD-N-05 未判定",
+      "新增「M0 缺陷修复附录」四行（7 列，自成表）：FIX-TEST-FLAKE-001 TASK_PASS / FIX-PERF-03 TASK_PASS / FIX-GOV-008 SEALED-PASS-WITH-HD-N-15 / FIX-GOV-009 BACKLOG_REQUIRES_HUMAN_AUTHORIZATION",
+      "附录后如实记录 F-61 OPEN、F-62/F-63 两条新观察、PROJECT_BASELINE_HEALTH 仍 DEGRADED"
+    ],
+    "whatDidNotChange": [
+      "DAG / 依赖列 / Critical Path 逐字未动",
+      "既有任务 ID 零重编号；其余里程碑（M1..M10）Status 全部仍 BACKLOG",
+      "Milestone Definition 未改",
+      "HD-N-05/09/10/14 一律写为待裁决，未提前写 PASS",
+      "M0-008 的 TASK_PASS 附带诚实说明：其 `docker build exitCode=0` 门禁口径仍待 HD-N-09 裁决，任务通过的依据是真实 exitCode=1 以 record 层原样入账"
+    ],
+    "milestoneGateStatus": "NOT_ENTERED",
+    "next": "Phase H：HD-N-05/09/10/14 四份只读 Decision Package（不实施），然后 STOP"
   }
 }
