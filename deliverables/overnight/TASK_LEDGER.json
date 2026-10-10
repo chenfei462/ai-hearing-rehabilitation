@@ -4,9 +4,9 @@
   "currentMilestone": "M0",
   "currentTask": {
     "taskId": "FIX-PERF-03",
-    "state": "REDISPATCHING-FRESH-PER-HUMAN-OPTION-A",
-    "at": "2026-10-10T07:09:46Z",
-    "note": "人工选择（甲）：同 args 全新派发（不 resume）。本链承诺 run 期间零 commit。三文件仍未封存。"
+    "state": "EXECUTING-FLASH-ONLY-PER-HD-N-11",
+    "at": "2026-10-10T07:23:47Z",
+    "note": "人工显式授权 乙 ⇒ 以 executionMode:\"FLASH_ONLY\" 全新派发（args 同上批，不传 resumeFromRunId）。本链承诺 run 期间零 commit；三文件仍未封存。"
   },
   "goalStatus": "PAUSED_FOR_HUMAN_AT_M0_MILESTONE_GATE",
   "lastSafeCommit": "ed36481",
@@ -1100,6 +1100,14 @@
       "zeroTouchReconfirmed": "This batch ran only `netstat -ano`, `tasklist //FI`, `docker ps -a` — no connection, no read of any database, no start/stop of any service or container.",
       "sealedDocPolicy": "BACKEND_TEST_BASELINE.md NB-01 is NOT rewritten (sealed evidence stays as a time-point snapshot); corrections land only in the living log and the ledger.",
       "autonomousChainStance": "NOT self-decided. Proving instance identity would require credentials or writes to a database of unknown ownership."
+    },
+    {
+      "id": "HD-N-11",
+      "at": "2026-10-10T07:23:47Z",
+      "decisionState": "APPROVED-EXECUTION-MODE-FLASH-ONLY-SCOPE-FIX-PERF-03",
+      "resolvedAt": "2026-10-10T07:23:47Z",
+      "decision": "人工裁决 = 乙：授权 FIX-PERF-03 以 executionMode:\"FLASH_ONLY\" 跑完整流水线（D3 显式请求形态）。判据不降低、范围不扩大、治理文件不改、D5 默认 FULL 常量不动。",
+      "blocks": "已解除（原阻塞：FIX-PERF-03 在 Max 额度耗尽下无法以 FULL 取得五个 Task-PASS 判据）。未解除：HD-N-04 的 catalog 治理写子项、HD-N-05、HD-N-09、HD-N-10。"
     }
   ],
   "pendingFixTasks": {
@@ -1197,7 +1205,7 @@
         "cd backend && venv312/Scripts/python.exe -m ruff check app/"
       ],
       "selfProofRequired": "临时把 metrics 用例身份改为匿名，该用例必须 FAILED（证明断言真在把关）；验证后还原且不得提交",
-      "status": "PAUSED_FOR_HUMAN-OPTION-A-NOT-EXECUTABLE",
+      "status": "EXECUTING-FLASH-ONLY-PER-HD-N-11",
       "blockedBy": "HD-N-04（向 docs/workflow/TASK_CATALOG.md 写入 FIX-* 行属治理写）；实施须走 project-feature-delivery task",
       "registeredAt": "2026-10-09T23:10:21Z",
       "humanAuthorization": {
@@ -1221,6 +1229,12 @@
         "at": "2026-10-10T07:16:55Z",
         "result": "BLOCKED / BLOCKED_MODEL_UNAVAILABLE @Preflight（F-29 第 2 次复发，断点前移至第 1 个 Max 调用）",
         "consequence": "甲 路径在 Max 额度恢复前不可执行；本链不自选替代路径。"
+      },
+      "hdN11Authorization": {
+        "grantedBy": "HD-N-11",
+        "mode": "FLASH_ONLY",
+        "scope": "FIX-PERF-03 only, execution mode only",
+        "at": "2026-10-10T07:23:47Z"
       }
     },
     "FIX-PERF-04": {
@@ -1312,7 +1326,7 @@
       "gitWritesByFlash": "none（HEAD 仍 1a62703，staging 空，无破坏性 git 命令）"
     }
   ],
-  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。\n[2026-10-09T19:20:37Z] M0-006 = TASK_PASS（run wf_6c897bee-ab8，mode=FULL，agents=27，toolUses=427，7597134ms，repair=2）。\n[2026-10-09T20:03:41Z] M0-007 = TASK_PASS（run wf_cc12b79d-5be，mode=FULL，agents=15，toolUses=127，1779557ms，repair=0）。\n[2026-10-09T20:43:35Z] M0-008 = TASK_PASS（run wf_dfb3e8e5-ed5，mode=FULL，agents=15，toolUses=158，2196279ms，repair=0）。\n[2026-10-09T20:58:02Z] F-54：:5432 监听进程 6892 → 6740（原生 postgres.exe 服务），历史观测快照过期；实例身份仍未知，零接触纪律不变。已封存交付物未改写。\n[2026-10-09T23:08:36Z] F-44 只读复核（未改仓库文件）：PF-01 独立复现 [401,401,401] + 7 条用例状态映射（仅 metrics 落错误路径）+ 身份矩阵 401/403/200 + 更正\"补 therapist fixture\"（conftest.py:158 已存在）+ 真实 200 路径中位数 4.70ms 证明修正后仍绿 + 建议同批清偿 F-01。新增 F-55（缓存命中样本主导两条用例中位数）。另自查发现 F-56：notes 曾被 \"[object Object]\" 拼接毁掉 7 键正文，已自 6fe4904 原样恢复至 notesPreCorruption。FIX-PERF-03/04 仍待 HD-N-04 落库，自治链未实施测试代码改动。\n[2026-10-09T23:10:41Z] 续记：FIX-PERF-03 / FIX-PERF-04 已登记进 pendingFixTasks（各含 evidenceGrounded、explicitlyNotDoing、gateCommands、selfProofRequired，状态 BACKLOG-GATED-BY-HD-N-04）。本写入按 F-56 建议先做运行时类型断言，并在写后校验原 notes 为逐字节前缀。测试代码与业务代码零改动。\n[2026-10-10T05:55:20Z] HD-N-04 = APPROVED（人工授权，范围仅 FIX-PERF-03；docs/workflow/** 仍列为禁改 ⇒ catalog 插入子项未执行，M0 Exit 该项仍欠）。首跑 wf_e7c7af02-88c BLOCKED/BLOCKED_REPAIR_OUT_OF_SCOPE = F-57（文件型自证门禁与 §16 非持久化互斥 + allowedRepairFiles 不读 SPEC 白名单），编排器未做任何还原、执行手未作弊。独立复跑：A 7 passed / B C 各 1 passed / D 10 passed / E **235 passed 0 failed**（F-01 闭合）/ ruff app/ 291 errors 属 record 存量 / 修正后的零文件负向自证实测 FAIL 且报「有效成功样本数不足」。自建探针文件取 sha256 后 rm 清除，未用破坏性 git。现重新派发取正式三关结论。\n[2026-10-10T06:15:24Z] FIX-PERF-03 重试 run wf_64827cc9-6ae（FULL）在 Task Spec 阶段 **BLOCKED_MODEL_UNAVAILABLE**：机器报错原文为信用额度耗尽（F-29 复发，已加 recurrences 字段），不是模型标识失效——同 run 内两次模型探针与 Classify/Explore/Scope Check 三个 Max 只读角色均已真实产出。Explore 独立逐字节复核了我提交的三条 retryArtifacts sha256 与工作树一致；但 applyRetryOwnership() 在 Task Spec 之后（line 1578）才执行 ⇒ **编排器侧 RETRY_OWNED 判定尚未产生，不得宣称已被机器接受**。本次零仓库写入（HEAD 仍 d7c3092，三文件 sha 与派发前逐字节相同），ATTEMPTS=0，成本 8 agents/39 tool uses/584953 ms。人工选项：(甲) 恢复 Max 额度后以 resumeFromRunId+同 args 复跑（7 个 agent 命中缓存）；(乙) 显式授权 FLASH_ONLY；(丙) 人工直接封存前自行跑门禁。本链不自选、不自动降级。FIX-PERF-03 **未封存**。\n[2026-10-10T06:18:13Z] 自检更正（F-58）：我上一笔记账把\"恢复额度后 resumeFromRunId 复跑\"列为选项（甲），漏掉一条硬前提 —— resume 回放的 Preflight baseline 里 `H|` 行锁死了派发时 HEAD（该 run = d7c3092），而我随后落了记账 commit（→ d8a36ab）；脚本 :580/:627/:2426 把 baseline.head≠current.head 判为 BLOCKED_GIT_HISTORY_MUTATED 且**不参与仲裁** ⇒ 照我原建议做必然假阳性 BLOCK。已按 F-25 纪律保留原文于 redispatch.supersededResumePrecondition / supersededNextAction，更正写入 redispatch.correction 与新 finding **F-58**。正确选项（甲）= 同 args **全新派发**（新 baseline 取当前 HEAD，任务期间我不再 commit；三条 retryArtifacts 因工作树 sha 未变仍成立），代价是 7 个 agent 重跑。终点维持 PAUSED_FOR_HUMAN，本链不自选、不降级。\n[2026-10-10T07:09:46Z] 人工裁决 = 「甲」：以同一 args **全新派发** FIX-PERF-03（新 runId，不传 resumeFromRunId，依据 F-58 的更正），视为在 HD-N-04 原范围内继续授权跑完整流水线。未授权 FLASH_ONLY（乙 未选）、未授权任何治理写、未授权 FIX-PERF-04/FIX-GOV-006/007/HD-N-05/09/10。纪律化一条 F-58 教训：**run 期间本链不再产生任何 commit**，记账一律在终判之后落。派发前三文件 sha256 与两条 run 的 D4 快照逐字节一致，retryArtifacts 可继续提交。\n[2026-10-10T07:16:55Z] 甲 已执行一次并如实受阻：run wf_a5710a52-f4d 在 **Preflight 的 Max 探针**即 BLOCKED_MODEL_UNAVAILABLE（agentCount=2 / totalToolCalls=0 / 11597ms），比第 1 次复发（Task Spec 处渐变断）更靠前——额度已由渐变退化为布尔 false ⇒ FULL 模式结构上不可执行。探针 transcript 逐字节佐证 qmodel_38max 被平台拦截（model:\"<synthetic>\"）而 qfmodel 返回 OK。全程零写入：HEAD 仍 fea2053，三测试文件 sha256 与派发前相同，五判据**一个都未取得**、机器侧 RETRY_OWNED 判定仍未产生。现回 PAUSED_FOR_HUMAN，请人工在 甲-等待 / 乙（显式授权 FLASH_ONLY）/ 丙（人工自跑门禁并封存）之间裁决；本链不自选、不自动降级。",
+  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。\n[2026-10-09T19:20:37Z] M0-006 = TASK_PASS（run wf_6c897bee-ab8，mode=FULL，agents=27，toolUses=427，7597134ms，repair=2）。\n[2026-10-09T20:03:41Z] M0-007 = TASK_PASS（run wf_cc12b79d-5be，mode=FULL，agents=15，toolUses=127，1779557ms，repair=0）。\n[2026-10-09T20:43:35Z] M0-008 = TASK_PASS（run wf_dfb3e8e5-ed5，mode=FULL，agents=15，toolUses=158，2196279ms，repair=0）。\n[2026-10-09T20:58:02Z] F-54：:5432 监听进程 6892 → 6740（原生 postgres.exe 服务），历史观测快照过期；实例身份仍未知，零接触纪律不变。已封存交付物未改写。\n[2026-10-09T23:08:36Z] F-44 只读复核（未改仓库文件）：PF-01 独立复现 [401,401,401] + 7 条用例状态映射（仅 metrics 落错误路径）+ 身份矩阵 401/403/200 + 更正\"补 therapist fixture\"（conftest.py:158 已存在）+ 真实 200 路径中位数 4.70ms 证明修正后仍绿 + 建议同批清偿 F-01。新增 F-55（缓存命中样本主导两条用例中位数）。另自查发现 F-56：notes 曾被 \"[object Object]\" 拼接毁掉 7 键正文，已自 6fe4904 原样恢复至 notesPreCorruption。FIX-PERF-03/04 仍待 HD-N-04 落库，自治链未实施测试代码改动。\n[2026-10-09T23:10:41Z] 续记：FIX-PERF-03 / FIX-PERF-04 已登记进 pendingFixTasks（各含 evidenceGrounded、explicitlyNotDoing、gateCommands、selfProofRequired，状态 BACKLOG-GATED-BY-HD-N-04）。本写入按 F-56 建议先做运行时类型断言，并在写后校验原 notes 为逐字节前缀。测试代码与业务代码零改动。\n[2026-10-10T05:55:20Z] HD-N-04 = APPROVED（人工授权，范围仅 FIX-PERF-03；docs/workflow/** 仍列为禁改 ⇒ catalog 插入子项未执行，M0 Exit 该项仍欠）。首跑 wf_e7c7af02-88c BLOCKED/BLOCKED_REPAIR_OUT_OF_SCOPE = F-57（文件型自证门禁与 §16 非持久化互斥 + allowedRepairFiles 不读 SPEC 白名单），编排器未做任何还原、执行手未作弊。独立复跑：A 7 passed / B C 各 1 passed / D 10 passed / E **235 passed 0 failed**（F-01 闭合）/ ruff app/ 291 errors 属 record 存量 / 修正后的零文件负向自证实测 FAIL 且报「有效成功样本数不足」。自建探针文件取 sha256 后 rm 清除，未用破坏性 git。现重新派发取正式三关结论。\n[2026-10-10T06:15:24Z] FIX-PERF-03 重试 run wf_64827cc9-6ae（FULL）在 Task Spec 阶段 **BLOCKED_MODEL_UNAVAILABLE**：机器报错原文为信用额度耗尽（F-29 复发，已加 recurrences 字段），不是模型标识失效——同 run 内两次模型探针与 Classify/Explore/Scope Check 三个 Max 只读角色均已真实产出。Explore 独立逐字节复核了我提交的三条 retryArtifacts sha256 与工作树一致；但 applyRetryOwnership() 在 Task Spec 之后（line 1578）才执行 ⇒ **编排器侧 RETRY_OWNED 判定尚未产生，不得宣称已被机器接受**。本次零仓库写入（HEAD 仍 d7c3092，三文件 sha 与派发前逐字节相同），ATTEMPTS=0，成本 8 agents/39 tool uses/584953 ms。人工选项：(甲) 恢复 Max 额度后以 resumeFromRunId+同 args 复跑（7 个 agent 命中缓存）；(乙) 显式授权 FLASH_ONLY；(丙) 人工直接封存前自行跑门禁。本链不自选、不自动降级。FIX-PERF-03 **未封存**。\n[2026-10-10T06:18:13Z] 自检更正（F-58）：我上一笔记账把\"恢复额度后 resumeFromRunId 复跑\"列为选项（甲），漏掉一条硬前提 —— resume 回放的 Preflight baseline 里 `H|` 行锁死了派发时 HEAD（该 run = d7c3092），而我随后落了记账 commit（→ d8a36ab）；脚本 :580/:627/:2426 把 baseline.head≠current.head 判为 BLOCKED_GIT_HISTORY_MUTATED 且**不参与仲裁** ⇒ 照我原建议做必然假阳性 BLOCK。已按 F-25 纪律保留原文于 redispatch.supersededResumePrecondition / supersededNextAction，更正写入 redispatch.correction 与新 finding **F-58**。正确选项（甲）= 同 args **全新派发**（新 baseline 取当前 HEAD，任务期间我不再 commit；三条 retryArtifacts 因工作树 sha 未变仍成立），代价是 7 个 agent 重跑。终点维持 PAUSED_FOR_HUMAN，本链不自选、不降级。\n[2026-10-10T07:09:46Z] 人工裁决 = 「甲」：以同一 args **全新派发** FIX-PERF-03（新 runId，不传 resumeFromRunId，依据 F-58 的更正），视为在 HD-N-04 原范围内继续授权跑完整流水线。未授权 FLASH_ONLY（乙 未选）、未授权任何治理写、未授权 FIX-PERF-04/FIX-GOV-006/007/HD-N-05/09/10。纪律化一条 F-58 教训：**run 期间本链不再产生任何 commit**，记账一律在终判之后落。派发前三文件 sha256 与两条 run 的 D4 快照逐字节一致，retryArtifacts 可继续提交。\n[2026-10-10T07:16:55Z] 甲 已执行一次并如实受阻：run wf_a5710a52-f4d 在 **Preflight 的 Max 探针**即 BLOCKED_MODEL_UNAVAILABLE（agentCount=2 / totalToolCalls=0 / 11597ms），比第 1 次复发（Task Spec 处渐变断）更靠前——额度已由渐变退化为布尔 false ⇒ FULL 模式结构上不可执行。探针 transcript 逐字节佐证 qmodel_38max 被平台拦截（model:\"<synthetic>\"）而 qfmodel 返回 OK。全程零写入：HEAD 仍 fea2053，三测试文件 sha256 与派发前相同，五判据**一个都未取得**、机器侧 RETRY_OWNED 判定仍未产生。现回 PAUSED_FOR_HUMAN，请人工在 甲-等待 / 乙（显式授权 FLASH_ONLY）/ 丙（人工自跑门禁并封存）之间裁决；本链不自选、不自动降级。\n[2026-10-10T07:23:47Z] HD-N-11 = **乙（人工显式授权 FLASH_ONLY，范围仅 FIX-PERF-03 的执行模式）**。这是 D3 要求的调用方显式请求形态，不是自动降级；模式经 args 传入，**脚本顶部 EXECUTION_MODE 仍为 FULL、任何治理文件零改动**。qfmodel 可用性有探针 transcript 字节证据（qmodel_38max 侧 model:\"<synthetic>\" + credit 提示 / qfmodel 侧 OK）。判据一条不降：Machine Gate(真实 exitCode) ∧ 独立 Review（HIGH ⇒ A+B 双独立均 PASS）∧ Verify ∧ Task Delta ∧ Governance Guard；范围一条不扩（FIX-PERF-04 / FIX-GOV-006 / 007 / HD-N-05 / 09 / 10 仍未授权）。依 F-58 纪律先记账后派发，run 期间零 commit。",
   "pausedAt": "2026-10-09T14:28:05Z",
   "timestampCorrections": [
     {
@@ -2123,5 +2137,17 @@
     },
     "explicitlyNotDoing": "不自选、不自动降级、不把\"Flash 可用\"当作绕过人工授权的理由、不在取得终判前 commit 那三个测试文件。",
     "stillValidAuthorization": "HD-N-04 的批准仍然有效且范围未变（仅 FIX-PERF-03）；本条只是\"用什么执行模式把它跑完\"的裁决请求，不扩大任何范围。"
+  },
+  "hdN11Decision": {
+    "at": "2026-10-10T07:23:47Z",
+    "asked": "HD-N-11：甲（FULL 全新派发）已在 Preflight 的 Max 探针处结构性受阻，FIX-PERF-03 用哪种方式跑完（甲-等待 / 乙 显式授权 FLASH_ONLY / 丙 人工自跑门禁并封存）。",
+    "humanChoice": "乙",
+    "humanChoiceVerbatim": "乙 授权 FLASH_ONLY",
+    "grantedByThisChoice": "FIX-PERF-03 以 `executionMode:\"FLASH_ONLY\"` 运行完整流水线（Preflight → Classify → Explore → Scope Check → Task Spec → Implement → Machine Gate → Repair(≤3) → Review A+B → Verify → Report）。\n这是 D3 节所要求的**调用方显式请求**形态：政策禁止任何自动降级，故本次授权把降级从\"自治链的擅自选择\"变为\"人工明示授权\"。",
+    "notGrantedByThisChoice": "不扩大任务范围：HD-N-04 的批准范围仍仅限 FIX-PERF-03；FIX-PERF-04 / FIX-GOV-006 / FIX-GOV-007 / HD-N-05 / HD-N-09 / HD-N-10 一律仍未授权。\n不授权任何治理写：`AGENTS.md` / `.qoder/rules/**` / `.qoder/workflows/**` / `.qoder/workflow-state/**` / `.gitignore` / `.github/**` / `docs/workflow/**` 全部保持禁改。**模式经 args 传入，不需要也不允许修改脚本顶部 `EXECUTION_MODE` 常量**（D5 第 2 条明文允许调用传参）。\n不授权封存三测试文件之外的任何文件；不授权 push / merge / rebase / reset / clean / stash。\n不降低任何判据：Task PASS 仍需 Machine Gate(真实 exitCode) ∧ 独立 Review（HIGH ⇒ A+B 两个彼此不可见的独立 invocation 均 PASS）∧ Verify TASK_PASS ∧ Task Delta ∧ Governance Guard。",
+    "runtimeModelEvidence": "降级在本模式下**结构上可执行**有字节证据：run wf_a5710a52-f4d 的两枚探针 transcript —— qmodel_38max 侧 `model\":\"<synthetic>\"` 正文为 credit 提示（平台拦截），qfmodel 侧 `model\":\"qfmodel\"` 返回 OK。FLASH_ONLY 下所有决策角色恒为 qfmodel 且脚本路由守卫在任何 agent() 之前拦截违规路由。",
+    "defaultPolicyUntouched": "D5「默认即双模型」不受本批影响：脚本顶部 `EXECUTION_MODE` 仍为 `FULL`，本批只在**这一次调用**传 `executionMode:\"FLASH_ONLY\"`。Max 额度恢复后 FIX-PERF-03 之外的任务与后续批次回到 FULL。",
+    "orchestrationPrecondition": "依 F-58 纪律：**run 期间零 commit**（本条记账先落，故新 run 的 baseline 锁在记账后的 HEAD）。派发前逐字节复核三文件 sha256 未变，retryArtifacts 三条 64-hex 继续有效。",
+    "terminalStateRule": "若 FLASH_ONLY run 也 BLOCKED，本链不得改口称\"已按人工授权尝试过两种模式\"来软化结论；如实记录终态并继续 PAUSED_FOR_HUMAN。五判据未全绿 ⇒ 绝不 commit 三文件。"
   }
 }
