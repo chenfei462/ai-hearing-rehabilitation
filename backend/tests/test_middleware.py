@@ -28,8 +28,12 @@ async def test_timing_middleware_emits_process_time_header(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_metrics_endpoint_is_available(client: AsyncClient):
-    response = await client.get("/api/metrics")
+async def test_metrics_endpoint_is_available(client: AsyncClient, therapist_token: str):
+    """/api/metrics 仅合法听力师身份可得 200（匿名请求返回 401，不属于该用例语义）。"""
+    response = await client.get(
+        "/api/metrics",
+        headers={"Authorization": f"Bearer {therapist_token}"},
+    )
 
     assert response.status_code == 200
     assert "requests" in response.json()["data"]

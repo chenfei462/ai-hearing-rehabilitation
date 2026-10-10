@@ -44,6 +44,36 @@ class TestTherapistOnlyEndpoints:
         assert body["code"] == 0
         assert isinstance(body["data"], list)
 
+    async def test_metrics_requires_auth(self, client: AsyncClient):
+        """未认证请求 /api/metrics 应返回 401"""
+        resp = await client.get("/api/metrics")
+        assert resp.status_code == 401
+
+    async def test_metrics_rejects_normal_user(
+        self, client: AsyncClient, auth_token: str
+    ):
+        """普通用户 (role=patient) 访问 /api/metrics 应返回 403"""
+        resp = await client.get(
+            "/api/metrics",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert resp.status_code == 403
+        body = resp.json()
+        assert body["detail"]["code"] == 40301
+
+    async def test_metrics_allows_therapist(
+        self, client: AsyncClient, therapist_token: str
+    ):
+        """听力师 (role=therapist) 可以正常访问 /api/metrics"""
+        resp = await client.get(
+            "/api/metrics",
+            headers={"Authorization": f"Bearer {therapist_token}"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == 0
+        assert "requests" in body["data"]
+
 
 @pytest.mark.asyncio
 class TestUserEndpointsWithRoles:
