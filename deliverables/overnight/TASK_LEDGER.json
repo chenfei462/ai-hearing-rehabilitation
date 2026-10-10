@@ -8,10 +8,10 @@
     "at": "2026-10-10T16:05:46Z",
     "note": "run wf_079d3071-a11 终态 BLOCKED/BLOCKED_GOVERNANCE_CONFLICT，FAILED_PHASE=Implement，ATTEMPTS=0。0/5 Task PASS 判据由流水线取得；实施产物完整留在工作区且未回退。根因是结构性授权通道缺口（F-61），非执行手作弊、非指纹不确定：baseline 与 post 两次取证均 VALID_DETERMINISTIC、headChanged=false、externalChangedDuringTask=[]、stagedAppeared=[]，守卫只因治理路径归属触发。"
   },
-  "goalStatus": "RUNNING-M0-PRE-GATE-CLEARANCE-PHASE-H-DECISION-PACKAGES-THEN-STOP",
+  "goalStatus": "STOPPED-AFTER-PHASE-H-FOUR-DECISION-PACKAGES-AWAITING-HUMAN",
   "lastSafeCommit": "35cf29babdddb7c2b8f5d6c8e970a46daa690ada",
-  "currentHead": "35cf29babdddb7c2b8f5d6c8e970a46daa690ada",
-  "headPointerNote": "2026-10-10T16:29:29Z：catalog 事实同步封存为 35cf29b；FIX-GOV-008 封存为 31c53df；M0 Milestone Gate 仍 NOT_ENTERED。",
+  "currentHead": "4c3bfe5",
+  "headPointerNote": "2026-10-10T16:48:08Z：Phase H 四份包入账后完成去重复查（F-64 降格、F-66 限定为新侧面、F-65 确认非重复），HD-N-05/09/10/14 全部 PENDING。",
   "branch": "feature/m0-baseline",
   "modelPolicy": {
     "allowed": [
@@ -1184,6 +1184,55 @@
       "impact": "门禁名与门禁证据不符 = 误读风险（读者会以为扫描真的跑了）。§8/§9 的实质要求未受影响，因为独立的那条门禁覆盖了它；本批未声称该门禁完成了扫描（上一轮实施者的这一过度声称已被三个 read-only invocation 独立指出）。",
       "disposition": "OPEN；FIX-GOV-009 之后的治理批次应把该门禁改为真正可达的扫描命令（或改名 G-GOV-HARNESS-SYNTAX 并保留 G-GOV-NO-FORBIDDEN-API-IN-DIFF）。本轮同样因 §10 字节一致性要求而不改。",
       "status": "OPEN"
+    },
+    "F-64": {
+      "id": "F-64",
+      "at": "2026-10-10T16:46:27Z",
+      "severity": "P1-CI-CONFIG",
+      "foundBy": "Phase H HD-N-10 只读取证包（编排器复核 .github/workflows/ci.yml:3-6 原文确认）",
+      "title": "CI 触发分支为 [main, develop]，而本仓库真实主分支为 master ⇒ 主分支从未跑过 CI",
+      "detail": "ci.yml:4-6 `on: push branches [main, develop]` / `pull_request branches [main]`；`.qoder/rules/10-project.md` 明定主分支为 master，git 记录与之一致。docker-build job 另有 `if: github.ref == 'refs/heads/main' && push` 二次门。⇒ 所有以『CI 既有配置』为口径的证据（尤其 80-testing.md 的 postgres 集成 job 与 HD-N-09 选项丁）在本仓库当前分支策略下不可得。",
+      "impact": "『把需要真实 postgres/docker 的证据外包给 CI』这一路径存在盲区；Release Gate 第 4/9 条若打算引 CI 为证，需先修触发分支。",
+      "status": "DUPLICATE-OF-SEC-SB03-RECORDED-NOT-FIXED",
+      "disposition": "DEFERRED — 本夜不实施（属 .github/** 治理路径，且未获人工授权）；交人工与 HD-N-09/HD-N-10 一并裁决。",
+      "duplicateOf": "SEC-SB03",
+      "alsoCoveredBy": "F-51（P1-RELEASE-CHANNEL，同一事实的第二处已记录：ci.yml:3-7 触发分支与主干不符）",
+      "countedInFindingsTotal": false,
+      "reclassificationNote": "我先把它当 Phase H 的新缺陷写成 F-64，回账才发现 SEC-SB03（P0，status=OPEN-RECORDED-NOT-FIXED，GOAL_PROGRESS:372 原文含『push: [main, develop] / pull_request: [main]，实有分支 master』并已路由 HD-N-07）与 F-51（2026-10-09，ci.yml 全文审计）早已逐字记录同一事实 ⇒ 按本链 F-59 先例降格为 SEC-SB03 的复现证据条目，不计入缺陷总数。原 title/detail/impact/disposition 文字原文保留不删。",
+      "reproductionEvidence": "2026-10-11 Phase H 只读复核 ci.yml:3-6 原文，与 SEC-SB03/F-51 记录一致（第 3 次独立观测）；新增的可行动信息只有一条：它使 HD-N-09 选项丁与 HD-N-10 选项③（把证据外包给 CI）在本仓库当前分支策略下不可得。",
+      "routingMerge": "并入既有 HD-N-07 / OPS-001，不另开裁决项"
+    },
+    "F-65": {
+      "id": "F-65",
+      "at": "2026-10-10T16:46:27Z",
+      "severity": "P3-BOOKKEEPING-ACCURACY",
+      "foundBy": "Phase H HD-N-05 只读取证包 + 编排器实测复核",
+      "title": "GOAL_PROGRESS.md:363 对 F-17 的转述与台账 F-17 原文冲突，且其口径已被实测证伪",
+      "detail": "GOAL_PROGRESS:363 写成『Catalog 正文声明 M0 Task 数与实际条目数不符（记录 8 / 实列 7）』；实测 `grep -c '^| M0-00' docs/workflow/TASK_CATALOG.md` = 8（同步前后都是 8 行）⇒ 任务数并无不符。台账 F-17 原文『M0 Exit says 8 baseline docs; MILESTONES.md deliverables list names 7』才是真问题：漏列的是基线【文档名】，且 MILESTONES.md 同文件自相矛盾（Exit 说 8、Deliverables 列 7，漏 INTEGRATION_BASELINE）。",
+      "impact": "夜间日志自身的一处错误转述若被下游引用，会把裁决引向『重数任务行』而非『补文档清单』。",
+      "status": "OPEN",
+      "disposition": "原文不删；本轮以带日期的订正行如实追加（本链既有『原误报文字原文保留不删』惯例）。真实修复（MILESTONES.md 补齐）属 docs/workflow/** 治理写，须人工/Max，即 HD-N-05。",
+      "relatedTo": "F-17",
+      "notDuplicateOfF17Because": "F-17 是 catalog/MILESTONES 的【清单漏列】本身（真实缺陷，仍需 HD-N-05 治理修复）；F-65 是夜间日志对 F-17 的【错误转述】（GOAL_PROGRESS:363 写成任务数 8/7 不符）。两个对象、两处修复。",
+      "lineReferenceDrift": "本条与 GOAL_PROGRESS 内所写的 :363 是插入前编号；GOAL_PROGRESS 顶部追加 3 条状态条目后，被订正的 F-17 行现为该文件 :366。引用应以『Open Findings 表内 F-17 行』为准，行号只作辅助定位。"
+    },
+    "F-66": {
+      "id": "F-66",
+      "at": "2026-10-10T16:46:27Z",
+      "severity": "P1-GOVERNANCE-GUARD-GAP",
+      "foundBy": "Phase H HD-N-10 只读取证包（编排器复核 backend/app/main.py:40-52 与 app/core/config.py:41）",
+      "title": "现有 :5432 破坏性操作守卫只检查【命令文本】，拦不住『应用启动副作用』这条真实写入路径",
+      "detail": "`scanUnsafeDbCommand`（project-feature-delivery.js:999-1005）在 :2188/:409/:2075/:2080 三处对自报命令做正则匹配，命中即 BLOCKED_UNSAFE_DATABASE_TARGET。但 `app/main.py` 的 lifespan 在裸跑 `uvicorn app.main:app` 时无条件 `await init_database()` + `await seed_data()`，默认 DATABASE_URL（core/config.py:41）指向 localhost:5432 ⇒ 一条不含 5432 字样的合法启动命令即可对未知宿主库执行 DDL + 写入，守卫全程无从触发。",
+      "impact": "夜间链只要『顺手起一次服务』就可能改写宿主库；这与 D3 反作弊第②条想要保护的对象直接相关，属真实暴露面而非理论风险。",
+      "status": "OPEN",
+      "disposition": "DEFERRED — 本夜零改动。候选口径（供人工裁）：为 required 门禁增设『裸跑应用启动』禁令或把 DATABASE_URL 强制为显式非 5432 的测试串；与 HD-N-10 ①+② 同批裁决。",
+      "priorArt": {
+        "SEC-SB31": "P0 / OPEN-RECORDED-NOT-FIXED：main.py:46/:49 无条件 init_database()+seed_data()、config.py:41 默认串 localhost:5432、impact 字段已明文『本 Chain 全程禁止 uvicorn app.main:app』。⇒ F-66 不得声称发现了这条写入路径。",
+        "F-24": "P1-BLOCKING-COUPLING：已确立『守卫只遍历执行手提交的 commands[]』这一机制性盲区（沉默省略维度）。⇒ F-66 不得声称发现了命令文本审查范围这一机制。"
+      },
+      "novelAspectOnly": "新内容仅一点：守卫的匹配对象是【命令字符串】，而真实破坏力来自【命令的运行时副作用】，二者语义层不同，故一条不含 5432 字样的合法启动命令可完全绕开 BLOCKED_UNSAFE_DATABASE_TARGET。这是 SEC-SB31 的暴露面为何至今无机器拦截的解释，而非第二个独立缺陷。",
+      "notCountedAsNewDiscovery": false,
+      "severityNote": "维持 P1-GOVERNANCE-GUARD-GAP：缺口本身未被 SEC-SB31/F-24 覆盖，但其被保护对象已有 P0 记录"
     }
   },
   "humanDecisionsRequired": [
@@ -1244,7 +1293,9 @@
       "blocks": "M0 Exit deliverable checklist",
       "decisionPackageRoutedAt": "2026-10-10T10:23:36Z",
       "decisionPackageRoutedBy": "人工（M0 PRE-GATE HUMAN DECISION CLEARANCE（2026-10-10） §1.E：不得根据编号猜测，须读 ledger/TASK_CATALOG/decision records/pendingFixTasks 找真实内容，只形成 Decision Package，不得实施）",
-      "statusNote": "DECISION-PACKAGE-REQUIRED-NOT-IMPLEMENTED（原状态仍 OPEN，未因本批裁决而解除）"
+      "statusNote": "DECISION-PACKAGE-REQUIRED-NOT-IMPLEMENTED（原状态仍 OPEN，未因本批裁决而解除）",
+      "decisionPackage": "见 phaseH_decisionPackages.packages['HD-N-05']（只读，未实施）",
+      "decisionState": "PENDING-HUMAN-DECISION"
     },
     {
       "id": "HD-N-06",
@@ -1287,7 +1338,10 @@
       },
       "decisionPackageRoutedAt": "2026-10-10T10:23:36Z",
       "decisionPackageRoutedBy": "人工（M0 PRE-GATE HUMAN DECISION CLEARANCE（2026-10-10） §1.D/§13：暂不授权实施，状态 NEEDS_DECISION_PACKAGE，必须先比较 COLD_ONLY / WARM_ONLY / DUAL_BASELINE）",
-      "statusNote": "NEEDS-DECISION-PACKAGE（三选项对比 + 六项说明：测量定义/缓存处理/阈值语义/CI 稳定性/生产代表性/迁移成本；禁止本轮实施；在此之前禁止修改性能基线语义）"
+      "statusNote": "NEEDS-DECISION-PACKAGE（三选项对比 + 六项说明：测量定义/缓存处理/阈值语义/CI 稳定性/生产代表性/迁移成本；禁止本轮实施；在此之前禁止修改性能基线语义）",
+      "decisionPackage": "见 phaseH_decisionPackages.packages['HD-N-09']（只读，未实施）",
+      "decisionState": "PENDING-HUMAN-DECISION",
+      "materialRevision": "原『结构性不可达』判定下调为 PARTIAL（一行 `name:` 即可修，实测 exit 0）；并新增第二重拦截：今日 Docker daemon 未运行（docker info exit 1）"
     },
     {
       "id": "HD-N-10",
@@ -1300,7 +1354,10 @@
       "autonomousChainStance": "NOT self-decided. Proving instance identity would require credentials or writes to a database of unknown ownership.",
       "decisionPackageRoutedAt": "2026-10-10T10:23:36Z",
       "decisionPackageRoutedBy": "人工（M0 PRE-GATE HUMAN DECISION CLEARANCE（2026-10-10） §1.F：同 HD-N-05，读真实记录形成 Decision Package，不得实施）",
-      "statusNote": "DECISION-PACKAGE-REQUIRED-NOT-IMPLEMENTED（:5432 未知实例仍禁止触碰，BLOCKED_UNSAFE_DATABASE_TARGET 继续有效）"
+      "statusNote": "DECISION-PACKAGE-REQUIRED-NOT-IMPLEMENTED（:5432 未知实例仍禁止触碰，BLOCKED_UNSAFE_DATABASE_TARGET 继续有效）",
+      "decisionPackage": "见 phaseH_decisionPackages.packages['HD-N-10']（只读，未实施）",
+      "decisionState": "PENDING-HUMAN-DECISION",
+      "materialRevision": "PID 由旧记 6740 漂移为实测 6888；身份结论不变 = 原生 Windows 服务 postgresql-x64-15、非容器（版本串 15.19 与 listen_addresses='*' 属子代理报告、编排器未复跑，见 phaseH_decisionPackages.orchestratorIndependentVerification.notIndependentlyReverified）；新增真实写入向量 F-66 与 CI 盲区 F-64"
     },
     {
       "id": "HD-N-11",
@@ -1337,7 +1394,8 @@
       "decision": "追认或撤销 RATIFY-LINT-TIER（见 ratificationItems[0]）：FIX-TEST-FLAKE-001 的 lint 门禁分层由 SPEC 调整为 required=G-LINT-APP-CI、record=G-LINT-APP（真实 exitCode=1 原样保留）。",
       "knownResidualWeakness": "若追认，则「编排器派发文本」与「SPEC 落地口径」之间允许一次经 Review/Verify 认可的再分层；若不追认，则该任务必须重跑并 MACHINE_FAIL。本链不自行认定哪种口径为准。",
       "blocks": "不阻塞 Phase D（FIX-GOV-008 已授权、baseline 就绪）；仅影响 F-13 清偿的验收口径归档。",
-      "outcome": ""
+      "outcome": "",
+      "decisionPackage": "见 phaseH_decisionPackages.packages['HD-N-14']（只读，未批准）"
     },
     {
       "id": "HD-N-15",
@@ -1943,7 +2001,7 @@
     },
     "caveat": "快照在本账本写盘之前枚举，可能含 TASK_LEDGER.json/GOAL_PROGRESS.md 自身的上一版哈希（自指项）；后续任务的 pre-existing 判据只取 treeUnits 与非记账路径。"
   },
-  "pausedReasonCurrent": "M0 基线 DAG 8/8 TASK_PASS，Milestone Gate 的 Exit 欠三项人工裁决：HD-N-04（向 docs/workflow/TASK_CATALOG.md 写入 FIX-*/SEC-*/OPS-*/PRIV-* 行，治理写）、HD-N-05（基线文档 8 vs 7 口径）、HD-N-09（M0-008 的 docker build 门禁口径 甲/乙/丙）。下游另有 HD-N-10（宿主 :5432 实例身份）。非模型不可用、非配额、非环境阻塞；自治链无权改 docs/workflow/**，亦不自选口径。 [2026-10-09T21:00:38Z 追加 HD-N-10]",
+  "pausedReasonCurrent": "依 §12/§28/§29：Phase H 之后立即 STOP。四项待人工裁决（HD-N-05/09/10/14）未定，禁止进入 M0 Milestone Gate，禁止进入 M1，禁止自动继续全项目 Goal。",
   "m005LatestRun": {
     "taskId": "M0-005-integration-test-baseline",
     "runId": "wf_5a685efc-fc6",
@@ -3351,5 +3409,121 @@
     ],
     "milestoneGateStatus": "NOT_ENTERED",
     "next": "Phase H：HD-N-05/09/10/14 四份只读 Decision Package（不实施），然后 STOP"
+  },
+  "phaseH_decisionPackages": {
+    "at": "2026-10-10T16:46:27Z",
+    "mode": "READ-ONLY（四份并行只读取证 invocation；零实施、零写入、零 git 变更——已复核 git status 仅 pre-existing 未跟踪保护目录、HEAD 未动）",
+    "policyDisclosure": "依 §31，额度受限期间由当前可用模型继续【只读】取证；这些包是证据汇编，不是 Max 裁决，也不得被当作批准。§29/§28 边界未被触碰：未进 M0 Milestone Gate、未进 M1。",
+    "packages": {
+      "HD-N-05": {
+        "topic": "M0 基线文档 8 vs 7 口径",
+        "rootCause": "不是缺件、也不是两任务共用一文件，而是【清单漏列】：被省略的一项 = M0-005 / INTEGRATION_BASELINE.md。两处漏列互相印证——(a) `docs/workflow/MILESTONES.md` 同文件自相矛盾：Exit 行写「8 个基线文档落盘」，Deliverables 行只点 7 个名字且无 INTEGRATION_BASELINE；(b) `docs/workflow/TASK_CATALOG.md` 的 M0-005 行只写「并记录；TODO.md 未勾选项…」未命名 .md 文件，故按行枚举得 7。",
+        "diskTruth": "磁盘 8 份齐全，且与 8 个封存 commit 一一 1:1（编排器本轮实测 grep -c '^| M0-00' = 8）",
+        "crossCheck": "编排器复核 `sed -n '12,15p' docs/workflow/MILESTONES.md` 与 `grep '^| M0-005' TASK_CATALOG.md`（后者对 deliverables/baseline/*.md 零匹配）⇒ 与子代理结论一致",
+        "newBookkeepingDefect": "GOAL_PROGRESS.md:363 把 F-17 转述为「Catalog 正文声明 M0 Task 数与实际条目数不符（记录 8 / 实列 7）」——已被实测证伪（catalog 确为 8 行）。台账 F-17 原文（『M0 Exit says 8 baseline docs; MILESTONES.md deliverables list names 7』）才是正确口径 ⇒ 登记 F-65，原文不删。",
+        "twoSevensAreDifferent": "MILESTONES:15 的 7 = 8 减 INTEGRATION；而 `ls *_BASELINE.md` 的 7 = 8 减 REPO_INVENTORY（命名巧合，不可混用）",
+        "impact": "INTEGRATION_BASELINE 是被实名消费的证据源（SECURITY_BASELINE 多处直引其 F-M0005-01、PERF_BASELINE:181；ledger F-19 集成三连失败只存于该文件）⇒ 若采『7 口径』将使 4 条 P0 与 FIX-INT-* 失去可追溯出处",
+        "options": "A 裁定 8 为准并补齐两处清单（治理写，需人工/Max）；B 裁定『基线文档』仅指 *_BASELINE.md（则 REPO_INVENTORY 须另行定位，且与 abc6a78 冲突）；C 份数退出验收判据、改按任务→产物 1:1 逐条核对",
+        "recommendationFromPackage": "A（可叠加 C）",
+        "decisionState": "PENDING-HUMAN-DECISION",
+        "implemented": false
+      },
+      "HD-N-09": {
+        "topic": "docker compose 项目名为空 ⇒ catalog M0-008 门禁『docker build exitCode=0』",
+        "rootCauseConfirmed": "主因确为 compose 项目名解析为空，且空串由仓库根目录名非 ASCII 造成；三种正交只读实验交叉证明：`COMPOSE_PROJECT_NAME=hdtest docker compose config` → exit 0 且 `name: hdtest`；换 ASCII 目录名的既有 worktree 跑同一文件 → 无项目名错误；`docker-compose`（v5.1.4）同样报 `project name must not be empty` ⇒ 非 CLI 写法问题。文件侧：docker-compose.yml 无顶层 `name:`、.env.example 无 COMPOSE_PROJECT_NAME、无 override 文件。",
+        "structuralUnreachableVerdict": "PARTIAL，不是永久不可达 —— 它是【一行配置可修】的缺陷（实验 1 直接证 exit 0）；且 catalog 字面门禁写的是 `docker build`（per-Dockerfile），根本不经过 compose 项目名解析，其『结构性不可达』对该字面命令不成立",
+        "NEW_SECOND_BLOCKER": "今日 Docker 守护进程未运行：`docker info` exit 1（npipe dockerDesktopLinuxEngine 不可达）⇒ 本轮『per-Dockerfile build 取绿证』这类选项今天物理上不可执行；这与 2026-10-10 M0-008 当时 daemon 可通（DEPLOY_BASELINE.md:18 记 Server.Version 29.5.2 exit 0）形成时间差，须如实区分",
+        "wordingInconsistencyInRecords": "TASK_CATALOG.md:30 验收列写『docker compose build 成功』而 Gate 列写『docker build exitCode=0』；RELEASE_CRITERIA.md:75 又定义为 `docker compose build` ⇒ 三处口径不一，属裁决必答项",
+        "deliverableHonesty": "DEPLOY_BASELINE.md 如实记录：:33 G-COMPOSE-CONFIG exit 1 为『合法存量发现』、:34 G-BUILD exit 1、:58-74 逐字 stderr 且注明失败早于任何构建动作、零镜像副作用；spec 里 G-BUILD kind=record 并明令禁止用 -p 改写冻结命令",
+        "options": "甲 维持 record + 把 catalog Gate 列改为与实测一致并把构建证明移交 Release Gate/OPS-002（削弱：M0 层无 required Docker 构建证据）；乙 改判 per-Dockerfile build 为等效证据（与 deployment-guide.md:89,94 与 CI 既有形态同构；今天受 daemon 未运行阻塞；不覆盖 compose 拓扑/healthcheck）；丙 立修复任务给 compose 加 `name:`（根治且与路径解耦，但触碰部署配置，需治理批准 + 新 SPEC）；丁 以 CI docker-build job 为等效证据（当前 gh 不可用且该 job 仅 main push 触发 ⇒ 证据不可得）",
+        "recommendationFromPackage": "乙 + 丙 组合；甲仅作短期留痕，不推荐单独采用（把缺失改写成定义变更）",
+        "m0GateImpact": "未裁决则该证据项按 90-quality-gates 证据纪律只能记 missing_evidence ⇒ MILESTONE_BLOCKED；Release Gate 第 9 条在 RELEASE_CRITERIA.md:75 现措辞下，于『未改配置的中文路径 + 今日 daemon 未运行』双重条件下恒不可满足",
+        "decisionState": "PENDING-HUMAN-DECISION",
+        "implemented": false,
+        "NEW_SECOND_BLOCKER_note": "『今日 daemon 未运行』为时点事实（docker info exit 1），与 F-54 同类属观测快照过期问题；引用它作裁决依据时须与 2026-10-10 M0-008 当时的 exit 0 并记，不得合并成单一『一直不可用』结论。"
+      },
+      "HD-N-10": {
+        "topic": "宿主 :5432 实例身份与破坏性测试安全边界",
+        "identityReverified": "旧记录 PID 6740 已漂移 ⇒ 编排器与子代理一致实测：`netstat -ano` 显示 `0.0.0.0:5432 LISTENING` 与 `[::]:5432 LISTENING` 属 PID 6888；`tasklist //FI \"PID eq 6888\"` = postgres.exe（Services 类）；`sc query postgresql-x64-15` = RUNNING/STOPPABLE；服务 PathName 指向 `C:\\Program Files\\PostgreSQL\\15\\bin\\pg_ctl.exe … -D C:\\Program Files\\PostgreSQL\\15\\data`，StartName NT AUTHORITY\\NetworkService，StartMode Auto；`docker ps` 因 daemon 未运行不可用 ⇒ 确认【原生 Windows 服务，非容器】。子代理另报的 版本 PostgreSQL 15.19、data/base 有 4 个库目录、postgresql.conf:60 listen_addresses='*'、:64 port=5432 四项本编排器未复跑 ⇒ 归入 notIndependentlyReverified；本包不据此四项下 blast radius 结论，仅以『未知宿主实例 + PID 已漂移』维持 NOT_SAFE_FOR_DESTRUCTIVE_TESTS",
+        "conclusion": "PID 漂移不得解读为『已处置/安全』；身份仍为 UNKNOWN_DATABASE_INSTANCE ⇒ 维持 NOT_SAFE_FOR_DESTRUCTIVE_TESTS",
+        "touchVectors": [
+          "compose 不碰撞：docker-compose.yml:47-63 的 db 服务（postgres:15-alpine）无宿主 ports 映射",
+          "真实向量 1：裸跑 `uvicorn app.main:app` 时 lifespan 无条件 `await init_database()` + `await seed_data()`，默认串 backend/app/core/config.py:41 = localhost:5432 ⇒ 对未知宿主库执行 DDL + 写入（编排器已复核 main.py:46/49 原文）。【先前记录】该向量已由 SEC-SB31（P0，OPEN-RECORDED-NOT-FIXED）完整记载，其 impact 已明文禁止本链裸跑 uvicorn；本包的增量只是指出守卫为何拦不住它（F-66）。",
+          "真实向量 2：若 TEST_DATABASE_URL/DATABASE_URL 被指向 localhost:5432，conftest.py:68/98 的 create_all/drop_all 即破坏性命中宿主库；单测默认 sqlite 内存（conftest.py:24）安全",
+          "CI 的 5432:5432 映射只存在于临时 runner，不触本机"
+        ],
+        "existingMachineGuard": "scanUnsafeDbCommand（project-feature-delivery.js:999-1005）以 /(?<!\\d)5432(?!\\d)/ 精确匹配 + 破坏词 → BLOCKED_UNSAFE_DATABASE_TARGET，在 :2188 门禁守卫、:409 只读取证执行手、:2075/2080 Worker commandsRun 三处调用；:2194 明确豁免一次性 :55432。⇒ 但该守卫只看【命令文本】，拦不住向量 1 的应用启动副作用（登记 F-66）",
+        "NEW_SIDE_FINDING": "编排器复核 .github/workflows/ci.yml:3-6 证实触发分支为 push [main, develop] / PR [main]，而真实主分支为 master。⇒ 该事实【不是新发现】：SEC-SB03（P0）与 F-51 早已逐字记录并已路由 HD-N-07/OPS-001；本轮登记为 F-64 后经回账降格为其复现证据条目（不计入缺陷总数）。对 Phase H 的唯一增量是：它使 HD-N-09 选项丁、HD-N-10 选项③ 这两条『外包给 CI』的退路不可得。",
+        "options": "① 归人工：确认宿主库是否含真实 dev 数据（cochlear_rehab?）并落档，维持禁区；② 显式端口隔离：.env 的 DATABASE_URL/TEST_DATABASE_URL 强制非 5432 并禁止裸跑 uvicorn；③ 完全禁用需真实 postgres 的本地门禁、一律走 CI（受 F-64 盲区限制）",
+        "recommendationFromPackage": "①+② 并行，本夜维持现状；③ 不宜单独作为唯一安全港",
+        "isolatedTestDb": "非 5432（如 :55432 一次性容器）优缺点已评估；历史一次性容器 aiear-m0004-pg-test 已随停服消失；【本夜不创建任何数据库/容器】",
+        "redLinesHonored": "零连接（无 psql/pg_isready/ORM）、零服务启停、零 drop/truncate/migrate、零建库、零杀进程、零文件写入、未读 pg_hba/passwd、未输出任何口令",
+        "decisionState": "PENDING-HUMAN-DECISION",
+        "implemented": false,
+        "priorArtOnPidDrift": "F-54（P3-OBSERVATION-EXPIRY，2026-10-09T20:58:02Z）已记录 :5432 监听进程 PID 6892 → 6740 的漂移并确立『任何 PID 观测只是时点快照、身份仍 UNKNOWN_DATABASE_INSTANCE』口径。本轮实测第三个值 6888 ⇒ 序列 6892 → 6740 → 6888，是 F-54 的再次复现，不是新缺陷，也不改变结论。"
+      },
+      "HD-N-14": {
+        "topic": "RATIFY-LINT-TIER 追认或撤销",
+        "eightAnswersSummary": [
+          "派发文本（ledger:1564）要求 G-LINT-APP 全量 `ruff check app/` exit 0；封存 SPEC `FIX-TEST-FLAKE-001-d45d7f1.spec.json`（14 条门禁）落地为 required=G-LINT-APP-CI(`--select E,F,W --ignore E501`) + record=G-LINT-APP(全量)。编排器实测两版 SPEC 都在再分层：前一版 `FIX-TEST-FLAKE-001.spec.json`（10 条）用 G-LINT-APP=required 承载 CI 子集、并以 G-LINT-APP-FULL-BASELINE=record 承载全量 ⇒ 差异只在 gateId 命名与数量，分层方向一致，非封存那版独有",
+          "未进封存源码：`git show --stat a41ac70` 只含 backend/tests/test_adaptive_engine.py（+12/-2），零 ruff/pyproject/spec/workflow 改动",
+          "SPEC 本身不入库：.gitignore:106 忽略 .qoder/workflow-state/*.spec.json；durable 记录只有台账 + GOAL_PROGRESS + catalog:42/49",
+          "语义与反作弊：effGateKind(:864) 非 record 即 required；gateCompute(:2146-2155) required 非零即 MACHINE_FAIL、record 红只入 findings；detectRequiredDowngrade(:898-911) 与 detectGateDeclaration/GATE_KIND_MUTATION(:916-931) 全部把【执行手提交】对齐 gateIndex(specObj)，而 gateDecls 只读 specObj.MACHINE_GATE_COMMANDS(:865) ⇒ 机器守的是『Worker 不得偏离 SPEC』，SPEC 相对派发文本的再分层【不在机器拦截范围】——这正是必须人工追认的技术理由",
+          "能否拦新债：required 子集实测存量 E/F/W = 0（291 条全为 I001/B008/UP/N/B）⇒ 新 E/F/W 会 exit 1 阻断，此门敏感有效；但新 I/N/UP/B 只落 record（已饱和于 291）不阻断",
+          "CI 真实命令：ci.yml:41 `ruff check app/ --select E,F,W --ignore E501`（:38 `working-directory: backend`，:40 `pip install ruff`）⇒ G-LINT-APP-CI 的【规则子集与目标路径】与 CI 逐字一致，但【调用形式不同】：SPEC 走 `cd backend && venv312/Scripts/python.exe -m ruff …`，CI 走 working-directory + pip 安装的 ruff。口径等值、非同一可执行体",
+          "规则义务：rule80:9 表格本就写『E,F,W（CI 基线）；本地可用 pyproject 全量』⇒ 与追认口径一致；rule30:7 的全量规则集与 pyproject [tool.ruff.lint] select=[E,F,W,I,N,UP,B] ignore=[E501](:55-56) 相符，命令行 --select 覆盖之",
+          "结论：追认 = 纯验收口径裁定、零治理改动；撤销 = 全量回 required 重派 ⇒ MACHINE_FAIL 且必须重跑，还需改写 TASK_CATALOG:42/49 与『F-13 CLEARED』（governance, Max-only）；固化 C 需一处治理著述"
+        ],
+        "doubleTruth": "required 绿灯 + record 红灯均仍在证据链（gateContract.recordWithRealFailure：原样记录，未降级、未绕过、未改名）",
+        "projectBaselineHealth": "实测 `ruff check app/` exit 1 / Found 291 errors ⇒ 仍 DEGRADED（与 a41ac70 SPEC/台账零漂移）",
+        "coreConsequenceForBlockingPower": "A/C 只拦新 E/F/W，放行新 I/N/UP/B；B 名义覆盖全量但因常驻 exit 1 使任何任务都无法通过（实际阻断力=0）。真正最强的『全量 required + 基线计数 291 不得增长』机制当前脚本不具备（required 只判 exitCode===0）——A/B/C 三者都不含它",
+        "recommendationFromPackage": "倾向 A（必要时叠加 C 固化），且须明文承认 I/N/UP/B 新债无阻断并另立『基线零增长』修复任务；此仅为建议，不构成批准",
+        "whyHumanNeeded": "被改对象是编排器派发的门禁文本（验收口径），非执行手越权；运行时反作弊只对齐 SPEC ⇒ 无默认生效依据",
+        "decisionState": "PENDING-HUMAN-RATIFICATION（未变；本包不批准）",
+        "implemented": false
+      }
+    },
+    "orchestratorIndependentVerification": {
+      "note": "四份子代理返回正文在本会话被截断（工具侧 elide），故其每一条承重结论均由编排器亲自复跑/复读后才入本账；未复核者不写为已核实。",
+      "reverifiedByOrchestrator": [
+        "netstat -ano | grep -w 5432 → `0.0.0.0:5432 LISTENING 6888` 与 `[::]:5432 LISTENING 6888`（PID 已漂移，非旧记 6740）",
+        "tasklist //FI \"PID eq 6888\" → postgres.exe / Services / 15,308K",
+        "Get-CimInstance Win32_Service → Name=postgresql-x64-15, State=Running, StartMode=Auto, PathName=`C:\\Program Files\\PostgreSQL\\15\\bin\\pg_ctl.exe runservice -N postgresql-x64-15 -D C:\\Program Files\\PostgreSQL\\15\\data -w` ⇒ 原生 Windows 服务，非容器",
+        "COMPOSE_PROJECT_NAME=hdtest docker compose config → exit 0 且首行 `name: hdtest`；同命令不带该 env → exit 1 且 stderr 含 `project name must not be empty` ⇒ 项目名是唯一拦截点、一行配置可修（env 仅作用于本进程子壳，未改任何文件）",
+        "docker info → exit 1（daemon 今天未运行）⇒ HD-N-09 的『今天取绿 build 证据』路径物理受阻",
+        ".github/workflows/ci.yml:3-6 → push [main, develop] / PR [main]；仓库主分支为 master ⇒ F-64 成立",
+        ".github/workflows/ci.yml:38-41 → working-directory: backend + `pip install ruff` + `ruff check app/ --select E,F,W --ignore E501`",
+        "backend/app/main.py:42-49 → lifespan 无条件 `await init_database()` 后 `await seed_data()` ⇒ F-66 的写入向量成立",
+        "docs/workflow/MILESTONES.md:12 与 :15 → Exit 行『8 个基线文档落盘』vs Deliverables 行只点 7 个名字且无 INTEGRATION_BASELINE ⇒ 同文件自相矛盾，HD-N-05 根因坐实",
+        "docs/workflow/TASK_CATALOG.md → `grep -c '^| M0-00'` = 8；M0-005 行对 `deliverables/baseline/*.md` 零匹配 ⇒ GOAL_PROGRESS:363 的『任务数 8/实列 7』转述被证伪（F-17 真口径是文档名漏列）",
+        "两版 SPEC 的门禁清单实读：d45d7f1 版 14 条（G-LINT-APP-CI required / G-LINT-APP record），plain 版 10 条（G-LINT-APP required 承载 CI 子集 / G-LINT-APP-FULL-BASELINE record）",
+        "只读复跑 lint 双口径：CI 子集 `All checks passed!` exit 0；全量 `Found 291 errors` exit 1 ⇒ 双真相当前仍成立、required 门对新 E/F/W 敏感",
+        ".worktrees/auditory-rehab-optimization → .gitignore:68 忽略、mtime 2026-09-16（早于本会话数周）⇒ 子代理所用目录为既有物，Phase H 未新建任何路径"
+      ],
+      "notIndependentlyReverified": [
+        "PostgreSQL 版本串 15.19 与 data/base 下 4 个库目录数、postgresql.conf:60/:64 的 listen_addresses/port 行号（子代理报告；本编排器未复跑该两项，因需读取安装目录且与裁决结论无必要关系）",
+        "docker-compose（带连字符 v5.1.4）与 ASCII worktree 下的对照实验细节",
+        "gh CLI 可用性（子代理称不可用，未复核）",
+        "脚本内行号 :864/:898-911/:916-931/:2146-2155 等（属既有 FIX-GOV-001-R1 实现，本会话早前已在源码中见过同类位置，未逐行复述核对）"
+      ]
+    },
+    "newFindingsRegistered": [
+      "F-65",
+      "F-66"
+    ],
+    "protectionBaselineRefingerprint": {
+      "at": "2026-10-10T16:46:27Z",
+      "why": "§5/§32 要求本夜对永久受保护目录 docs/qgraphflow/dialogue-turn-sequence/ 重新取证并与保护基线逐字节比对，不得引用旧结果",
+      "method": "回读脚本 :365-366 的规范定义后按 D4-2 目录单元口径复算：find -type f -print | 字节序排序，每行 path TAB size TAB sha256 TAB md5，行内以换行分隔且【末行无换行】（shell 命令替换会剥离末行换行，sha256sum 输入即 printf %s 的无末行串）",
+      "memberLevel": "graph.json 34972 B sha256=5f12d3d4…3f138 MATCH；index.html 794348 B sha256=2bd127b7…bf600 MATCH；fileCount 2 == 2",
+      "treeSha256": "9eb05078952d3b82cb53850404821449c518b3d70f491d5beaeaacdb795f82e0 == 保护基线 ⇒ UNCHANGED，未触发 §32 PAUSED_FOR_HUMAN",
+      "orchestratorSelfCorrection": "第一次复算我误在 manifest 末尾多算了一个换行，得到 73b9d0b2f316d570f371cac2c2c52ed0e81a30d7bb8b07f8b597d99a34675e8f 的【假红】。回读 :365-366 才确认规范是剥离末行换行 ⇒ 该红为编排器的算法复现缺陷，不是仓库外部改动，也未据此得出任何结论；两版数字都留档以证明差异来源，成员级 sha256 逐字节相符是独立于 manifest 序列化口径的更强证据。"
+    },
+    "nothingImplemented": "四份包全部只读：未改 docker-compose.yml / .env / MILESTONES.md / TASK_CATALOG.md / ci.yml / conftest / 任何门禁文本；未创建数据库或容器；未启停任何服务。",
+    "reclassifiedAsDuplicate": {
+      "F-64": "duplicateOf SEC-SB03（亦见 F-51），不计入缺陷总数，原文保留",
+      "discipline": "本链先例：F-59 → F-13 复现证据条目；同一错误（把既有记录当新缺陷）第二次发生，故本批在登记前先回查台账原文"
+    },
+    "at_correction": "2026-10-10T16:48:08Z"
   }
 }
