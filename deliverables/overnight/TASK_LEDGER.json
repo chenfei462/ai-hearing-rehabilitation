@@ -4,13 +4,13 @@
   "currentMilestone": "M0",
   "currentTask": {
     "taskId": "FIX-GOV-008",
-    "state": "PHASE-D-AUTHORIZED-BASELINE-READY",
-    "at": "2026-10-10T13:34:15Z",
-    "note": "Phase B（FIX-TEST-FLAKE-001）已 TASK_PASS 并经 Phase C 精确封存 a41ac70。Phase D = FIX-GOV-008（门禁证据加固，HIGH Risk）已在 HD-N-12/13 授权范围内，fresh baseline 已重取（见 phaseDBaseline）。依 F-58：记账先落，run 期间零 commit。"
+    "state": "IMPLEMENTED-IN-WORKING-TREE-TASK-MODE-BLOCKED-GOVERNANCE-CONFLICT-PENDING-INDEPENDENT-REVIEW-A-B-AND-VERIFIER",
+    "at": "2026-10-10T15:42:48Z",
+    "note": "run wf_079d3071-a11 终态 BLOCKED/BLOCKED_GOVERNANCE_CONFLICT，FAILED_PHASE=Implement，ATTEMPTS=0。0/5 Task PASS 判据由流水线取得；实施产物完整留在工作区且未回退。根因是结构性授权通道缺口（F-61），非执行手作弊、非指纹不确定：baseline 与 post 两次取证均 VALID_DETERMINISTIC、headChanged=false、externalChangedDuringTask=[]、stagedAppeared=[]，守卫只因治理路径归属触发。"
   },
-  "goalStatus": "RUNNING-M0-PRE-GATE-CLEARANCE-PHASE-D-READY",
+  "goalStatus": "RUNNING-M0-PRE-GATE-CLEARANCE-PHASE-D-IMPL-IN-WORKTREE-TASK-MODE-STRUCTURALLY-BLOCKED-PENDING-INDEPENDENT-REVIEW",
   "lastSafeCommit": "a41ac70",
-  "currentHead": "a41ac70",
+  "currentHead": "3516abe874a3812e3e53fc32da8757d89d589c0c",
   "headPointerNote": "账本的 lastSafeCommit/currentHead 在写入时点是真相；紧随其后的记账提交无法自引用，故以 git log -1 为准。",
   "branch": "feature/m0-baseline",
   "modelPolicy": {
@@ -1144,6 +1144,22 @@
       "impact": "不改变本任务任何判据结论（Task Delta 用的是重建后的合法基线）；但它证明 D4 的执行手依赖层存在真实失效样本，也证明拦截-仲裁链路可用。",
       "proposedFix": "候选 FIX-GOV-008（建议编号，属治理脚本改动，需人工授权，本批未动 `.qoder/**`）：把\"命令逐字一致\"从**报告字段自证**升级为**可复核**——例如让脚本同时下发一条等价但不同拼写的命令做交叉一致性，或在执行手回传里强制 rawStdout 全量原样入 journal 以便事后逐字 diff。",
       "status": "OPEN-BACKLOG"
+    },
+    "F-61": {
+      "id": "F-61",
+      "at": "2026-10-10T15:42:48Z",
+      "severity": "P1-GOVERNANCE-DESIGN-GAP",
+      "foundBy": "run wf_079d3071-a11 终态 BLOCKED_GOVERNANCE_CONFLICT + 编排器读 classifyDelta 调用点核实",
+      "title": "task 模式的治理守卫不存在「人工授权治理任务」的合法通道 ⇒ FIX-GOV-008 结构上无法在 task 模式 PASS",
+      "detail": "守卫按设计 fail-closed（防止实施任务悄悄改门禁机器），但 classifyDelta 的授权集在 task 模式恒为 [spec.specPath]，SPEC 的 ALLOWED_WRITE_PATHS 完全不参与治理判定。于是即使人工逐字授权且 SPEC 与之一致，改 .qoder/workflows/** 或 dryrun-harness.mjs 的任务也必被 BLOCK。这是授权通道缺失，不是漏洞利用被放行，也不是本次实施有错。历史同型任务 FIX-GOV-001-R1（HD-N-01 授权同样两文件）走的是「工作区产物 + 专用只读 Review/Verify 脚本 + 人工 §28 精确封存」的治理通道，封存于 d2d7ddb。",
+      "impact": "凡人工授权的治理本体变更都不能用 task 模式跑完五判据；若误把 BLOCK 当失败重试，会反复消耗预算并把正确产物留在无主状态。反向风险：若为绕过守卫而临时放宽 classifyDelta，等于让被审查的机器自我开门。",
+      "status": "OPEN-PENDING-HD-N-15",
+      "proposedOptions": [
+        "A 走既有治理通道（FIX-GOV-001-R1 / d2d7ddb 先例）：保留工作区产物，由专用只读脚本完成 Review A+B 与 Verify，再由人工明确指示精确封存",
+        "B 立修复任务，为 classifyDelta 增加「人工授权治理集」入参并由 SPEC 显式声明，配回归场景后重跑 task 模式",
+        "C 人工处置工作区产物（不推荐：丢弃 376 行已验证实施）"
+      ],
+      "chainPosition": "本链不自选；交人工裁定（HD-N-15）"
     }
   },
   "humanDecisionsRequired": [
@@ -1298,6 +1314,31 @@
       "knownResidualWeakness": "若追认，则「编排器派发文本」与「SPEC 落地口径」之间允许一次经 Review/Verify 认可的再分层；若不追认，则该任务必须重跑并 MACHINE_FAIL。本链不自行认定哪种口径为准。",
       "blocks": "不阻塞 Phase D（FIX-GOV-008 已授权、baseline 就绪）；仅影响 F-13 清偿的验收口径归档。",
       "outcome": ""
+    },
+    {
+      "id": "HD-N-15",
+      "at": "2026-10-10T15:42:48Z",
+      "decisionState": "PENDING-HUMAN-DECISION",
+      "decision": "FIX-GOV-008 的合法执行通道：task 模式经 F-61 结构性 BLOCK 后，是否采纳先例路由（甲＝治理通道：只读 Review A+B＋Verify＋人工精确封存指示），还是先修守卫（乙＝另立治理修复任务为 classifyDelta 增加人工授权集入参并补回归场景），或丙＝人工自行处置工作区产物。",
+      "blocks": [
+        "Phase E 封存",
+        "Phase F/G catalog 同步中的 FIX-GOV-008 状态行",
+        "M0 pre-gate 收尾"
+      ],
+      "outcome": null,
+      "knownResidualWeakness": "FLASH_ONLY 下审查者与被审查的审查机器同模型，独立性只剩 invocation 隔离一层（HD-N-13 乙已知情承担）。",
+      "safetyRedlines": [
+        "未经人工明确指示不封存（不 commit 这两个治理文件）",
+        "不回退工作区产物（禁止 checkout/restore/reset/clean/stash）",
+        "不改 classifyDelta 来放行本任务（被审查机器不得自我开门）",
+        "SCRIPT_SIDE_HASH_AVAILABLE 必须仍为 false；不得虚构 fs/crypto/require/动态 import"
+      ],
+      "evidenceAttached": {
+        "runId": "wf_079d3071-a11",
+        "finding": "F-61",
+        "machineEvidence": "orchestratorRecomputedMachineEvidence（required 10/10 exit 0，122/122，digest 未变）",
+        "precedent": "fixGov001R1（sealCommit d2d7ddb）"
+      }
     }
   ],
   "pendingFixTasks": {
@@ -1494,45 +1535,7 @@
       "sealedAt": "2026-10-10T13:34:15Z",
       "sealCommit": "a41ac70"
     },
-    "FIX-GOV-008": {
-      "source": "F-60（run wf_d2ba32c0-3a0 的 D4 首次真实拦截 COMMAND_NOT_VERBATIM）+ 残余限制 SCRIPT_SIDE_HASH_AVAILABLE=false、FINGERPRINT_BACKEND=AGENT_EXECUTOR_FALLBACK",
-      "sourceIdProvenance": "FIX-GOV-008 在 F-60 中标注为\"建议编号\"，现经人工 §1.B 授权正式立项；catalog 中尚无该行（Phase F 事实同步时按实际结果写入）。",
-      "authorizedAt": "2026-10-10T10:23:36Z",
-      "authorizationSource": "M0 PRE-GATE HUMAN DECISION CLEARANCE（2026-10-10） §1.B",
-      "humanRulingVerbatim": "授权。必须作为：独立 Governance Task 处理。不得与：FIX-TEST-FLAKE-001 / FIX-PERF-04 / 业务代码修改 混在一个 commit。",
-      "objective": "提高 machine gate 命令证据的可信度，同时保持 fail-closed。目标不是\"让 COMMAND_NOT_VERBATIM 不再报错\"，因此该检测必须保留且禁止降为 warning-only。",
-      "capabilityBoundary": {
-        "confirmed": "SCRIPT_SIDE_HASH_AVAILABLE=false；FINGERPRINT_BACKEND=AGENT_EXECUTOR_FALLBACK（脚本沙箱 typeof require/process/Buffer/crypto/TextEncoder/fs 全 undefined，dynamic import 被工具层拒绝）",
-        "forbiddenDesign": "禁止 require / process / crypto / fs / 动态 import 等已知不可用能力的虚假设计",
-        "allowedOutcome": "若在当前 Workflow API 下无法获得足够强确定性，允许最终结论 KNOWN_PLATFORM_LIMITATION —— 但必须保证 uncertain evidence → BLOCK，而不是 uncertain evidence → PASS"
-      },
-      "designReadFromCode": "现状：parseFingerprintEvidence(:298-405) 的 commandVerbatim 用 norm() 比较（:307-309，剥 \\r + 行尾空白 + trim），本质是\"执行手自报 command 字段\"与脚本下发串的比对 ⇒ 报告字段自证。门禁侧 normGateCommand 对账（:776-816，FIX-GOV-001-R1）已覆盖 gateId/命令一致性与省略，但同样建立在自报字段上。可信度升级的现实着力点因此只剩：把\"逐字一致\"从单字段自证改为**回传内容内部可复核**（如钉命令自带回显其执行时 argv/摘要，使自报字段与 stdout 互证），外加对不确定证据的 BLOCK 收敛。",
-      "regressionRequirements": {
-        "mustKeep": [
-          "D1（required/record 分层 + 双真相）",
-          "D2（Task Delta / 治理写保护 / 破坏性 git 禁令 / 指纹校验）",
-          "D3（FLASH_ONLY 判据、HIGH 双独立审查、PAUSED_FOR_HUMAN）",
-          "D4（确定性字节证据、FINGERPRINT_ADJUDICATION、RETRY_OWNED）",
-          "FIX-GOV-001-R1（gateId 精确对账、GATE_SPEC_MALFORMED 前移、GATE_COMMAND_NOT_DECLARED、BLOCKED_GATE_COMMAND_NOT_EXECUTED）"
-        ],
-        "harness": "node .qoder/workflow-state/dryrun-harness.mjs test（旧场景不得删除、旧断言语义不得削弱、新增场景全 PASS）",
-        "newAdversarialScenarios": [
-          "command verbatim mismatch",
-          "whitespace mutation",
-          "argument mutation",
-          "gateId unchanged but command changed",
-          "executor claims success with wrong command",
-          "evidence disagreement（两个 invocation 结论不一致）",
-          "合法 exact command 正常 PASS"
-        ],
-        "baselineCountToBeat": "既有 115/115（FIX-GOV-001-R1 封存时的全绿基线；Phase D 必须现场复跑取证，不引用历史数字）"
-      },
-      "sealCommitMessageVerbatim": "fix(governance): harden machine gate command evidence",
-      "executionMode": "FLASH_ONLY（人工经 HD-N-13 显式授权）；属治理路径改动 ⇒ 依 00-model-policy D3 §9，本轮改动由人工授权并单独说明",
-      "riskClassification": "HIGH（治理/门禁本体改动，被审查对象就是\"审查机器\"）⇒ Reviewer A+B 两个互不可见 invocation 均 PASS + 编排器亲自复跑 harness 与关键命令核实 exitCode",
-      "sequencing": "Phase D 开始前必须重新建立 fresh worktree baseline，不得复用 FIX-TEST-FLAKE-001 的基线（人工 §6）。",
-      "status": "AUTHORIZED-NOT-STARTED"
-    }
+    "FIX-GOV-008": "IMPLEMENTED-IN-WORKING-TREE-TASK-MODE-BLOCKED-GOVERNANCE-CONFLICT-PENDING-INDEPENDENT-REVIEW"
   },
   "specConflictLog": [
     {
@@ -1605,7 +1608,7 @@
       "gitWritesByFlash": "none（HEAD 仍 1a62703，staging 空，无破坏性 git 命令）"
     }
   ],
-  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。\n[2026-10-09T19:20:37Z] M0-006 = TASK_PASS（run wf_6c897bee-ab8，mode=FULL，agents=27，toolUses=427，7597134ms，repair=2）。\n[2026-10-09T20:03:41Z] M0-007 = TASK_PASS（run wf_cc12b79d-5be，mode=FULL，agents=15，toolUses=127，1779557ms，repair=0）。\n[2026-10-09T20:43:35Z] M0-008 = TASK_PASS（run wf_dfb3e8e5-ed5，mode=FULL，agents=15，toolUses=158，2196279ms，repair=0）。\n[2026-10-09T20:58:02Z] F-54：:5432 监听进程 6892 → 6740（原生 postgres.exe 服务），历史观测快照过期；实例身份仍未知，零接触纪律不变。已封存交付物未改写。\n[2026-10-09T23:08:36Z] F-44 只读复核（未改仓库文件）：PF-01 独立复现 [401,401,401] + 7 条用例状态映射（仅 metrics 落错误路径）+ 身份矩阵 401/403/200 + 更正\"补 therapist fixture\"（conftest.py:158 已存在）+ 真实 200 路径中位数 4.70ms 证明修正后仍绿 + 建议同批清偿 F-01。新增 F-55（缓存命中样本主导两条用例中位数）。另自查发现 F-56：notes 曾被 \"[object Object]\" 拼接毁掉 7 键正文，已自 6fe4904 原样恢复至 notesPreCorruption。FIX-PERF-03/04 仍待 HD-N-04 落库，自治链未实施测试代码改动。\n[2026-10-09T23:10:41Z] 续记：FIX-PERF-03 / FIX-PERF-04 已登记进 pendingFixTasks（各含 evidenceGrounded、explicitlyNotDoing、gateCommands、selfProofRequired，状态 BACKLOG-GATED-BY-HD-N-04）。本写入按 F-56 建议先做运行时类型断言，并在写后校验原 notes 为逐字节前缀。测试代码与业务代码零改动。\n[2026-10-10T05:55:20Z] HD-N-04 = APPROVED（人工授权，范围仅 FIX-PERF-03；docs/workflow/** 仍列为禁改 ⇒ catalog 插入子项未执行，M0 Exit 该项仍欠）。首跑 wf_e7c7af02-88c BLOCKED/BLOCKED_REPAIR_OUT_OF_SCOPE = F-57（文件型自证门禁与 §16 非持久化互斥 + allowedRepairFiles 不读 SPEC 白名单），编排器未做任何还原、执行手未作弊。独立复跑：A 7 passed / B C 各 1 passed / D 10 passed / E **235 passed 0 failed**（F-01 闭合）/ ruff app/ 291 errors 属 record 存量 / 修正后的零文件负向自证实测 FAIL 且报「有效成功样本数不足」。自建探针文件取 sha256 后 rm 清除，未用破坏性 git。现重新派发取正式三关结论。\n[2026-10-10T06:15:24Z] FIX-PERF-03 重试 run wf_64827cc9-6ae（FULL）在 Task Spec 阶段 **BLOCKED_MODEL_UNAVAILABLE**：机器报错原文为信用额度耗尽（F-29 复发，已加 recurrences 字段），不是模型标识失效——同 run 内两次模型探针与 Classify/Explore/Scope Check 三个 Max 只读角色均已真实产出。Explore 独立逐字节复核了我提交的三条 retryArtifacts sha256 与工作树一致；但 applyRetryOwnership() 在 Task Spec 之后（line 1578）才执行 ⇒ **编排器侧 RETRY_OWNED 判定尚未产生，不得宣称已被机器接受**。本次零仓库写入（HEAD 仍 d7c3092，三文件 sha 与派发前逐字节相同），ATTEMPTS=0，成本 8 agents/39 tool uses/584953 ms。人工选项：(甲) 恢复 Max 额度后以 resumeFromRunId+同 args 复跑（7 个 agent 命中缓存）；(乙) 显式授权 FLASH_ONLY；(丙) 人工直接封存前自行跑门禁。本链不自选、不自动降级。FIX-PERF-03 **未封存**。\n[2026-10-10T06:18:13Z] 自检更正（F-58）：我上一笔记账把\"恢复额度后 resumeFromRunId 复跑\"列为选项（甲），漏掉一条硬前提 —— resume 回放的 Preflight baseline 里 `H|` 行锁死了派发时 HEAD（该 run = d7c3092），而我随后落了记账 commit（→ d8a36ab）；脚本 :580/:627/:2426 把 baseline.head≠current.head 判为 BLOCKED_GIT_HISTORY_MUTATED 且**不参与仲裁** ⇒ 照我原建议做必然假阳性 BLOCK。已按 F-25 纪律保留原文于 redispatch.supersededResumePrecondition / supersededNextAction，更正写入 redispatch.correction 与新 finding **F-58**。正确选项（甲）= 同 args **全新派发**（新 baseline 取当前 HEAD，任务期间我不再 commit；三条 retryArtifacts 因工作树 sha 未变仍成立），代价是 7 个 agent 重跑。终点维持 PAUSED_FOR_HUMAN，本链不自选、不降级。\n[2026-10-10T07:09:46Z] 人工裁决 = 「甲」：以同一 args **全新派发** FIX-PERF-03（新 runId，不传 resumeFromRunId，依据 F-58 的更正），视为在 HD-N-04 原范围内继续授权跑完整流水线。未授权 FLASH_ONLY（乙 未选）、未授权任何治理写、未授权 FIX-PERF-04/FIX-GOV-006/007/HD-N-05/09/10。纪律化一条 F-58 教训：**run 期间本链不再产生任何 commit**，记账一律在终判之后落。派发前三文件 sha256 与两条 run 的 D4 快照逐字节一致，retryArtifacts 可继续提交。\n[2026-10-10T07:16:55Z] 甲 已执行一次并如实受阻：run wf_a5710a52-f4d 在 **Preflight 的 Max 探针**即 BLOCKED_MODEL_UNAVAILABLE（agentCount=2 / totalToolCalls=0 / 11597ms），比第 1 次复发（Task Spec 处渐变断）更靠前——额度已由渐变退化为布尔 false ⇒ FULL 模式结构上不可执行。探针 transcript 逐字节佐证 qmodel_38max 被平台拦截（model:\"<synthetic>\"）而 qfmodel 返回 OK。全程零写入：HEAD 仍 fea2053，三测试文件 sha256 与派发前相同，五判据**一个都未取得**、机器侧 RETRY_OWNED 判定仍未产生。现回 PAUSED_FOR_HUMAN，请人工在 甲-等待 / 乙（显式授权 FLASH_ONLY）/ 丙（人工自跑门禁并封存）之间裁决；本链不自选、不自动降级。\n[2026-10-10T07:23:47Z] HD-N-11 = **乙（人工显式授权 FLASH_ONLY，范围仅 FIX-PERF-03 的执行模式）**。这是 D3 要求的调用方显式请求形态，不是自动降级；模式经 args 传入，**脚本顶部 EXECUTION_MODE 仍为 FULL、任何治理文件零改动**。qfmodel 可用性有探针 transcript 字节证据（qmodel_38max 侧 model:\"<synthetic>\" + credit 提示 / qfmodel 侧 OK）。判据一条不降：Machine Gate(真实 exitCode) ∧ 独立 Review（HIGH ⇒ A+B 双独立均 PASS）∧ Verify ∧ Task Delta ∧ Governance Guard；范围一条不扩（FIX-PERF-04 / FIX-GOV-006 / 007 / HD-N-05 / 09 / 10 仍未授权）。依 F-58 纪律先记账后派发，run 期间零 commit。\n[2026-10-10T08:32:46Z] **FIX-PERF-03 = TASK_PASS 并封存 227295d**（run wf_d2ba32c0-3a0，executionMode=FLASH_ONLY 依 HD-N-11 乙 的人工显式授权；脚本顶部 EXECUTION_MODE 与全部治理文件零改动）。五判据全真：required 7/7 exit 0（含 G-NEG-PROBE 语义未反转的门内 rc=1）∧ Review A+B 双独立均 PASS 0 blocker ∧ Verify TASK_PASS ∧ Task Delta（RETRY_OWNED_APPLIED 首次真实落地，taskChanged=[]、headChanged=false）∧ Governance Guard（治理路径零改动、qgraphflow 未扰动）。门禁合同 9==9 按 gateId 对账，kind 零降级，修复轮次 0。提交 = 显式三路径、message 逐字、未 push/merge。F-01 自此闭合。**新发现两条**：F-59 全量套件含未播种随机用例（隔离态 20 次跑 2 次失败，非确定性；本任务无关但污染所有以 G-FULL-SUITE 为 required 的历史 Task 可信度，建议 FIX-TEST-FLAKE-001 待授权，绝不用重跑掩盖）；F-60 D4 执行手改写下发命令被拦（首次实战拦截），双独立 rehash 收敛重建基线，同时暴露 SCRIPT_SIDE_HASH_AVAILABLE=false 的零信任上限。\n[2026-10-10T08:34:22Z] 更正：上面一条里的\"新发现 F-59\"**不是新缺陷** —— F-13（adaptive RNG 非确定性，P2/OPEN）早已在账，是我（编排器）重复上报，同 F-18 重报 F-03 之误、只是这次报重的是我。F-59 已降格为 F-13 的复现证据条目（duplicateOf=F-13，不计入缺陷总数），F-13 原文一字未改，量化证据（隔离 20 次跑 2 次失败 ≈10%、根因 test_adaptive_engine.py:239-249 未播种 random + `assert total_reward > 0`）以 recurrences 追加。是否把 F-13 升为 P1 属判据口径变更，**交人工裁定、本链不自裁**；本批仍未触碰 test_adaptive_engine.py，未 skip/xfail、未放宽阈值、未用重跑掩盖。\n\n[2026-10-10T10:23:36Z] M0 PRE-GATE HUMAN DECISION CLEARANCE 记账：F-13 经人工裁决 P2→P1（原 severity 保留在 severitySuperseded，本链此前不自裁，现由人工落定）；FIX-TEST-FLAKE-001 与 FIX-GOV-008 立项授权（各自独立 commit，禁混业务代码）；HD-N-04 的 catalog 事实同步子项单独授权（§1.C，仅 TASK_CATALOG.md、仅已发生事实）；HD-N-09/FIX-PERF-04 判 NEEDS_DECISION_PACKAGE，HD-N-05/HD-N-10 只出包不实施。F-29 第 3 次复现（run wf_700f78f3-174，Preflight，7654ms，零写入）经字节证据定性为平台配额拦截而非模型标识变更；人工经 HD-N-13 授权 Phase B+D 走 FLASH_ONLY，残余弱点（审查机器由同模型审查、独立性只剩 invocation 隔离）已如实入账、由人工知情承担。Phase A 实测证据入 F-13.preFixMeasurement，其中\"进程内 100 次 = FAILS 12 / exit 12\"同时充当重复命令的负向自证基线。\n[2026-10-10T11:12:24Z] Phase B run wf_04d857ec-9b9 因宿主会话退出中断于 Task Spec（零写入、0/5 判据）⇒ 同一 args 全新派发重跑，HEAD 6e44dc9 未动。\n2026-10-10T13:34:15Z — FIX-TEST-FLAKE-001 TASK_PASS（run wf_35ad3d0b-b6b，FLASH_ONLY 依 HD-N-13 显式授权，同 actionId resume 复用 3 个已完成 agent 缓存，续跑至 13/13 agent / errors=0）；Phase C 精确单文件封存 a41ac70。F-13 闭合：100/100 0 失败（前 12/100 exit 12）、全量 235 passed、编排器 commit 后独立复跑同判。两条如实订正入册：AC3 假设 18 条 → 实测前后皆 27 条；RATIFY-LINT-TIER 需人工追认（HD-N-14）。Phase D baseline 现场重取（harness 115/115 为本次跑出，非引用历史）。",
+  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。\n[2026-10-09T19:20:37Z] M0-006 = TASK_PASS（run wf_6c897bee-ab8，mode=FULL，agents=27，toolUses=427，7597134ms，repair=2）。\n[2026-10-09T20:03:41Z] M0-007 = TASK_PASS（run wf_cc12b79d-5be，mode=FULL，agents=15，toolUses=127，1779557ms，repair=0）。\n[2026-10-09T20:43:35Z] M0-008 = TASK_PASS（run wf_dfb3e8e5-ed5，mode=FULL，agents=15，toolUses=158，2196279ms，repair=0）。\n[2026-10-09T20:58:02Z] F-54：:5432 监听进程 6892 → 6740（原生 postgres.exe 服务），历史观测快照过期；实例身份仍未知，零接触纪律不变。已封存交付物未改写。\n[2026-10-09T23:08:36Z] F-44 只读复核（未改仓库文件）：PF-01 独立复现 [401,401,401] + 7 条用例状态映射（仅 metrics 落错误路径）+ 身份矩阵 401/403/200 + 更正\"补 therapist fixture\"（conftest.py:158 已存在）+ 真实 200 路径中位数 4.70ms 证明修正后仍绿 + 建议同批清偿 F-01。新增 F-55（缓存命中样本主导两条用例中位数）。另自查发现 F-56：notes 曾被 \"[object Object]\" 拼接毁掉 7 键正文，已自 6fe4904 原样恢复至 notesPreCorruption。FIX-PERF-03/04 仍待 HD-N-04 落库，自治链未实施测试代码改动。\n[2026-10-09T23:10:41Z] 续记：FIX-PERF-03 / FIX-PERF-04 已登记进 pendingFixTasks（各含 evidenceGrounded、explicitlyNotDoing、gateCommands、selfProofRequired，状态 BACKLOG-GATED-BY-HD-N-04）。本写入按 F-56 建议先做运行时类型断言，并在写后校验原 notes 为逐字节前缀。测试代码与业务代码零改动。\n[2026-10-10T05:55:20Z] HD-N-04 = APPROVED（人工授权，范围仅 FIX-PERF-03；docs/workflow/** 仍列为禁改 ⇒ catalog 插入子项未执行，M0 Exit 该项仍欠）。首跑 wf_e7c7af02-88c BLOCKED/BLOCKED_REPAIR_OUT_OF_SCOPE = F-57（文件型自证门禁与 §16 非持久化互斥 + allowedRepairFiles 不读 SPEC 白名单），编排器未做任何还原、执行手未作弊。独立复跑：A 7 passed / B C 各 1 passed / D 10 passed / E **235 passed 0 failed**（F-01 闭合）/ ruff app/ 291 errors 属 record 存量 / 修正后的零文件负向自证实测 FAIL 且报「有效成功样本数不足」。自建探针文件取 sha256 后 rm 清除，未用破坏性 git。现重新派发取正式三关结论。\n[2026-10-10T06:15:24Z] FIX-PERF-03 重试 run wf_64827cc9-6ae（FULL）在 Task Spec 阶段 **BLOCKED_MODEL_UNAVAILABLE**：机器报错原文为信用额度耗尽（F-29 复发，已加 recurrences 字段），不是模型标识失效——同 run 内两次模型探针与 Classify/Explore/Scope Check 三个 Max 只读角色均已真实产出。Explore 独立逐字节复核了我提交的三条 retryArtifacts sha256 与工作树一致；但 applyRetryOwnership() 在 Task Spec 之后（line 1578）才执行 ⇒ **编排器侧 RETRY_OWNED 判定尚未产生，不得宣称已被机器接受**。本次零仓库写入（HEAD 仍 d7c3092，三文件 sha 与派发前逐字节相同），ATTEMPTS=0，成本 8 agents/39 tool uses/584953 ms。人工选项：(甲) 恢复 Max 额度后以 resumeFromRunId+同 args 复跑（7 个 agent 命中缓存）；(乙) 显式授权 FLASH_ONLY；(丙) 人工直接封存前自行跑门禁。本链不自选、不自动降级。FIX-PERF-03 **未封存**。\n[2026-10-10T06:18:13Z] 自检更正（F-58）：我上一笔记账把\"恢复额度后 resumeFromRunId 复跑\"列为选项（甲），漏掉一条硬前提 —— resume 回放的 Preflight baseline 里 `H|` 行锁死了派发时 HEAD（该 run = d7c3092），而我随后落了记账 commit（→ d8a36ab）；脚本 :580/:627/:2426 把 baseline.head≠current.head 判为 BLOCKED_GIT_HISTORY_MUTATED 且**不参与仲裁** ⇒ 照我原建议做必然假阳性 BLOCK。已按 F-25 纪律保留原文于 redispatch.supersededResumePrecondition / supersededNextAction，更正写入 redispatch.correction 与新 finding **F-58**。正确选项（甲）= 同 args **全新派发**（新 baseline 取当前 HEAD，任务期间我不再 commit；三条 retryArtifacts 因工作树 sha 未变仍成立），代价是 7 个 agent 重跑。终点维持 PAUSED_FOR_HUMAN，本链不自选、不降级。\n[2026-10-10T07:09:46Z] 人工裁决 = 「甲」：以同一 args **全新派发** FIX-PERF-03（新 runId，不传 resumeFromRunId，依据 F-58 的更正），视为在 HD-N-04 原范围内继续授权跑完整流水线。未授权 FLASH_ONLY（乙 未选）、未授权任何治理写、未授权 FIX-PERF-04/FIX-GOV-006/007/HD-N-05/09/10。纪律化一条 F-58 教训：**run 期间本链不再产生任何 commit**，记账一律在终判之后落。派发前三文件 sha256 与两条 run 的 D4 快照逐字节一致，retryArtifacts 可继续提交。\n[2026-10-10T07:16:55Z] 甲 已执行一次并如实受阻：run wf_a5710a52-f4d 在 **Preflight 的 Max 探针**即 BLOCKED_MODEL_UNAVAILABLE（agentCount=2 / totalToolCalls=0 / 11597ms），比第 1 次复发（Task Spec 处渐变断）更靠前——额度已由渐变退化为布尔 false ⇒ FULL 模式结构上不可执行。探针 transcript 逐字节佐证 qmodel_38max 被平台拦截（model:\"<synthetic>\"）而 qfmodel 返回 OK。全程零写入：HEAD 仍 fea2053，三测试文件 sha256 与派发前相同，五判据**一个都未取得**、机器侧 RETRY_OWNED 判定仍未产生。现回 PAUSED_FOR_HUMAN，请人工在 甲-等待 / 乙（显式授权 FLASH_ONLY）/ 丙（人工自跑门禁并封存）之间裁决；本链不自选、不自动降级。\n[2026-10-10T07:23:47Z] HD-N-11 = **乙（人工显式授权 FLASH_ONLY，范围仅 FIX-PERF-03 的执行模式）**。这是 D3 要求的调用方显式请求形态，不是自动降级；模式经 args 传入，**脚本顶部 EXECUTION_MODE 仍为 FULL、任何治理文件零改动**。qfmodel 可用性有探针 transcript 字节证据（qmodel_38max 侧 model:\"<synthetic>\" + credit 提示 / qfmodel 侧 OK）。判据一条不降：Machine Gate(真实 exitCode) ∧ 独立 Review（HIGH ⇒ A+B 双独立均 PASS）∧ Verify ∧ Task Delta ∧ Governance Guard；范围一条不扩（FIX-PERF-04 / FIX-GOV-006 / 007 / HD-N-05 / 09 / 10 仍未授权）。依 F-58 纪律先记账后派发，run 期间零 commit。\n[2026-10-10T08:32:46Z] **FIX-PERF-03 = TASK_PASS 并封存 227295d**（run wf_d2ba32c0-3a0，executionMode=FLASH_ONLY 依 HD-N-11 乙 的人工显式授权；脚本顶部 EXECUTION_MODE 与全部治理文件零改动）。五判据全真：required 7/7 exit 0（含 G-NEG-PROBE 语义未反转的门内 rc=1）∧ Review A+B 双独立均 PASS 0 blocker ∧ Verify TASK_PASS ∧ Task Delta（RETRY_OWNED_APPLIED 首次真实落地，taskChanged=[]、headChanged=false）∧ Governance Guard（治理路径零改动、qgraphflow 未扰动）。门禁合同 9==9 按 gateId 对账，kind 零降级，修复轮次 0。提交 = 显式三路径、message 逐字、未 push/merge。F-01 自此闭合。**新发现两条**：F-59 全量套件含未播种随机用例（隔离态 20 次跑 2 次失败，非确定性；本任务无关但污染所有以 G-FULL-SUITE 为 required 的历史 Task 可信度，建议 FIX-TEST-FLAKE-001 待授权，绝不用重跑掩盖）；F-60 D4 执行手改写下发命令被拦（首次实战拦截），双独立 rehash 收敛重建基线，同时暴露 SCRIPT_SIDE_HASH_AVAILABLE=false 的零信任上限。\n[2026-10-10T08:34:22Z] 更正：上面一条里的\"新发现 F-59\"**不是新缺陷** —— F-13（adaptive RNG 非确定性，P2/OPEN）早已在账，是我（编排器）重复上报，同 F-18 重报 F-03 之误、只是这次报重的是我。F-59 已降格为 F-13 的复现证据条目（duplicateOf=F-13，不计入缺陷总数），F-13 原文一字未改，量化证据（隔离 20 次跑 2 次失败 ≈10%、根因 test_adaptive_engine.py:239-249 未播种 random + `assert total_reward > 0`）以 recurrences 追加。是否把 F-13 升为 P1 属判据口径变更，**交人工裁定、本链不自裁**；本批仍未触碰 test_adaptive_engine.py，未 skip/xfail、未放宽阈值、未用重跑掩盖。\n\n[2026-10-10T10:23:36Z] M0 PRE-GATE HUMAN DECISION CLEARANCE 记账：F-13 经人工裁决 P2→P1（原 severity 保留在 severitySuperseded，本链此前不自裁，现由人工落定）；FIX-TEST-FLAKE-001 与 FIX-GOV-008 立项授权（各自独立 commit，禁混业务代码）；HD-N-04 的 catalog 事实同步子项单独授权（§1.C，仅 TASK_CATALOG.md、仅已发生事实）；HD-N-09/FIX-PERF-04 判 NEEDS_DECISION_PACKAGE，HD-N-05/HD-N-10 只出包不实施。F-29 第 3 次复现（run wf_700f78f3-174，Preflight，7654ms，零写入）经字节证据定性为平台配额拦截而非模型标识变更；人工经 HD-N-13 授权 Phase B+D 走 FLASH_ONLY，残余弱点（审查机器由同模型审查、独立性只剩 invocation 隔离）已如实入账、由人工知情承担。Phase A 实测证据入 F-13.preFixMeasurement，其中\"进程内 100 次 = FAILS 12 / exit 12\"同时充当重复命令的负向自证基线。\n[2026-10-10T11:12:24Z] Phase B run wf_04d857ec-9b9 因宿主会话退出中断于 Task Spec（零写入、0/5 判据）⇒ 同一 args 全新派发重跑，HEAD 6e44dc9 未动。\n2026-10-10T13:34:15Z — FIX-TEST-FLAKE-001 TASK_PASS（run wf_35ad3d0b-b6b，FLASH_ONLY 依 HD-N-13 显式授权，同 actionId resume 复用 3 个已完成 agent 缓存，续跑至 13/13 agent / errors=0）；Phase C 精确单文件封存 a41ac70。F-13 闭合：100/100 0 失败（前 12/100 exit 12）、全量 235 passed、编排器 commit 后独立复跑同判。两条如实订正入册：AC3 假设 18 条 → 实测前后皆 27 条；RATIFY-LINT-TIER 需人工追认（HD-N-14）。Phase D baseline 现场重取（harness 115/115 为本次跑出，非引用历史）。\n[2026-10-11 phaseD-blocked] run wf_079d3071-a11（FLASH_ONLY，HEAD 3516abe）终态 BLOCKED/BLOCKED_GOVERNANCE_CONFLICT@Implement，ATTEMPTS=0，9 agents 全 done 0 error。0/5 Task PASS 判据；实施产物（两治理文件 +376/-23）完整留在工作区未动。根因＝F-61 结构性授权通道缺口，非执行手作弊、非证据不确定（两次取证均 VALID_DETERMINISTIC）。编排器逐字复跑 SPEC 冻结的 12 条门禁：required 10/10 exit 0（122/122、roster 106+16、digest 逐字节未变、235 passed、常量的三串未动、FP_PROTOCOL='D4-2'、禁用 API 零命中、scope 恰两文件），record G-RUFF-FULL exit 1/291 errors 原样入账。首次复跑误用 cmd.exe 造成 7 条假红，已作废并按 Git Bash 重跑纠正。路由裁定＝HD-N-15，本链不自选；在人工裁定前不封存、不回退、不改守卫。",
   "pausedAt": "2026-10-09T14:28:05Z",
   "timestampCorrections": [
     {
@@ -2615,6 +2618,195 @@
       "禁止虚构 fs/crypto/require/dynamic import",
       "COMMAND_NOT_VERBATIM 检测不得降为 warning-only",
       "HIGH Risk ⇒ Reviewer A + Reviewer B + Verifier 均 PASS + 完整治理回归 PASS"
+    ]
+  },
+  "phaseDBlockedRun": {
+    "recordedAt": "2026-10-10T15:42:48Z",
+    "runId": "wf_079d3071-a11",
+    "dispatchHead": "3516abe874a3812e3e53fc32da8757d89d589c0c",
+    "executionMode": "FLASH_ONLY",
+    "authorizedBy": "HD-N-12 批次授权 + HD-N-13 乙（显式 FLASH_ONLY）+ 2026-10-10 §1.B「授权。必须作为：独立 Governance Task 处理。」",
+    "terminal": {
+      "WORKFLOW_STATUS": "BLOCKED",
+      "BLOCK_REASON": "BLOCKED_GOVERNANCE_CONFLICT",
+      "FAILED_PHASE": "Implement",
+      "ATTEMPTS": 0,
+      "agentsCompleted": 9,
+      "agentErrors": 0
+    },
+    "taskDelta": {
+      "taskChanged": [],
+      "taskGovernance": [
+        ".qoder/workflows/project-feature-delivery.js",
+        ".qoder/workflow-state/dryrun-harness.mjs"
+      ],
+      "preExistingUnchanged": [
+        "docs/qgraphflow/dialogue-turn-sequence"
+      ],
+      "headChanged": false,
+      "stagedAppeared": [],
+      "baselineEvidence": "VALID_DETERMINISTIC",
+      "currentEvidence": "VALID_DETERMINISTIC",
+      "retryOwnership": "NOT_A_RETRY"
+    },
+    "structuralCause": {
+      "summary": "task 模式下 classifyDelta 的第三参数（治理写授权集）在所有调用点固定为 [spec.specPath]，因此 :710 `gov = isGovernancePath(p) && !auth.has(p)` 必然把人工已授权的两个治理本体文件判为冲突 ⇒ :751 BLOCKED_GOVERNANCE_CONFLICT。即「人工授权的独立 Governance Task」在 task 模式里不存在合法通过路径。",
+      "evidence": [
+        ".qoder/workflows/project-feature-delivery.js classifyDelta(baseline,current,authorizedGovernanceWrites) :692-745",
+        ":693 const auth = new Set((authorizedGovernanceWrites||[]).map(canonicalPath)...)",
+        ":710 const gov = isGovernancePath(p) && !auth.has(p)",
+        ":751 BLOCKED_GOVERNANCE_CONFLICT",
+        "调用点 :2318 / :2427 / :2471 传入集合恒为 [spec.specPath]",
+        ":663 FLASH_REPAIR_RULES「治理变更只能走 Max 治理模式或人工授权的治理流程」"
+      ],
+      "specHadAuthorizedThem": {
+        "EXPECTED_FILES": [
+          ".qoder/workflows/project-feature-delivery.js",
+          ".qoder/workflow-state/dryrun-harness.mjs"
+        ],
+        "ALLOWED_WRITE_PATHS": [
+          ".qoder/workflows/project-feature-delivery.js",
+          ".qoder/workflow-state/dryrun-harness.mjs"
+        ],
+        "note": "SPEC 与人工授权一致，是守卫缺少人工授权通道，不是 SPEC 越权。"
+      },
+      "precedent": {
+        "taskId": "FIX-GOV-001-R1",
+        "authorizedBy": "HD-N-01（同样只授权这两个文件）",
+        "route": "实施留在工作区 → 专用只读 Workflow 脚本跑独立 Max Review/Verify（.qoder/sessions/a77db379.../workflows/scripts/fix-gov-001-r1-review-verify-v2.js，verify 最终在 run wf_3855e53c-a89 完成）→ 人工 §28 明确指示精确封存",
+        "sealCommit": "d2d7ddb",
+        "sealScope": [
+          ".qoder/workflows/project-feature-delivery.js",
+          ".qoder/workflow-state/dryrun-harness.mjs"
+        ],
+        "status": "SEALED-TASK_PASS"
+      }
+    },
+    "implementerSelfReport": {
+      "status": "IMPLEMENTED",
+      "acceptanceAuthority": false,
+      "claim": "12 条门禁逐条实跑：10 required exit 0，2 record 原样入账（G-RUFF-FULL exit 1 / 291 errors）",
+      "deviations": "零功能偏离；SPEC 未点名的 3 处 fail-closed 补强（ARGV_PAYLOAD_UNPARSEABLE / PAYLOAD_NONASCII / d6-19 按 R7 权威表述）",
+      "lineDriftNote": "插入注释块导致 SPEC 引用的行号整体下移（FP_PROTOCOL :239→:244，FINGERPRINT_BACKEND :244→:249，SCRIPT_SIDE_HASH_AVAILABLE :246→:251，harness 协议字面量 :737→:763）；三串逐字保持，EXECUTION_MODE :49 未动"
+    },
+    "orchestratorRecomputedMachineEvidence": {
+      "why": "流水线在 Implement 即 BLOCK，从未进入 Machine Gate 阶段 ⇒ 执行手自报无验收权。编排器读 .qoder/workflow-state/FIX-GOV-008.spec.json 中冻结的 MACHINE_GATE_COMMANDS，逐字经 Git Bash 复跑（首次误用 shell=True 走 cmd.exe 造成 7 条假红，已判定为编排器自身跑法缺陷并作废，不作门禁结论）。",
+      "at": "2026-10-10T15:42:48Z",
+      "declaredGateCount": 12,
+      "requiredCount": 10,
+      "recordCount": 2,
+      "requiredFail": [],
+      "recordNonzero": [
+        "G-RUFF-FULL"
+      ],
+      "verdict": "MACHINE_GATE_PASS（required 10/10 exit 0；record 非零按预先声明口径原样入账）",
+      "harness": "REGRESSION: 122/122 passed；SCENARIO_ROSTER: OLD_SCENARIO_COUNT=106 NEW_SCENARIOS_ADDED=16 TOTAL_SCENARIOS=122；OLD_EXPECTATION_DIGEST=cecf72bcb036d66b319f6dfd8c77d119bf2a4bdd8a63fea913394bfb0272a7bf（逐字节未变）",
+      "backend": "235 passed, 33 warnings in 2.06s",
+      "constants": "G-GOV-CONSTANTS-UNCHANGED exit 0 ⇒ SCRIPT_SIDE_HASH_AVAILABLE=false / FINGERPRINT_BACKEND='AGENT_EXECUTOR_FALLBACK' / EXECUTION_MODE 默认 'FULL' 三串逐字仍在；G-GOV-PROTOCOL-BUMP exit 0 ⇒ FP_PROTOCOL='D4-2'",
+      "forbiddenApi": "G-GOV-NO-FORBIDDEN-API-IN-DIFF exit 0（FORBIDDEN_HITS=0，含 diff 新增行九类扫描）",
+      "scope": "G-GOV-SCOPE exit 0（CHANGED 恰两条治理路径，OUT_OF_SCOPE=[]，UNTRACKED_NEW=[]）",
+      "gates": [
+        {
+          "gateId": "G-GOV-NODE-SYNTAX",
+          "kind": "required",
+          "exitCode": 0,
+          "stdoutTail": ""
+        },
+        {
+          "gateId": "G-GOV-HARNESS-STATIC",
+          "kind": "required",
+          "exitCode": 0,
+          "stdoutTail": "SYNTAX_OK (wrapped-async ESM check)"
+        },
+        {
+          "gateId": "G-GOV-HARNESS-REGRESSION",
+          "kind": "required",
+          "exitCode": 0,
+          "stdoutTail": "REGRESSION: 122/122 passed\nALL_SCENARIOS_PASS (old + new Gate semantics; model routing unchanged; no infinite loop)"
+        },
+        {
+          "gateId": "G-GOV-ROSTER-INTEGRITY",
+          "kind": "required",
+          "exitCode": 0,
+          "stdoutTail": "ROSTER=OLD_SCENARIO_COUNT=106 NEW_SCENARIOS_ADDED=16 REGRESSION=REGRESSION: 122/122 passed"
+        },
+        {
+          "gateId": "G-GOV-NEW-SCENARIOS-7",
+          "kind": "required",
+          "exitCode": 0,
+          "stdoutTail": "MISSING=[]"
+        },
+        {
+          "gateId": "G-GOV-CONSTANTS-UNCHANGED",
+          "kind": "required",
+          "exitCode": 0,
+          "stdoutTail": "MISSING=[]"
+        },
+        {
+          "gateId": "G-GOV-PROTOCOL-BUMP",
+          "kind": "required",
+          "exitCode": 0,
+          "stdoutTail": "FP_PROTOCOL_D4_2=True"
+        },
+        {
+          "gateId": "G-GOV-NO-FORBIDDEN-API-IN-DIFF",
+          "kind": "required",
+          "exitCode": 0,
+          "stdoutTail": "FORBIDDEN_HITS=0"
+        },
+        {
+          "gateId": "G-GOV-SCOPE",
+          "kind": "required",
+          "exitCode": 0,
+          "stdoutTail": "OUT_OF_SCOPE=[]\nUNTRACKED_NEW=[]"
+        },
+        {
+          "gateId": "G-BACKEND-REGRESSION",
+          "kind": "required",
+          "exitCode": 0,
+          "stdoutTail": "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n235 passed, 33 warnings in 2.06s"
+        },
+        {
+          "gateId": "G-RUFF-FULL",
+          "kind": "record",
+          "exitCode": 1,
+          "stdoutTail": "Found 291 errors.\n[*] 199 fixable with the `--fix` option (11 hidden fixes can be enabled with the `--unsafe-fixes` option)."
+        },
+        {
+          "gateId": "G-GIT-STATUS",
+          "kind": "record",
+          "exitCode": 0,
+          "stdoutTail": " M .qoder/workflows/project-feature-delivery.js\n?? docs/qgraphflow/dialogue-turn-sequence/"
+        }
+      ],
+      "residualGateObservation": "G-GOV-HARNESS-STATIC 的命令文本为 `node .qoder/workflow-state/dryrun-harness.mjs check`，而 harness 在 cmd==='check' 分支即 process.exit(0)，静态禁用 API 扫描实际只在非 check 路径执行。⇒ 该 gate 名不副实（只证 wrapped-ESM 语法）；本轮禁用 API 的真实证明来自 M3 的非零即退路径 + M8 的 diff 扫描。命令文本由人工 §9 逐字给定，本链无权改写，列为待人工裁定的治理观察项（HD-N-15 附件）。"
+    },
+    "preservedWorktree": {
+      "statement": "实施产物完整保留、零丢失风险；未 commit、未 push、未 stash、未 checkout/restore/reset/clean/revert；暂存区为空。",
+      "head": "3516abe874a3812e3e53fc32da8757d89d589c0c",
+      "branch": "feature/m0-baseline",
+      "staged": [],
+      "files": [
+        {
+          "path": ".qoder/workflows/project-feature-delivery.js",
+          "bytes": 196116,
+          "sha256": "a36634eb37347a45afffd112f0b49ed15bd2d8158fed60745659a49a2d2268a9"
+        },
+        {
+          "path": ".qoder/workflow-state/dryrun-harness.mjs",
+          "bytes": 143698,
+          "sha256": "b4b2d0df6c5e9c01131355cbc7747521fbc8bfd5f01a1c3b09dff9c15d58d7b8"
+        }
+      ],
+      "diffStat": "2 files changed, 376 insertions(+), 23 deletions(-)",
+      "matchesRunFingerprintSnapshot": true
+    },
+    "notClaimed": [
+      "INDEPENDENT_REVIEW_PASS（Reviewer A/B 尚未派发）",
+      "VERIFY_TASK_PASS",
+      "TASK_DELTA_PASS（流水线未给出；编排器复算仅覆盖门禁与 scope）",
+      "GOVERNANCE_GUARD_PASS（正是本次 BLOCK 的判定点，改走治理通道后须重新成立）",
+      "Phase E 封存（在未获人工/治理通道裁定前禁止）"
     ]
   }
 }
