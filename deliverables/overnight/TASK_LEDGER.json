@@ -3,14 +3,14 @@
   "goalObjective": "Autonomous Delivery Orchestrator: M0 -> M0 Gate -> ... -> M10 -> M10 Gate -> Release Gate -> PROJECT_READY (no fake completion; stop at PAUSED_FOR_HUMAN or BLOCKED if unsafe).",
   "currentMilestone": "M0",
   "currentTask": {
-    "taskId": "FIX-PERF-03",
-    "state": "EXECUTING-FLASH-ONLY-PER-HD-N-11",
-    "at": "2026-10-10T07:23:47Z",
-    "note": "人工显式授权 乙 ⇒ 以 executionMode:\"FLASH_ONLY\" 全新派发（args 同上批，不传 resumeFromRunId）。本链承诺 run 期间零 commit；三文件仍未封存。"
+    "taskId": "NONE-FIX-PERF-03-SEALED",
+    "state": "STOPPED-PER-HD-N-04-25",
+    "at": "2026-10-10T08:32:46Z",
+    "note": "§25 要求 TASK_PASS 后即停。后续待人工：HD-N-04 治理写子项（catalog 插入，含 FIX-TEST-FLAKE-001）、HD-N-05、HD-N-09、HD-N-10、M0 Milestone Gate。"
   },
   "goalStatus": "PAUSED_FOR_HUMAN_AT_M0_MILESTONE_GATE",
-  "lastSafeCommit": "ed36481",
-  "currentHead": "ed36481",
+  "lastSafeCommit": "227295d",
+  "currentHead": "227295d",
   "headPointerNote": "账本的 lastSafeCommit/currentHead 在写入时点是真相；紧随其后的记账提交无法自引用，故以 git log -1 为准。",
   "branch": "feature/m0-baseline",
   "modelPolicy": {
@@ -153,6 +153,22 @@
       "runId": "wf_dfb3e8e5-ed5",
       "executionMode": "FULL",
       "verifiedBy": "Machine Gate(真实 exitCode) + 独立 Review A+B（HIGH risk 双独立） + 独立 Verify"
+    },
+    {
+      "id": "FIX-PERF-03",
+      "title": "性能测试只在 status==200 时计入有效成功样本（杜绝 401 假绿）+ 闭合 F-01 + /api/metrics 三条角色回归",
+      "status": "TASK_PASS",
+      "commit": "227295d",
+      "deliverables": [
+        "backend/tests/test_performance.py",
+        "backend/tests/test_middleware.py",
+        "backend/tests/test_role_permissions.py"
+      ],
+      "runId": "wf_d2ba32c0-3a0",
+      "executionMode": "FLASH_ONLY",
+      "authorization": "HD-N-04（范围仅 FIX-PERF-03）+ HD-N-11 乙（显式授权 FLASH_ONLY 执行模式）",
+      "verifiedBy": "Machine Gate(真实 exitCode, required 7/7=0) + 独立 Review A+B（HIGH risk 双独立 invocation 均 PASS，0 blocker）+ 独立 Verify TASK_PASS + Task Delta(脚本侧 D2-C) + Governance Guard",
+      "sealedAt": "2026-10-10T08:32:46Z"
     }
   ],
   "blockedTasks": [],
@@ -167,7 +183,8 @@
     "M0-005": "317341b",
     "M0-006": "8c81df5",
     "M0-007": "7dcf2f8",
-    "M0-008": "ed36481"
+    "M0-008": "ed36481",
+    "FIX-PERF-03": "227295d"
   },
   "milestoneGateResults": {},
   "m0Dag": {
@@ -294,7 +311,19 @@
       "summary": "adaptive engine RNG nondeterministic in tests",
       "status": "OPEN",
       "disposition": "Per §106 resolve via catalog/Fix mechanism if a deterministic gate needs it; never treat a single green run as fixed.",
-      "severity": "P2"
+      "severity": "P2",
+      "recurrences": [
+        {
+          "at": "2026-10-10T08:34:22Z",
+          "evidenceOf": "F-59（本批量化证据）",
+          "runId": "wf_d2ba32c0-3a0",
+          "measurement": "隔离重跑同一 nodeid 20 次 → 2 次失败（≈10%）；同一条全量命令两次 → `1 failed, 234 passed` 与 `235 passed`；排除本任务三文件的套件 5 次 → 0 次见红（样本不足以证独立，但隔离态 2/20 已足以证明失败源于自身随机性）",
+          "rootCauseLocated": "tests/test_adaptive_engine.py:239-249 连跑 20 轮 `engine.simulate_response(...)`，`app/ai/adaptive_engine.py` 使用未播种 `random`；末行 `assert total_reward > 0` 在 20 轮小样本下是概率性断言。同文件 test_difficulty_calibration(:272-279) 已用 monkeypatch 播种 `random.Random(1)` ⇒ 作者知道要播种、这一条漏了。",
+          "impactUpdate": "除\"单次 green 不算修复\"外，新增可观测影响：所有以 G-FULL-SUITE 为 required 门禁的历史 Task（M0-001..008 与 FIX-*）都承受约 10%/轮的假红概率。",
+          "relationToFixPerf03": "无关且非本任务引入（该文件不在 EXPECTED_FILES/ALLOWED_WRITE_PATHS，diff 为零；按字母序它在本任务三文件之前执行）。",
+          "dispositionUnchanged": "F-13 原处置仍有效：经 catalog/Fix 机制解决；本轮未改 test_adaptive_engine.py，未 skip/xfail、未放宽阈值、未用重跑掩盖。"
+        }
+      ]
     },
     "COV-GAP": {
       "summary": "backend coverage ~61%",
@@ -1000,6 +1029,33 @@
       "impact": "不改变任何既有判定（F-57、F-44、F-01 的证据链均不受影响），也不影响工作树安全性；影响的是**恢复路径选择**与额度开销。",
       "proposedFix": "(1) 治理文档/脚本层（候选，属治理阶段需人工授权）：resume 前置检查应比对\"当前 HEAD ↔ 缓存 baseline.head\"，不等时在**任何 agent 调用之前**给出明确终态 `BLOCKED_RESUME_HEAD_MOVED`，并把 SAFE_NEXT_ACTION 指向\"全新派发\"，而不是让人去猜是 reset 还是重跑；\n(2) 记账层（本批已执行）：把 HEAD 前提写进 resumePrecondition 与操作选项，禁止再推荐未经验证的省额度路径；\n(3) 编排纪律：run 进入执行后到取得终判之间，链上不得产生任何 commit（本次两笔都是 run BLOCKED 之后才落，属合规，但顺序敏感，需在 run 结束的同一轮里先取证再记账）。",
       "status": "OPEN-BACKLOG（无 FIX-* 编号占用；治理脚本改动不在 HD-N-04 授权范围 ⇒ `.qoder/workflows/**` 本批零改动）"
+    },
+    "F-59": {
+      "id": "F-59",
+      "at": "2026-10-10T08:32:46Z",
+      "severity": "DUPLICATE-OF-F-13（证据条目；缺陷本体严重度仍以 F-13 为准，本链不擅自改其 P2 定级）",
+      "foundBy": "编排器（我）封存前的独立复跑：同一命令两次执行结果不同（1 failed / 235 passed）",
+      "title": "【F-13 的第 3 次实测复现 + 定量化 + 根因定位，非新缺陷】required 门禁 G-FULL-SUITE 含未播种随机用例：tests/test_adaptive_engine.py::TestAdaptiveEngineIntegration::test_full_adaptive_session",
+      "detail": "实测计数：单独重复该 nodeid 20 次 → **2 次失败**（≈10% 失败率）；20 次里 18 次通过。同一条 `pytest -q -p no:cacheprovider` 全量复跑：第 1 次 `1 failed, 234 passed`、第 2 次 `235 passed`。\n根因（源码级）：该用例连跑 20 轮 `engine.simulate_response(...)`，而 `app/ai/adaptive_engine.py` 内部使用**未播种的 `random`**（同文件另一用例 test_difficulty_calibration 才用 monkeypatch 播种 `random.Random(1)`，说明作者知道要播种、这条漏了）；末尾 `assert total_reward > 0`（test_adaptive_engine.py:249）在小样本 20 轮下是**概率性**断言， unlucky 序列即可为 0/负。\n与 FIX-PERF-03 的关系：**无**。该文件不在 EXPECTED_FILES / ALLOWED_WRITE_PATHS，diff 为零；且按字母序 test_adaptive_engine.py 在本任务三个文件之前执行。我另跑 5 次\"排除本任务三文件\"的套件（0/5 见红），样本太小不足以证明独立，但隔离态 2/20 已足以证明失败源于自身随机性。\n为什么仍然封存：五判据在本 run 全部为真（G-FULL-SUITE 当时真实 exitCode=0，独立 Verifier 逐字复跑亦 235 passed，我自己复跑第 2 次也 235 passed）；该缺陷是先于本任务存在的项目债，且修复它需要动 `test_adaptive_engine.py`（超出 HD-N-04 授权范围，属新增测试语义变更）。**封存不宣称全量套件具确定性**，本条即为此风险留痕。\n影响面：历史上所有以 G-FULL-SUITE 为 required 门禁的 Task（M0-001..008、FIX-* 全部）都承受约 10%/轮的假红概率；反向风险更值得警惕——若某次改动真的把套件改坏而恰好撞上\"重跑一次就绿\"，非确定性会掩护假绿。",
+      "proposedFix": "建议编号 **FIX-TEST-FLAKE-001**（catalog 尚未占用；落 `docs/workflow/TASK_CATALOG.md` 需 HD-N-04 的治理写授权，本批未执行）：为该用例播种确定性（monkeypatch `app.ai.adaptive_engine.random` 为 `random.Random(seed)`，与同文件 test_difficulty_calibration 既有写法同型）或改为对固定序列的确定性断言。**禁止**用 retry/`--count` 掩盖、禁止 skip/xfail、禁止放宽 `total_reward > 0` 阈值。",
+      "status": "OPEN —— 待人工授权（本链不改 test_adaptive_engine.py，不动测试语义，不自扩范围）",
+      "duplicateOf": "F-13",
+      "revision": "R1 @2026-10-10T08:34:22Z（同一批次内的自我更正）",
+      "originalSeverityAsFirstFiled": "P1-TEST-INTEGRITY",
+      "originalTitleAsFirstFiled": "required 门禁 G-FULL-SUITE 含**未播种随机性**的用例 ⇒ 全量套件结构性非确定：tests/test_adaptive_engine.py::TestAdaptiveEngineIntegration::test_full_adaptive_session",
+      "selfReportingDefect": "我最初把这条当作**新发现**写入 F-59 并标 P1-TEST-INTEGRITY；落账后回写 GOAL_PROGRESS 的 Open Findings 表时才看见 **F-13 早在账上**（\"adaptive engine RNG nondeterministic in tests\"，severity P2，status OPEN，处置原文含\"never treat a single green run as fixed\"）。\n后果：若不改，账本会把同一个已知缺陷计成两条，**虚增缺陷数**并让人误以为发现了新问题——这正是 F-18 因重复上报 F-03 而被 WITHDRAWN 的同型错误，只不过那次是执行手报重，这次是我（编排器）报重。\n因此 F-59 保留编号但**降格为 F-13 的复现证据条目**（duplicateOf=F-13，不计入缺陷总数），F-13 原文一字不改，量化证据以 `recurrences` 追加。",
+      "upgradeProposal": "建议人工把 F-13 由 P2 升为 **P1**：理由不是\"又不稳定了\"，而是它现在直接决定 **required** 门禁 G-FULL-SUITE 的可复现性（约 10%/轮假红），并且反向掩护假绿。升降级属判据口径变更，**本链不自裁**。"
+    },
+    "F-60": {
+      "id": "F-60",
+      "at": "2026-10-10T08:32:46Z",
+      "severity": "P3-GOVERNANCE-OBSERVATION",
+      "foundBy": "run wf_d2ba32c0-3a0 的 GOVERNANCE_D4.EVIDENCE_RUNS（脚本侧判定）+ 编排器读 journal 核对",
+      "title": "D4 只读取证执行手**改写了脚本逐字下发的取证命令** ⇒ 该次 baseline 被拒；三层防御按设计收敛，未污染 Task Delta",
+      "detail": "现象：5 次取证运行中 run#1（Preflight baseline）被判 `FINGERPRINT_EVIDENCE_INVALID:COMMAND_NOT_VERBATIM`（执行手改写命令 ⇒ 摘要来源不可信）。这是本项目 D4 机制**首次实际拦截**执行手改令，此前只存在于 dryrun 断言。\n处置链：脚本未 BLOCK 也未采信，按 §D4 进入 FINGERPRINT_ADJUDICATION —— 两个互不可见 invocation（fingerprint-rehash-a / -b）分别重取，均 VALID_DETERMINISTIC 且 CONVERGED ⇒ 判定 `BASELINE_REESTABLISHED_BY_CONVERGENCE`，基线由收敛证据重建；随后 Implement 后与 Verify 后两次取证均逐字合规。\n定性：**不是**执行手作弊定论。改写可能出于 shell 转义/中文路径兼容等善意动机，但 D4 的口径是\"来源不可信即不用\"，不猜动机。HEAD/B/三文件 F| 行与 E| 目录单元在收敛证据中逐字复现，说明底层字节事实一致。\n残余限制（脚本自述，需人工知悉）：`FINGERPRINT_BACKEND = AGENT_EXECUTOR_FALLBACK`、`SCRIPT_SIDE_HASH_AVAILABLE = false` —— 脚本沙箱无 fs/crypto，字节读取只能由只读执行手代跑，故\"零信任本地哈希\"做不到，现有三层（命令逐字校验 + 格式自洽校验 + 双独立收敛）是**缓解**而非消除。",
+      "impact": "不改变本任务任何判据结论（Task Delta 用的是重建后的合法基线）；但它证明 D4 的执行手依赖层存在真实失效样本，也证明拦截-仲裁链路可用。",
+      "proposedFix": "候选 FIX-GOV-008（建议编号，属治理脚本改动，需人工授权，本批未动 `.qoder/**`）：把\"命令逐字一致\"从**报告字段自证**升级为**可复核**——例如让脚本同时下发一条等价但不同拼写的命令做交叉一致性，或在执行手回传里强制 rawStdout 全量原样入 journal 以便事后逐字 diff。",
+      "status": "OPEN-BACKLOG"
     }
   },
   "humanDecisionsRequired": [
@@ -1107,7 +1163,8 @@
       "decisionState": "APPROVED-EXECUTION-MODE-FLASH-ONLY-SCOPE-FIX-PERF-03",
       "resolvedAt": "2026-10-10T07:23:47Z",
       "decision": "人工裁决 = 乙：授权 FIX-PERF-03 以 executionMode:\"FLASH_ONLY\" 跑完整流水线（D3 显式请求形态）。判据不降低、范围不扩大、治理文件不改、D5 默认 FULL 常量不动。",
-      "blocks": "已解除（原阻塞：FIX-PERF-03 在 Max 额度耗尽下无法以 FULL 取得五个 Task-PASS 判据）。未解除：HD-N-04 的 catalog 治理写子项、HD-N-05、HD-N-09、HD-N-10。"
+      "blocks": "已解除（原阻塞：FIX-PERF-03 在 Max 额度耗尽下无法以 FULL 取得五个 Task-PASS 判据）。未解除：HD-N-04 的 catalog 治理写子项、HD-N-05、HD-N-09、HD-N-10。",
+      "outcome": "已按 乙 执行完毕：run wf_d2ba32c0-3a0 → TASK_PASS → 精确三文件封存 227295d。F-01 闭合、/api/metrics 401/403/200 回归在位。"
     }
   ],
   "pendingFixTasks": {
@@ -1205,7 +1262,7 @@
         "cd backend && venv312/Scripts/python.exe -m ruff check app/"
       ],
       "selfProofRequired": "临时把 metrics 用例身份改为匿名，该用例必须 FAILED（证明断言真在把关）；验证后还原且不得提交",
-      "status": "EXECUTING-FLASH-ONLY-PER-HD-N-11",
+      "status": "SEALED-227295d",
       "blockedBy": "HD-N-04（向 docs/workflow/TASK_CATALOG.md 写入 FIX-* 行属治理写）；实施须走 project-feature-delivery task",
       "registeredAt": "2026-10-09T23:10:21Z",
       "humanAuthorization": {
@@ -1235,7 +1292,15 @@
         "mode": "FLASH_ONLY",
         "scope": "FIX-PERF-03 only, execution mode only",
         "at": "2026-10-10T07:23:47Z"
-      }
+      },
+      "seal": {
+        "commit": "227295d3744fdf660c321544bc4299060ab470dd",
+        "at": "2026-10-10T08:32:46Z",
+        "runId": "wf_d2ba32c0-3a0",
+        "executionMode": "FLASH_ONLY",
+        "message": "test(performance): require successful responses in latency baselines"
+      },
+      "blockedByState": "HD-N-04（向 docs/workflow/TASK_CATALOG.md 写入 FIX-* 行属治理写）；实施须走 project-feature-delivery task —— 已解除（HD-N-04 批准 + HD-N-11 乙），原值保留不删"
     },
     "FIX-PERF-04": {
       "source": "F-55（本次复核的 X-Cache 只读探针）",
@@ -1253,6 +1318,16 @@
       "status": "BACKLOG-GATED-BY-HD-N-04",
       "blockedBy": "HD-N-04 + 上述口径裁决",
       "registeredAt": "2026-10-09T23:10:21Z"
+    },
+    "FIX-TEST-FLAKE-001": {
+      "source": "F-13（缺陷本体，P2 建议升 P1）+ F-59（本批量化与根因证据）",
+      "objective": "消除 tests/test_adaptive_engine.py::test_full_adaptive_session 的未播种随机性，使全量套件成为确定性 required 门禁",
+      "severity": "P1-TEST-INTEGRITY",
+      "registeredAt": "2026-10-10T08:32:46Z",
+      "status": "PROPOSED-AWAITING-AUTHORIZATION",
+      "blockedBy": "未获人工授权：动 test_adaptive_engine.py 超出 HD-N-04 范围；插入 catalog 需 HD-N-04 治理写子项（仍 OPEN）",
+      "explicitlyNotDoing": "不用 retry/重跑掩盖；不 skip/xfail；不放宽 total_reward>0；不删测",
+      "noteOnNaming": "建议编号未占用；FIX-TEST-FLAKE-001 与 F-13 既存处置一致，不另立新缺陷编号。"
     }
   },
   "specConflictLog": [
@@ -1326,7 +1401,7 @@
       "gitWritesByFlash": "none（HEAD 仍 1a62703，staging 空，无破坏性 git 命令）"
     }
   ],
-  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。\n[2026-10-09T19:20:37Z] M0-006 = TASK_PASS（run wf_6c897bee-ab8，mode=FULL，agents=27，toolUses=427，7597134ms，repair=2）。\n[2026-10-09T20:03:41Z] M0-007 = TASK_PASS（run wf_cc12b79d-5be，mode=FULL，agents=15，toolUses=127，1779557ms，repair=0）。\n[2026-10-09T20:43:35Z] M0-008 = TASK_PASS（run wf_dfb3e8e5-ed5，mode=FULL，agents=15，toolUses=158，2196279ms，repair=0）。\n[2026-10-09T20:58:02Z] F-54：:5432 监听进程 6892 → 6740（原生 postgres.exe 服务），历史观测快照过期；实例身份仍未知，零接触纪律不变。已封存交付物未改写。\n[2026-10-09T23:08:36Z] F-44 只读复核（未改仓库文件）：PF-01 独立复现 [401,401,401] + 7 条用例状态映射（仅 metrics 落错误路径）+ 身份矩阵 401/403/200 + 更正\"补 therapist fixture\"（conftest.py:158 已存在）+ 真实 200 路径中位数 4.70ms 证明修正后仍绿 + 建议同批清偿 F-01。新增 F-55（缓存命中样本主导两条用例中位数）。另自查发现 F-56：notes 曾被 \"[object Object]\" 拼接毁掉 7 键正文，已自 6fe4904 原样恢复至 notesPreCorruption。FIX-PERF-03/04 仍待 HD-N-04 落库，自治链未实施测试代码改动。\n[2026-10-09T23:10:41Z] 续记：FIX-PERF-03 / FIX-PERF-04 已登记进 pendingFixTasks（各含 evidenceGrounded、explicitlyNotDoing、gateCommands、selfProofRequired，状态 BACKLOG-GATED-BY-HD-N-04）。本写入按 F-56 建议先做运行时类型断言，并在写后校验原 notes 为逐字节前缀。测试代码与业务代码零改动。\n[2026-10-10T05:55:20Z] HD-N-04 = APPROVED（人工授权，范围仅 FIX-PERF-03；docs/workflow/** 仍列为禁改 ⇒ catalog 插入子项未执行，M0 Exit 该项仍欠）。首跑 wf_e7c7af02-88c BLOCKED/BLOCKED_REPAIR_OUT_OF_SCOPE = F-57（文件型自证门禁与 §16 非持久化互斥 + allowedRepairFiles 不读 SPEC 白名单），编排器未做任何还原、执行手未作弊。独立复跑：A 7 passed / B C 各 1 passed / D 10 passed / E **235 passed 0 failed**（F-01 闭合）/ ruff app/ 291 errors 属 record 存量 / 修正后的零文件负向自证实测 FAIL 且报「有效成功样本数不足」。自建探针文件取 sha256 后 rm 清除，未用破坏性 git。现重新派发取正式三关结论。\n[2026-10-10T06:15:24Z] FIX-PERF-03 重试 run wf_64827cc9-6ae（FULL）在 Task Spec 阶段 **BLOCKED_MODEL_UNAVAILABLE**：机器报错原文为信用额度耗尽（F-29 复发，已加 recurrences 字段），不是模型标识失效——同 run 内两次模型探针与 Classify/Explore/Scope Check 三个 Max 只读角色均已真实产出。Explore 独立逐字节复核了我提交的三条 retryArtifacts sha256 与工作树一致；但 applyRetryOwnership() 在 Task Spec 之后（line 1578）才执行 ⇒ **编排器侧 RETRY_OWNED 判定尚未产生，不得宣称已被机器接受**。本次零仓库写入（HEAD 仍 d7c3092，三文件 sha 与派发前逐字节相同），ATTEMPTS=0，成本 8 agents/39 tool uses/584953 ms。人工选项：(甲) 恢复 Max 额度后以 resumeFromRunId+同 args 复跑（7 个 agent 命中缓存）；(乙) 显式授权 FLASH_ONLY；(丙) 人工直接封存前自行跑门禁。本链不自选、不自动降级。FIX-PERF-03 **未封存**。\n[2026-10-10T06:18:13Z] 自检更正（F-58）：我上一笔记账把\"恢复额度后 resumeFromRunId 复跑\"列为选项（甲），漏掉一条硬前提 —— resume 回放的 Preflight baseline 里 `H|` 行锁死了派发时 HEAD（该 run = d7c3092），而我随后落了记账 commit（→ d8a36ab）；脚本 :580/:627/:2426 把 baseline.head≠current.head 判为 BLOCKED_GIT_HISTORY_MUTATED 且**不参与仲裁** ⇒ 照我原建议做必然假阳性 BLOCK。已按 F-25 纪律保留原文于 redispatch.supersededResumePrecondition / supersededNextAction，更正写入 redispatch.correction 与新 finding **F-58**。正确选项（甲）= 同 args **全新派发**（新 baseline 取当前 HEAD，任务期间我不再 commit；三条 retryArtifacts 因工作树 sha 未变仍成立），代价是 7 个 agent 重跑。终点维持 PAUSED_FOR_HUMAN，本链不自选、不降级。\n[2026-10-10T07:09:46Z] 人工裁决 = 「甲」：以同一 args **全新派发** FIX-PERF-03（新 runId，不传 resumeFromRunId，依据 F-58 的更正），视为在 HD-N-04 原范围内继续授权跑完整流水线。未授权 FLASH_ONLY（乙 未选）、未授权任何治理写、未授权 FIX-PERF-04/FIX-GOV-006/007/HD-N-05/09/10。纪律化一条 F-58 教训：**run 期间本链不再产生任何 commit**，记账一律在终判之后落。派发前三文件 sha256 与两条 run 的 D4 快照逐字节一致，retryArtifacts 可继续提交。\n[2026-10-10T07:16:55Z] 甲 已执行一次并如实受阻：run wf_a5710a52-f4d 在 **Preflight 的 Max 探针**即 BLOCKED_MODEL_UNAVAILABLE（agentCount=2 / totalToolCalls=0 / 11597ms），比第 1 次复发（Task Spec 处渐变断）更靠前——额度已由渐变退化为布尔 false ⇒ FULL 模式结构上不可执行。探针 transcript 逐字节佐证 qmodel_38max 被平台拦截（model:\"<synthetic>\"）而 qfmodel 返回 OK。全程零写入：HEAD 仍 fea2053，三测试文件 sha256 与派发前相同，五判据**一个都未取得**、机器侧 RETRY_OWNED 判定仍未产生。现回 PAUSED_FOR_HUMAN，请人工在 甲-等待 / 乙（显式授权 FLASH_ONLY）/ 丙（人工自跑门禁并封存）之间裁决；本链不自选、不自动降级。\n[2026-10-10T07:23:47Z] HD-N-11 = **乙（人工显式授权 FLASH_ONLY，范围仅 FIX-PERF-03 的执行模式）**。这是 D3 要求的调用方显式请求形态，不是自动降级；模式经 args 传入，**脚本顶部 EXECUTION_MODE 仍为 FULL、任何治理文件零改动**。qfmodel 可用性有探针 transcript 字节证据（qmodel_38max 侧 model:\"<synthetic>\" + credit 提示 / qfmodel 侧 OK）。判据一条不降：Machine Gate(真实 exitCode) ∧ 独立 Review（HIGH ⇒ A+B 双独立均 PASS）∧ Verify ∧ Task Delta ∧ Governance Guard；范围一条不扩（FIX-PERF-04 / FIX-GOV-006 / 007 / HD-N-05 / 09 / 10 仍未授权）。依 F-58 纪律先记账后派发，run 期间零 commit。",
+  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。\n[2026-10-09T19:20:37Z] M0-006 = TASK_PASS（run wf_6c897bee-ab8，mode=FULL，agents=27，toolUses=427，7597134ms，repair=2）。\n[2026-10-09T20:03:41Z] M0-007 = TASK_PASS（run wf_cc12b79d-5be，mode=FULL，agents=15，toolUses=127，1779557ms，repair=0）。\n[2026-10-09T20:43:35Z] M0-008 = TASK_PASS（run wf_dfb3e8e5-ed5，mode=FULL，agents=15，toolUses=158，2196279ms，repair=0）。\n[2026-10-09T20:58:02Z] F-54：:5432 监听进程 6892 → 6740（原生 postgres.exe 服务），历史观测快照过期；实例身份仍未知，零接触纪律不变。已封存交付物未改写。\n[2026-10-09T23:08:36Z] F-44 只读复核（未改仓库文件）：PF-01 独立复现 [401,401,401] + 7 条用例状态映射（仅 metrics 落错误路径）+ 身份矩阵 401/403/200 + 更正\"补 therapist fixture\"（conftest.py:158 已存在）+ 真实 200 路径中位数 4.70ms 证明修正后仍绿 + 建议同批清偿 F-01。新增 F-55（缓存命中样本主导两条用例中位数）。另自查发现 F-56：notes 曾被 \"[object Object]\" 拼接毁掉 7 键正文，已自 6fe4904 原样恢复至 notesPreCorruption。FIX-PERF-03/04 仍待 HD-N-04 落库，自治链未实施测试代码改动。\n[2026-10-09T23:10:41Z] 续记：FIX-PERF-03 / FIX-PERF-04 已登记进 pendingFixTasks（各含 evidenceGrounded、explicitlyNotDoing、gateCommands、selfProofRequired，状态 BACKLOG-GATED-BY-HD-N-04）。本写入按 F-56 建议先做运行时类型断言，并在写后校验原 notes 为逐字节前缀。测试代码与业务代码零改动。\n[2026-10-10T05:55:20Z] HD-N-04 = APPROVED（人工授权，范围仅 FIX-PERF-03；docs/workflow/** 仍列为禁改 ⇒ catalog 插入子项未执行，M0 Exit 该项仍欠）。首跑 wf_e7c7af02-88c BLOCKED/BLOCKED_REPAIR_OUT_OF_SCOPE = F-57（文件型自证门禁与 §16 非持久化互斥 + allowedRepairFiles 不读 SPEC 白名单），编排器未做任何还原、执行手未作弊。独立复跑：A 7 passed / B C 各 1 passed / D 10 passed / E **235 passed 0 failed**（F-01 闭合）/ ruff app/ 291 errors 属 record 存量 / 修正后的零文件负向自证实测 FAIL 且报「有效成功样本数不足」。自建探针文件取 sha256 后 rm 清除，未用破坏性 git。现重新派发取正式三关结论。\n[2026-10-10T06:15:24Z] FIX-PERF-03 重试 run wf_64827cc9-6ae（FULL）在 Task Spec 阶段 **BLOCKED_MODEL_UNAVAILABLE**：机器报错原文为信用额度耗尽（F-29 复发，已加 recurrences 字段），不是模型标识失效——同 run 内两次模型探针与 Classify/Explore/Scope Check 三个 Max 只读角色均已真实产出。Explore 独立逐字节复核了我提交的三条 retryArtifacts sha256 与工作树一致；但 applyRetryOwnership() 在 Task Spec 之后（line 1578）才执行 ⇒ **编排器侧 RETRY_OWNED 判定尚未产生，不得宣称已被机器接受**。本次零仓库写入（HEAD 仍 d7c3092，三文件 sha 与派发前逐字节相同），ATTEMPTS=0，成本 8 agents/39 tool uses/584953 ms。人工选项：(甲) 恢复 Max 额度后以 resumeFromRunId+同 args 复跑（7 个 agent 命中缓存）；(乙) 显式授权 FLASH_ONLY；(丙) 人工直接封存前自行跑门禁。本链不自选、不自动降级。FIX-PERF-03 **未封存**。\n[2026-10-10T06:18:13Z] 自检更正（F-58）：我上一笔记账把\"恢复额度后 resumeFromRunId 复跑\"列为选项（甲），漏掉一条硬前提 —— resume 回放的 Preflight baseline 里 `H|` 行锁死了派发时 HEAD（该 run = d7c3092），而我随后落了记账 commit（→ d8a36ab）；脚本 :580/:627/:2426 把 baseline.head≠current.head 判为 BLOCKED_GIT_HISTORY_MUTATED 且**不参与仲裁** ⇒ 照我原建议做必然假阳性 BLOCK。已按 F-25 纪律保留原文于 redispatch.supersededResumePrecondition / supersededNextAction，更正写入 redispatch.correction 与新 finding **F-58**。正确选项（甲）= 同 args **全新派发**（新 baseline 取当前 HEAD，任务期间我不再 commit；三条 retryArtifacts 因工作树 sha 未变仍成立），代价是 7 个 agent 重跑。终点维持 PAUSED_FOR_HUMAN，本链不自选、不降级。\n[2026-10-10T07:09:46Z] 人工裁决 = 「甲」：以同一 args **全新派发** FIX-PERF-03（新 runId，不传 resumeFromRunId，依据 F-58 的更正），视为在 HD-N-04 原范围内继续授权跑完整流水线。未授权 FLASH_ONLY（乙 未选）、未授权任何治理写、未授权 FIX-PERF-04/FIX-GOV-006/007/HD-N-05/09/10。纪律化一条 F-58 教训：**run 期间本链不再产生任何 commit**，记账一律在终判之后落。派发前三文件 sha256 与两条 run 的 D4 快照逐字节一致，retryArtifacts 可继续提交。\n[2026-10-10T07:16:55Z] 甲 已执行一次并如实受阻：run wf_a5710a52-f4d 在 **Preflight 的 Max 探针**即 BLOCKED_MODEL_UNAVAILABLE（agentCount=2 / totalToolCalls=0 / 11597ms），比第 1 次复发（Task Spec 处渐变断）更靠前——额度已由渐变退化为布尔 false ⇒ FULL 模式结构上不可执行。探针 transcript 逐字节佐证 qmodel_38max 被平台拦截（model:\"<synthetic>\"）而 qfmodel 返回 OK。全程零写入：HEAD 仍 fea2053，三测试文件 sha256 与派发前相同，五判据**一个都未取得**、机器侧 RETRY_OWNED 判定仍未产生。现回 PAUSED_FOR_HUMAN，请人工在 甲-等待 / 乙（显式授权 FLASH_ONLY）/ 丙（人工自跑门禁并封存）之间裁决；本链不自选、不自动降级。\n[2026-10-10T07:23:47Z] HD-N-11 = **乙（人工显式授权 FLASH_ONLY，范围仅 FIX-PERF-03 的执行模式）**。这是 D3 要求的调用方显式请求形态，不是自动降级；模式经 args 传入，**脚本顶部 EXECUTION_MODE 仍为 FULL、任何治理文件零改动**。qfmodel 可用性有探针 transcript 字节证据（qmodel_38max 侧 model:\"<synthetic>\" + credit 提示 / qfmodel 侧 OK）。判据一条不降：Machine Gate(真实 exitCode) ∧ 独立 Review（HIGH ⇒ A+B 双独立均 PASS）∧ Verify ∧ Task Delta ∧ Governance Guard；范围一条不扩（FIX-PERF-04 / FIX-GOV-006 / 007 / HD-N-05 / 09 / 10 仍未授权）。依 F-58 纪律先记账后派发，run 期间零 commit。\n[2026-10-10T08:32:46Z] **FIX-PERF-03 = TASK_PASS 并封存 227295d**（run wf_d2ba32c0-3a0，executionMode=FLASH_ONLY 依 HD-N-11 乙 的人工显式授权；脚本顶部 EXECUTION_MODE 与全部治理文件零改动）。五判据全真：required 7/7 exit 0（含 G-NEG-PROBE 语义未反转的门内 rc=1）∧ Review A+B 双独立均 PASS 0 blocker ∧ Verify TASK_PASS ∧ Task Delta（RETRY_OWNED_APPLIED 首次真实落地，taskChanged=[]、headChanged=false）∧ Governance Guard（治理路径零改动、qgraphflow 未扰动）。门禁合同 9==9 按 gateId 对账，kind 零降级，修复轮次 0。提交 = 显式三路径、message 逐字、未 push/merge。F-01 自此闭合。**新发现两条**：F-59 全量套件含未播种随机用例（隔离态 20 次跑 2 次失败，非确定性；本任务无关但污染所有以 G-FULL-SUITE 为 required 的历史 Task 可信度，建议 FIX-TEST-FLAKE-001 待授权，绝不用重跑掩盖）；F-60 D4 执行手改写下发命令被拦（首次实战拦截），双独立 rehash 收敛重建基线，同时暴露 SCRIPT_SIDE_HASH_AVAILABLE=false 的零信任上限。\n[2026-10-10T08:34:22Z] 更正：上面一条里的\"新发现 F-59\"**不是新缺陷** —— F-13（adaptive RNG 非确定性，P2/OPEN）早已在账，是我（编排器）重复上报，同 F-18 重报 F-03 之误、只是这次报重的是我。F-59 已降格为 F-13 的复现证据条目（duplicateOf=F-13，不计入缺陷总数），F-13 原文一字未改，量化证据（隔离 20 次跑 2 次失败 ≈10%、根因 test_adaptive_engine.py:239-249 未播种 random + `assert total_reward > 0`）以 recurrences 追加。是否把 F-13 升为 P1 属判据口径变更，**交人工裁定、本链不自裁**；本批仍未触碰 test_adaptive_engine.py，未 skip/xfail、未放宽阈值、未用重跑掩盖。",
   "pausedAt": "2026-10-09T14:28:05Z",
   "timestampCorrections": [
     {
@@ -2115,6 +2190,51 @@
       "phasesReached": "仅 Preflight 的两路模型探针：Max 探针 error / Flash 探针 OK。git 守护、D4 取证、Classify、Explore、Scope Check、Task Spec、Implement、Machine Gate、Repair、Review、Verify 全部**未执行**。",
       "whatThisDoesNotProve": "不构成任何 PASS 证据：五个 Task-PASS 判据（Machine Gate / 独立 Review A+B / Verify / Task Delta / Governance Guard）**一个都没有取得**。 不构成\"实施有问题\"的证据：三文件在两次 BLOCKED 的 run 之间字节不变，且本批零 tool 调用。 retryArtifacts 未被机器评估：applyRetryOwnership() 位于 Task Spec 之后（脚本 line 1578），本次连 Task Spec 都没到 ⇒ 机器侧 RETRY_OWNED 判定**仍未产生**（与 secondRun 同一诚实口径，不得改口）。",
       "sealState": "未封存。backend/tests/{test_performance,test_middleware,test_role_permissions}.py 仍为未提交工作树改动，等 Machine Gate ∧ Review(A+B) ∧ Verify 全部成立才落精确三文件提交。"
+    },
+    "finalRun": {
+      "runId": "wf_d2ba32c0-3a0",
+      "taskId": "wf-5f24c15a-949",
+      "at": "2026-10-10T08:32:46Z",
+      "executionMode": "FLASH_ONLY",
+      "ACTIVE_EXECUTION_MODE": "FLASH_ONLY",
+      "ALLOWED_RUNTIME_MODELS": [
+        "qfmodel"
+      ],
+      "ROLE_RUNTIME_MODELS_allFlash": true,
+      "WORKFLOW_STATUS": "TASK_PASS",
+      "TASK_PASS_FORMULA": {
+        "MACHINE_GATE_PASS": true,
+        "INDEPENDENT_FLASH_REVIEW_PASS": true,
+        "INDEPENDENT_REVIEW_INVOCATIONS": [
+          "max-review",
+          "max-review-b"
+        ],
+        "DOUBLE_REVIEW_REQUIRED": true,
+        "FLASH_VERIFY_PASS": true,
+        "TASK_DELTA_PASS": true,
+        "GOVERNANCE_GUARD_PASS": true,
+        "ALL_CLAUSES_TRUE": true
+      },
+      "machineGate": "required 7/7 exit 0：G-PERF-FILE 7 passed / G-PERF-METRICS 1 passed / G-MW-F01 3 passed / G-ROLE-PERM 10 passed / G-FULL-SUITE 235 passed 0 failed / G-RUFF-CI All checks passed / G-NEG-PROBE exit 0（门内 pytest rc=1：FAILED test_metrics_performance，「有效成功样本数不足…status=[401, 401, 401]」⇒ 语义未反转）；record 2 条采集完整：G-RUFF-FULL-BASELINE exit 1 / 291 errors（零漂移）、G-COLLECT 20 tests",
+      "gateContract": "DECLARED 9 == SUBMITTED 9，对账键 gateId，kind 零变更（无 required→record 降级），无未声明/替换命令 —— F-20 缺陷家族在本任务第 5 次真实基线 Task 中未复发",
+      "repairCyclesUsed": 0,
+      "retryOwnership": "RETRY_OWNED_APPLIED（三产物 accepted、rejected=[]）—— 这是此前两次 BLOCKED run **从未产生**的机器判定，本 run 首次真实落地",
+      "taskDelta": "taskChanged=[]（Worker 仅核实与跑门禁，零写入）；retryOwnedArtifacts=三文件；externalChangedDuringTask=[]；preExistingReverted=[]；treeUnitChanges=[]；headChanged=false；stagedAppeared=[]；WORKTREE_BASELINE_HEAD=6dceac0bdfbc80d6f3e280231753e2e53b2233fe",
+      "governanceGuard": "taskGovernance=[]；治理保护路径零改动；外部未跟踪 docs/qgraphflow/dialogue-turn-sequence 目录单元身份复现一致（treeSha 9eb05078…），未被 stage、未被处置",
+      "d4Evidence": "5 次取证运行；run#1 Preflight baseline 被脚本判 FINGERPRINT_EVIDENCE_INVALID:COMMAND_NOT_VERBATIM 并拒绝入 Delta → FINGERPRINT_ADJUDICATION 两个互不可见 invocation 收敛（rehashA/rehashB 均 VALID_DETERMINISTIC、CONVERGED）→ BASELINE_REESTABLISHED_BY_CONVERGENCE（详见 F-60）",
+      "specPath": ".qoder/workflow-state/FIX-PERF-03-6dceac0.spec.json",
+      "orchestratorIndependentRerun": "我在派发前逐字节复核三 sha256 MATCH×3；TASK_PASS 后又亲自复跑门禁：test_performance.py 7 passed / test_middleware.py + test_role_permissions.py 13 passed（0.79s、0.77s）⇒ 与 run 记录一致。全量套件复跑见 F-59：第 1 次 1 failed 234 passed、第 2 次 235 passed，非确定性。",
+      "seal": {
+        "commit": "227295d3744fdf660c321544bc4299060ab470dd",
+        "short": "227295d",
+        "messageVerbatim": "test(performance): require successful responses in latency baselines",
+        "filesExactly": 3,
+        "gitAddForm": "显式三路径，未使用 git add . / -A",
+        "pushMergeRebase": "未执行",
+        "worktreeAfter": "干净（仅剩外部未跟踪 docs/qgraphflow/dialogue-turn-sequence/）"
+      },
+      "artifactBytesAtSeal": "backend/tests/test_performance.py 6930B sha256=a788ef6e5fb443144abd662a590e2b3a9bc134af0807f39680c71a2f68cd6ca4 ; backend/tests/test_middleware.py 1227B sha256=fa639d5ec41637707fcd9661ab951e3b1ffbe05dd6c5b3466084c32e55ec889c ; backend/tests/test_role_permissions.py 4219B sha256=a32d3875f8309eeb42753257d7ea3e0876cf5ca8fd8079c54f031147f1c952d4",
+      "sealState": "已封存 227295d（HD-N-04 §25 要求：TASK_PASS → precise local commit → STOP）"
     }
   },
   "humanDecisionOnRedispatch": {
