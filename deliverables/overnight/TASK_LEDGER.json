@@ -2,7 +2,12 @@
   "goalStartedAt": "2026-10-06T19:03:00Z",
   "goalObjective": "Autonomous Delivery Orchestrator: M0 -> M0 Gate -> ... -> M10 -> M10 Gate -> Release Gate -> PROJECT_READY (no fake completion; stop at PAUSED_FOR_HUMAN or BLOCKED if unsafe).",
   "currentMilestone": "M0",
-  "currentTask": "M0 DAG 全绿（8/8 TASK_PASS），待 Milestone Gate（需 HD-N-04/HD-N-05/HD-N-09 人工裁决）",
+  "currentTask": {
+    "taskId": "FIX-PERF-03",
+    "state": "EXECUTING-REDISPATCHED",
+    "at": "2026-10-10T05:55:20Z",
+    "note": "HD-N-04 已获人工批准（范围仅 FIX-PERF-03）；首跑 wf_e7c7af02-88c 因 F-57 结构性自锁 BLOCKED，实施三文件在位且经我独立复跑全绿，负向自证改用零文件命令后实测可 FAIL 断言。现重新派发同任务以取正式 Machine Gate / Review(A+B) / Verify 结论。"
+  },
   "goalStatus": "PAUSED_FOR_HUMAN_AT_M0_MILESTONE_GATE",
   "lastSafeCommit": "ed36481",
   "currentHead": "ed36481",
@@ -948,6 +953,18 @@
       "remediationDone": "本批按原样恢复至 notesPreCorruption（来源 6fe4904，逐字取回），当前 notes 字符串未改写；丢失内容自此可审计。",
       "proposedFix": "候选 FIX-GOV-006 追加两条：(1) 账本写入脚本必须先断言目标字段运行时类型（string/array/object），不匹配即 die 且零写入；(2) 写入后重新读取并做结构等值比较（除本次有意变更的键外，其余键须逐字节相等），否则回滚并报错。禁用语义上的 x = x + str 型追加，改走显式 append 函数。",
       "status": "OPEN-BACKLOG（治理/账本工具类，属 Max 治理阶段；不涉及仓库代码）"
+    },
+    "F-57": {
+      "id": "F-57",
+      "at": "2026-10-10T05:55:20Z",
+      "severity": "P2-GOVERNANCE-ORCHESTRATION",
+      "foundBy": "编排器 BLOCKED 事件 + qmodel_38max 事后取证（run wf_e7c7af02-88c journal 逐条核对）",
+      "title": "required 门禁命令引用\"用后即删\"的一次性探针 ⇒ 该门禁在结构上永远不可能满足；且修复阶段的白名单不读 SPEC 的 ALLOWED_WRITE_PATHS",
+      "detail": "链条：TASK_SPEC 把 G-NEG-PROBE 定义为 `cd backend && venv312/Scripts/python.exe _neg_probe_fix_perf_03.py`（**文件型** required 命令），而授权书 §16 同时要求\"非持久化、不留工作区 diff、临时产物由任务自建自删\"。探针按设计在成功后 os.remove 自身 ⇒ 门禁（或其复跑）必然遇到 [Errno 2]，exit 2 ⇒ MACHINE_FAIL ⇒ 触发 Self-Repair。\n第 2 层：Repair 阶段的守卫把 allowedRepairFiles 计算为**三个测试文件**（源自 Implement 的 filesChanged），而 planner 自己在 SPEC 里把探针路径写进了 EXPECTED_FILES / ALLOWED_WRITE_PATHS。于是 Worker 依 SPEC 白名单创建该文件，被 D2 判为\"改动非授权文件\" → BLOCKED_REPAIR_OUT_OF_SCOPE。**同一份 SPEC 的两处口径互相排斥**，与 F-20（guard 与契约互斥）同族，但触发键不同：F-20 是 gateId↔MANDATORY_TESTS 清单，本例是 SPEC.ALLOWED_WRITE_PATHS↔allowedRepairFiles。\n责任归属澄清：执行手行为正确——门禁轮它拒绝自行创建文件并在 findings 里如实标注\"须由 Max/编排器核实脚本缺失属交付物遗漏还是自删语义\"，未作弊、未降级门禁。缺陷在**规划侧命令设计 + 编排侧白名单推导**。\n本链自身也要记账：这条文件型门禁命令是我（Max）在派发时写进 args 的\"进程内 monkeypatch / 临时产物\"表述被 planner 具体化为脚本文件后，我未在校前核实其与 §16 的互斥。属于规划交付物缺陷，非 Flash 越界。",
+      "detectionStatus": "机器门禁**成功拦住了错误**（没有假绿、没有越权改动被静默接受）；但 BLOCK 的归因指向了 Worker（\"Self-Repair/Fix 改动了非授权文件\"），而真实成因在规划/编排两侧——消息归因偏差与 F-20 的\"把 planner 的 tier 怪到执行手头上\"同型。",
+      "impact": "不改变任何判定结论，未损耗证据可信度（全部命令可复跑）；代价是一轮 38 分钟的 run 作废 + 一次人工可见的 BLOCKED。若沿用同类设计，任何\"用后即删\"的自证门禁都会反复自锁。",
+      "proposedFix": "(1) 规划侧（本批已按此纠正）：负向自证类门禁一律写成**单条零文件命令**（`python -c` / stdin heredoc），SPEC 禁止把需自删的临时产物列为 required 命令目标；\n(2) 编排侧（候选 FIX-GOV-007，属治理阶段，需人工授权）：allowedRepairFiles 应取自 SPEC.EXPECTED_FILES ∪ ALLOWED_WRITE_PATHS 与 Task-owned 集合的并集，而不是仅取上一阶段 filesChanged；当 SPEC 自身与授权书的持久性约束冲突时，应在 **Implement 之前** fail-closed 报 `SPEC_CONFLICT_NONPERSISTENT_GATE`，而不是让 Worker 在 Repair 阶段二选一；\n(3) BLOCK 消息应同时打印\"该文件的 SPEC 白名单来源\"，避免把规划缺陷归因给实施手。",
+      "status": "OPEN-BACKLOG（FIX-GOV-007 建议编号；治理脚本改动不在本次 HD-N-04 授权范围内，故本批**未**修改 .qoder/workflows/**）"
     }
   },
   "humanDecisionsRequired": [
@@ -987,8 +1004,12 @@
     },
     {
       "id": "HD-N-04",
-      "decision": "Insert FIX-* rows into docs/workflow/TASK_CATALOG.md (governance write, out of bounds unattended)",
-      "blocks": "M0 Exit clause \"P0 存量缺陷清单产出并插入 FIX-* 任务\""
+      "decision": "【人工裁定 2026-10-09，24 节授权书】HD-N-04 = APPROVED，但**授权范围仅限 FIX-PERF-03 的实施**。\n批准语义：性能测试在任何 4xx/5xx 响应下都不得把该延迟计为\"成功样本\"；修复属测试度量口径错误，非 API 契约错误、非阈值错误。\n明确不批准：公开 /api/metrics、移除 therapist role requirement、修改 endpoint auth contract、修改 performance threshold、修改 SAMPLE_COUNT、重定义缓存/冷路径口径、修改生产性能中间件。\n明确排除在本批之外：FIX-PERF-04、FIX-GOV-006、HD-N-05、HD-N-09、HD-N-10 及任何其它 Fix / Governance / API Contract Change。\n【范围收窄的如实后果】原 HD-N-04 事项（向 docs/workflow/TASK_CATALOG.md 插入 FIX-*/SEC-*/OPS-*/PRIV-* 行）**未获授权执行**——授权书 §4 把 docs/workflow/** 列为默认禁止修改。因此 catalog 插入子项仍为 OPEN，M0 Exit 条款\"P0 存量缺陷清单产出并插入 FIX-* 任务\"并未因本批而满足；本批只解锁 FIX-PERF-03 一条任务的实施。",
+      "blocks": "FIX-PERF-03 之外的 FIX-* 落库（catalog 插入）仍未授权；M0 Milestone Gate 的 Exit 条款该项仍欠治理写",
+      "supersededDecisionState": "OPEN-AWAITING-HUMAN",
+      "supersededResolvedAt": null,
+      "decisionState": "APPROVED-SCOPED-TO-FIX-PERF-03-ONLY",
+      "resolvedAt": "2026-10-10T05:55:20Z"
     },
     {
       "id": "HD-N-05",
@@ -1141,9 +1162,20 @@
         "cd backend && venv312/Scripts/python.exe -m ruff check app/"
       ],
       "selfProofRequired": "临时把 metrics 用例身份改为匿名，该用例必须 FAILED（证明断言真在把关）；验证后还原且不得提交",
-      "status": "BACKLOG-GATED-BY-HD-N-04",
+      "status": "EXECUTING-REDISPATCHED",
       "blockedBy": "HD-N-04（向 docs/workflow/TASK_CATALOG.md 写入 FIX-* 行属治理写）；实施须走 project-feature-delivery task",
-      "registeredAt": "2026-10-09T23:10:21Z"
+      "registeredAt": "2026-10-09T23:10:21Z",
+      "humanAuthorization": {
+        "grantedBy": "HD-N-04",
+        "scope": "FIX-PERF-03 only",
+        "at": "2026-10-10T05:55:20Z"
+      },
+      "firstRun": {
+        "runId": "wf_e7c7af02-88c",
+        "at": "2026-10-10T05:55:20Z",
+        "result": "BLOCKED / BLOCKED_REPAIR_OUT_OF_SCOPE（FAILED_PHASE=Repair，ATTEMPTS=1）",
+        "note": "非门禁失败、非实现失败：见 F-57"
+      }
     },
     "FIX-PERF-04": {
       "source": "F-55（本次复核的 X-Cache 只读探针）",
@@ -1234,7 +1266,7 @@
       "gitWritesByFlash": "none（HEAD 仍 1a62703，staging 空，无破坏性 git 命令）"
     }
   ],
-  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。\n[2026-10-09T19:20:37Z] M0-006 = TASK_PASS（run wf_6c897bee-ab8，mode=FULL，agents=27，toolUses=427，7597134ms，repair=2）。\n[2026-10-09T20:03:41Z] M0-007 = TASK_PASS（run wf_cc12b79d-5be，mode=FULL，agents=15，toolUses=127，1779557ms，repair=0）。\n[2026-10-09T20:43:35Z] M0-008 = TASK_PASS（run wf_dfb3e8e5-ed5，mode=FULL，agents=15，toolUses=158，2196279ms，repair=0）。\n[2026-10-09T20:58:02Z] F-54：:5432 监听进程 6892 → 6740（原生 postgres.exe 服务），历史观测快照过期；实例身份仍未知，零接触纪律不变。已封存交付物未改写。\n[2026-10-09T23:08:36Z] F-44 只读复核（未改仓库文件）：PF-01 独立复现 [401,401,401] + 7 条用例状态映射（仅 metrics 落错误路径）+ 身份矩阵 401/403/200 + 更正\"补 therapist fixture\"（conftest.py:158 已存在）+ 真实 200 路径中位数 4.70ms 证明修正后仍绿 + 建议同批清偿 F-01。新增 F-55（缓存命中样本主导两条用例中位数）。另自查发现 F-56：notes 曾被 \"[object Object]\" 拼接毁掉 7 键正文，已自 6fe4904 原样恢复至 notesPreCorruption。FIX-PERF-03/04 仍待 HD-N-04 落库，自治链未实施测试代码改动。\n[2026-10-09T23:10:41Z] 续记：FIX-PERF-03 / FIX-PERF-04 已登记进 pendingFixTasks（各含 evidenceGrounded、explicitlyNotDoing、gateCommands、selfProofRequired，状态 BACKLOG-GATED-BY-HD-N-04）。本写入按 F-56 建议先做运行时类型断言，并在写后校验原 notes 为逐字节前缀。测试代码与业务代码零改动。",
+  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。\n[2026-10-09T19:20:37Z] M0-006 = TASK_PASS（run wf_6c897bee-ab8，mode=FULL，agents=27，toolUses=427，7597134ms，repair=2）。\n[2026-10-09T20:03:41Z] M0-007 = TASK_PASS（run wf_cc12b79d-5be，mode=FULL，agents=15，toolUses=127，1779557ms，repair=0）。\n[2026-10-09T20:43:35Z] M0-008 = TASK_PASS（run wf_dfb3e8e5-ed5，mode=FULL，agents=15，toolUses=158，2196279ms，repair=0）。\n[2026-10-09T20:58:02Z] F-54：:5432 监听进程 6892 → 6740（原生 postgres.exe 服务），历史观测快照过期；实例身份仍未知，零接触纪律不变。已封存交付物未改写。\n[2026-10-09T23:08:36Z] F-44 只读复核（未改仓库文件）：PF-01 独立复现 [401,401,401] + 7 条用例状态映射（仅 metrics 落错误路径）+ 身份矩阵 401/403/200 + 更正\"补 therapist fixture\"（conftest.py:158 已存在）+ 真实 200 路径中位数 4.70ms 证明修正后仍绿 + 建议同批清偿 F-01。新增 F-55（缓存命中样本主导两条用例中位数）。另自查发现 F-56：notes 曾被 \"[object Object]\" 拼接毁掉 7 键正文，已自 6fe4904 原样恢复至 notesPreCorruption。FIX-PERF-03/04 仍待 HD-N-04 落库，自治链未实施测试代码改动。\n[2026-10-09T23:10:41Z] 续记：FIX-PERF-03 / FIX-PERF-04 已登记进 pendingFixTasks（各含 evidenceGrounded、explicitlyNotDoing、gateCommands、selfProofRequired，状态 BACKLOG-GATED-BY-HD-N-04）。本写入按 F-56 建议先做运行时类型断言，并在写后校验原 notes 为逐字节前缀。测试代码与业务代码零改动。\n[2026-10-10T05:55:20Z] HD-N-04 = APPROVED（人工授权，范围仅 FIX-PERF-03；docs/workflow/** 仍列为禁改 ⇒ catalog 插入子项未执行，M0 Exit 该项仍欠）。首跑 wf_e7c7af02-88c BLOCKED/BLOCKED_REPAIR_OUT_OF_SCOPE = F-57（文件型自证门禁与 §16 非持久化互斥 + allowedRepairFiles 不读 SPEC 白名单），编排器未做任何还原、执行手未作弊。独立复跑：A 7 passed / B C 各 1 passed / D 10 passed / E **235 passed 0 failed**（F-01 闭合）/ ruff app/ 291 errors 属 record 存量 / 修正后的零文件负向自证实测 FAIL 且报「有效成功样本数不足」。自建探针文件取 sha256 后 rm 清除，未用破坏性 git。现重新派发取正式三关结论。",
   "pausedAt": "2026-10-09T14:28:05Z",
   "timestampCorrections": [
     {
@@ -1923,5 +1955,44 @@
       "realProductionApproved": "NO — 无任何真实人工/授权主体批准；正式生产部署属 HUMAN_REQUIRED，夜间不自动批准。",
       "bookkeepingIgnore": "夜间账本（deliverables/overnight/**）在 .gitignore 的 `deliverables/*` 之下且无例外；提交账本必须显式 `git add -- <已跟踪的两个文件路径>`，新增记录文件须先由人工加 `!deliverables/overnight/` 例外，否则会被静默忽略（见 findings.F-23）。"
     }
+  },
+  "lastRun_FIX_PERF_03": {
+    "taskId": "FIX-PERF-03",
+    "firstRunId": "wf_e7c7af02-88c",
+    "executionMode": "FULL",
+    "at": "2026-10-10T05:55:20Z",
+    "WORKFLOW_STATUS": "BLOCKED",
+    "BLOCK_REASON": "BLOCKED_REPAIR_OUT_OF_SCOPE",
+    "FAILED_PHASE": "Repair",
+    "HIGH_RISK": true,
+    "blockedAt": "POST_REPAIR_FINGERPRINT",
+    "offendingFile": "backend/_neg_probe_fix_perf_03.py",
+    "orchestratorConduct": "编排器停止且未执行任何还原命令（无 checkout/restore/reset/clean/stash）——D2 行为正确",
+    "implementStageVerdict": "IMPLEMENTED（3 文件：test_performance.py / test_middleware.py / test_role_permissions.py）",
+    "machineGateTable": [
+      "required G-PERF-FILE exit 0 = 7 passed",
+      "required G-PERF-METRICS exit 0 = 1 passed",
+      "required G-MW-F01 exit 0 = 1 passed（F-01 转绿）",
+      "required G-ROLE-PERM exit 0 = 10 passed（含 metrics anon401/patient403/therapist200）",
+      "required G-FULL-SUITE exit 0 = 235 passed / 0 failed",
+      "required G-RUFF-CI exit 0 = All checks passed",
+      "record G-RUFF-FULL-BASELINE exit 1 = 291 errors（app/ 存量债，本任务禁改 app/**，按 D1 入 findings 不判失败）",
+      "required G-NEG-PROBE exit 2 = 探针脚本在执行时不存在 ⇒ 唯一 MACHINE_FAIL，触发 Self-Repair"
+    ],
+    "independentReRunByMax": {
+      "at": "2026-10-10T05:55:20Z",
+      "interpreter": "backend/venv312/Scripts/python.exe",
+      "A_perf_file": "exit 0 | 7 passed in 1.00s",
+      "B_metrics_perf": "exit 0 | 1 passed in 0.61s",
+      "C_middleware_availability": "exit 0 | 1 passed in 0.63s",
+      "D_role_permissions": "exit 0 | 10 passed in 0.70s",
+      "E_full_suite": "exit 0 | 235 passed, 33 warnings in 2.36s（修复前基线 1 failed/231 passed ⇒ F-01 已闭合）",
+      "F_ruff_app_full": "exit 1 | Found 291 errors —— 与既有 record 基线同量，app/ 零改动所致，非本任务引入",
+      "G_negative_selfproof": "修正后的**零文件**命令实测有效：进程内把 app.api.deps.verify_token 置为返回 None → test_metrics_performance FAILED，断言原文「有效成功样本数不足：需要 3 个 status==200 的样本，实际仅 0 个，各样本 status=[401, 401, 401]」，pytest rc=1，探针命令 exit 0，工作区零新增文件",
+      "codeReviewFacts": "THRESHOLDS 与 SAMPLE_COUNT 在 diff 中逐字未变；未新建 therapist fixture（复用 conftest 既有 therapist_token）；_measure 返回 {ms,status,cache}，cache 仅作观测不参与判定；_successful_samples 先筛 status==200 再断言 len(valid)==SAMPLE_COUNT；三条角色回归放在 test_role_permissions.py（与既有 /report/patients 同型），未塞进性能文件"
+    },
+    "strayArtifactHandling": "backend/_neg_probe_fix_perf_03.py 由本链自建，sha256 189b2629ed4e577a…（先取摘要后删除），用 rm 清除；未使用任何破坏性 git 命令；其正文完整保留在 run journal 与本会话输出中",
+    "nextAction": "以修正后的门禁命令设计重新派发同一任务（负向自证改为单条零文件 python -c 命令；EXPECTED_FILES/allowedRepairFiles 严格为三个测试文件）",
+    "sealState": "尚未封存：Task PASS 需 Machine Gate ∧ 独立 Review(HIGH: A+B) ∧ Verify ∧ Task Delta ∧ Governance Guard，本批仅完成到\"实施在位 + 独立复跑取证\""
   }
 }
