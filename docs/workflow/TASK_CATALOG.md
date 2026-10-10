@@ -1,6 +1,6 @@
 # TASK_CATALOG — 原子任务清单与 DAG（唯一权威）
 
-> v1.0（2026-10-06，Max 编制）。全部任务 Status=BACKLOG；执行方式：逐个调用
+> v1.0（2026-10-06，Max 编制）。编制时全部任务 Status=BACKLOG（2026-10-11 事实同步：M0-001~M0-008 已经 Workflow 真实执行判定为 TASK_PASS，见下表 Status 列；其余里程碑任务仍为 BACKLOG）；执行方式：逐个调用
 > `project-feature-delivery` Workflow（task 模式）。每任务 0.5~1.5 开发日，无 Mega Task。
 > Implementation Model 统一为：**Flash(qfmodel) 实施 + Max(qmodel_38max) SPEC/Review/Verify**；Flash 无 PASS 权。
 > Gate 基线（所有任务默认）：Machine Gate 真实命令 exitCode=0 + Max Review PASS + Max Verify TASK_PASS；
@@ -11,6 +11,7 @@
 ## 汇总
 
 - 任务总数：**92**（M0:8, M1:8, M2:7, M3:10, M4:10, M5:7, M6:6, M7:14, M8:7, M9:8, M10:7）
+- 计数口径：上述 92/49/33/10 指**原编号任务**；Workflow 运行产生并追加于「M0 缺陷修复附录」的 `FIX-*` 任务不改变该计数、不改变任何既有任务 ID、不参与上方 DAG 重排。
 - P0：**49**，P1：**33**，P2：**10**
 - 第一个应执行任务：**M0-001**（前置：人工提交治理文件并切 feature 分支，见 PROJECT_PLAN §10）
 - Critical Path：M0-001→M0-004→KB-001→KB-002→KB-003→KB-004→ING-001→ING-005→ING-007→ING-008→ING-009→RAG-001→RAG-003→RAG-006→RAG-007→RAG-008→RAG-010→UI-001→EVAL-005→OPS-004（约 20 个串行节点）
@@ -19,16 +20,33 @@
 
 | ID | Title | Milestone | Pri | Deps | Objective/验收目标 | Size | Risk | Impl Model | Gate Requirements | Status |
 |---|---|---|---|---|---|---|---|---|---|---|
-| M0-001 | 仓库清单与真相基线文档 | M0 | P0 | — | 产出 `deliverables/baseline/REPO_INVENTORY.md`（注意：基线产物一律落 `deliverables/baseline/`，禁止写入治理保护区 `docs/workflow/**`）：真实模块/文件/命令清单（后端测试、前端构建、lint、迁移、集成、E2E、docker），标注与 README/system_design 的差异；验收=清单中每条命令真实存在且被实际执行记录 exitCode | 0.5d | low | Flash+Max | 命令发现产物复核；禁止假设命令 | BACKLOG |
-| M0-002 | 后端测试基线 | M0 | P0 | M0-001 | 全量 `python -m pytest -q` + `ruff check app/` 在本地跑通并记录结果到 `deliverables/baseline/BACKEND_TEST_BASELINE.md`（通过数/失败数/跳过数/覆盖率）；失败项如实列出并生成缺陷清单（不修复） | 0.5d | med | Flash+Max | pytest+ruff exitCode 记录；失败不掩盖 | BACKLOG |
-| M0-003 | 前端构建基线 | M0 | P0 | M0-001 | `npx tsc --noEmit`、`npm run lint`、`npm test -- --run`、`npm run build`、`npm run test:e2e` 全量执行并记录到 `deliverables/baseline/FRONTEND_BASELINE.md`；失败项如实列出 | 0.5d | med | Flash+Max | 五条命令 exitCode 记录 | BACKLOG |
-| M0-004 | API/DB/迁移基线 | M0 | P0 | M0-001 | clean DB 上 `alembic upgrade head`→`downgrade base`→`upgrade head` 验证；盘点全部 API 端点与 docs/api-reference.md 对照；记录到 `deliverables/baseline/DB_API_BASELINE.md` | 1d | med | Flash+Max | 迁移三连 exitCode=0；端点清单完整 | BACKLOG |
-| M0-005 | 集成测试基线 | M0 | P0 | M0-002,M0-004 | postgres+redis 环境跑 `pytest tests/test_integration.py tests/test_training_api.py tests/test_role_permissions.py -q`（CI 同款）并记录；TODO.md 未勾选项在此给出当前真实结论 | 1d | high | Flash+Max | 集成命令 exitCode；安全测试环境缺失→BLOCKED_MISSING_SAFE_TEST_ENV | BACKLOG |
-| M0-006 | 安全基线 | M0 | P0 | M0-002 | 只读审查：认证/RBAC 覆盖矩阵（每端点 auth+归属校验）、Secret 管理（.env gitignore、无硬编码）、CORS/Cookie/DEBUG 生产配置、日志脱敏抽查；产出 `deliverables/baseline/SECURITY_BASELINE.md` 缺陷清单（P0/P1 分级，不修复） | 1d | high | Max 主导+Flash 执行命令 | 审查证据含文件:行号；禁止输出 Secret 值 | BACKLOG |
-| M0-007 | 性能基线 | M0 | P0 | M0-005 | 运行 `pytest tests/test_performance.py -v` 记录现状；对 ASR/对话/发音三条链路做本地延迟采样（mock 与真实各一组，若配额允许）；产出 `deliverables/baseline/PERF_BASELINE.md`（对照目标：ASR 首包<500ms、对话<3s、评分<2s） | 1d | med | Flash+Max | 性能命令 exitCode；数据如实记录不达标也不改目标 | BACKLOG |
-| M0-008 | 部署基线 | M0 | P0 | M0-003,M0-004 | `docker compose build` 成功；docker-compose.yml/deploy/serverless.yml/nginx 配置与 .env.example 环境变量引用完整性核对；产出 `deliverables/baseline/DEPLOY_BASELINE.md`；不执行真实云部署 | 1d | med | Flash+Max | docker build exitCode=0；Secret 值零输出 | BACKLOG |
+| M0-001 | 仓库清单与真相基线文档 | M0 | P0 | — | 产出 `deliverables/baseline/REPO_INVENTORY.md`（注意：基线产物一律落 `deliverables/baseline/`，禁止写入治理保护区 `docs/workflow/**`）：真实模块/文件/命令清单（后端测试、前端构建、lint、迁移、集成、E2E、docker），标注与 README/system_design 的差异；验收=清单中每条命令真实存在且被实际执行记录 exitCode | 0.5d | low | Flash+Max | 命令发现产物复核；禁止假设命令 | **TASK_PASS** `abc6a78` |
+| M0-002 | 后端测试基线 | M0 | P0 | M0-001 | 全量 `python -m pytest -q` + `ruff check app/` 在本地跑通并记录结果到 `deliverables/baseline/BACKEND_TEST_BASELINE.md`（通过数/失败数/跳过数/覆盖率）；失败项如实列出并生成缺陷清单（不修复） | 0.5d | med | Flash+Max | pytest+ruff exitCode 记录；失败不掩盖 | **TASK_PASS** `7be3c50` |
+| M0-003 | 前端构建基线 | M0 | P0 | M0-001 | `npx tsc --noEmit`、`npm run lint`、`npm test -- --run`、`npm run build`、`npm run test:e2e` 全量执行并记录到 `deliverables/baseline/FRONTEND_BASELINE.md`；失败项如实列出 | 0.5d | med | Flash+Max | 五条命令 exitCode 记录 | **TASK_PASS** `f73cb01` |
+| M0-004 | API/DB/迁移基线 | M0 | P0 | M0-001 | clean DB 上 `alembic upgrade head`→`downgrade base`→`upgrade head` 验证；盘点全部 API 端点与 docs/api-reference.md 对照；记录到 `deliverables/baseline/DB_API_BASELINE.md` | 1d | med | Flash+Max | 迁移三连 exitCode=0；端点清单完整 | **TASK_PASS** `a78b10f` |
+| M0-005 | 集成测试基线 | M0 | P0 | M0-002,M0-004 | postgres+redis 环境跑 `pytest tests/test_integration.py tests/test_training_api.py tests/test_role_permissions.py -q`（CI 同款）并记录；TODO.md 未勾选项在此给出当前真实结论 | 1d | high | Flash+Max | 集成命令 exitCode；安全测试环境缺失→BLOCKED_MISSING_SAFE_TEST_ENV | **TASK_PASS** `317341b` |
+| M0-006 | 安全基线 | M0 | P0 | M0-002 | 只读审查：认证/RBAC 覆盖矩阵（每端点 auth+归属校验）、Secret 管理（.env gitignore、无硬编码）、CORS/Cookie/DEBUG 生产配置、日志脱敏抽查；产出 `deliverables/baseline/SECURITY_BASELINE.md` 缺陷清单（P0/P1 分级，不修复） | 1d | high | Max 主导+Flash 执行命令 | 审查证据含文件:行号；禁止输出 Secret 值 | **TASK_PASS** `8c81df5` |
+| M0-007 | 性能基线 | M0 | P0 | M0-005 | 运行 `pytest tests/test_performance.py -v` 记录现状；对 ASR/对话/发音三条链路做本地延迟采样（mock 与真实各一组，若配额允许）；产出 `deliverables/baseline/PERF_BASELINE.md`（对照目标：ASR 首包<500ms、对话<3s、评分<2s） | 1d | med | Flash+Max | 性能命令 exitCode；数据如实记录不达标也不改目标 | **TASK_PASS** `7dcf2f8`（F-01 经 `FIX-PERF-03` `227295d` 闭合） |
+| M0-008 | 部署基线 | M0 | P0 | M0-003,M0-004 | `docker compose build` 成功；docker-compose.yml/deploy/serverless.yml/nginx 配置与 .env.example 环境变量引用完整性核对；产出 `deliverables/baseline/DEPLOY_BASELINE.md`；不执行真实云部署 | 1d | med | Flash+Max | docker build exitCode=0；Secret 值零输出 | **TASK_PASS** `ed36481`（**本行门禁口径仍待裁决**：该 `docker build exitCode=0` 在本仓库路径下结构性不可达，见 HD-N-09；任务 TASK_PASS 的依据是该命令真实 exitCode=1 以 record 层原样入账、未降级未绕过） |
 
 > M0 暴露的存量缺陷：由 Max 按 P0/P1 定级，插入为 `FIX-*` 临时任务（同规格进 Catalog 附录），在 M1 完成前清偿 P0 缺陷。并行组 PG-A：M0-002/003/004 可并行。
+
+**M0 基线 DAG 状态：8/8 TASK_PASS（M0-001 `abc6a78` / 002 `7be3c50` / 003 `f73cb01` / 004 `a78b10f` / 005 `317341b` / 006 `8c81df5` / 007 `7dcf2f8` / 008 `ed36481`）。**
+**M0 Milestone Gate = `NOT_ENTERED`** —— 依人工指令，在 HD-N-05（基线文档 8 vs 7 口径）、HD-N-09（`docker build` 结构性不可达）、HD-N-10（宿主 `:5432` 数据库归属）、HD-N-14（lint 门禁分层追认）四项裁决落地前，即便 8/8 已封存且本表已同步，也**不得**进入 M0 Milestone Gate，更不得进入 M1。
+**基线产物交付口径**：`REPO_INVENTORY.md`/`BACKEND_TEST_BASELINE.md`（001/002）、`FRONTEND_BASELINE.md`（003）、`DB_API_BASELINE.md`（004）、`INTEGRATION_BASELINE.md`（005）、`SECURITY_BASELINE.md`（006）、`PERF_BASELINE.md`（007）、`DEPLOY_BASELINE.md`（008）——产物落 `deliverables/baseline/` 的份数口径即 HD-N-05，本表不自行判定。
+
+### M0 缺陷修复附录（Workflow 运行产生；不改变既有任务 ID，不参与上方 DAG）
+
+| ID | Title | Source 缺陷 | 终态 | Commit / 状态 | 如实说明 |
+|---|---|---|---|---|---|
+| FIX-TEST-FLAKE-001 | 消除 `test_full_adaptive_session` 的未播种随机性，使全量套件成为确定性 required 门禁 | F-13（P2→P1，人工已定级）| **TASK_PASS** | `a41ac70` | 五判据齐备：Machine Gate required 12/12 exit 0 ∧ 独立 Review PASS ∧ Verify TASK_PASS ∧ Task Delta（`taskChanged=["backend/tests/test_adaptive_engine.py"]`）∧ Governance Guard 零改动；负向自证基线 12/100 → 100/100；测试侧 monkeypatch，`backend/app/**` 零改动、生产默认 RNG 未被固定、无 skip/xfail/retry/sleep。**F-13 自此 CLEARED**。 |
+| FIX-PERF-03 | 性能用例只在真实成功路径上计量 | F-44 / F-01 | **TASK_PASS** | `227295d` | Machine Gate required 7/7 ∧ HIGH 双独立 Review A+B 均 PASS ∧ Verify TASK_PASS ∧ Task Delta（`RETRY_OWNED_APPLIED`）∧ Governance Guard；**F-01 自此 CLOSED**；阈值与样本数逐字节未改。 |
+| FIX-GOV-008 | 加固机器门禁命令证据链（D4-2 argv 自回显 + 脚本侧独立重算逐字符比对）| F-60 | **SEALED / PASS-WITH-HD-N-15-BOOTSTRAP-AUTHORIZATION** | `31c53df` | **非标准五判据 TASK_PASS**：`FORMAL_TASK_DELTA_VERDICT=NOT_ISSUED_DUE_TO_F61`、`FORMAL_GOVERNANCE_GUARD_VERDICT=NOT_PASSABLE_BY_CURRENT_DESIGN_F61`、`ASSURANCE_OVERRIDE=HUMAN_BOOTSTRAP_AUTHORIZATION_HD_N_15`。保证来源 = 人工对这一次、仅这一次的 bootstrap 封存授权（HD-N-15 甲）+ 机器证据现场重跑（required 10/10、回归 122/122、`OLD_SCENARIO_COUNT=106` 与 digest 未变、§8 七类逐字性攻击行为逐条 BLOCK、Reviewer A/B + Verifier 结论经字节哈希一致后复用）。本表**不**为其伪造 `TASK_DELTA_PASS`/`GOVERNANCE_GUARD_PASS`。 |
+| FIX-GOV-009 | Human-authorized governance write-set protocol（为 F-61 建合法治理写入通道）| F-61 | **BACKLOG_REQUIRES_HUMAN_AUTHORIZATION** | 未派发、零代码 | 本夜仅登记。禁止简单关闭 Governance Guard；未来设计最小集（taskType 显式分类、humanAuthorizationId 非空可核对、精确路径白名单、禁通配符、禁目录级隐式授权、diff ⊆ 授权集、治理回归必跑、独立 Review、独立 Verify、授权不可由 Worker 自行生成）见 `deliverables/overnight/TASK_LEDGER.json.pendingFixTasks['FIX-GOV-009']`。 |
+
+**F-61 状态 = `OPEN`（`NOT_FIXED_BY_FIX-GOV-008`）**：FIX-GOV-008 封存的是证据强度，未给 `classifyDelta` 开人工授权集通道；结构性缺口仍在，由 FIX-GOV-009 承载。
+**封存过程中如实新增的两条低危观察（本轮不改，避免破坏 §10 字节一致性要求）**：`F-62` = 新写的披露文字沿用修复前行号自引用（`:419` 引 `:307/:319`、`:2664` 引 `:308`，实测真实锚点为 `norm` `:400` / `commandVerbatim` `:401`）；`F-63` = `G-GOV-HARNESS-STATIC` 名不副实（`check` 在 `dryrun-harness.mjs:75` 即退出，`:78-88` 禁用 API 扫描不可达，实质由 `G-GOV-NO-FORBIDDEN-API-IN-DIFF` 承担）。
+**`PROJECT_BASELINE_HEALTH` 仍为 `DEGRADED`**：全量 `ruff check app/` 有既有告警债（本轮以 record 层真实 exitCode=1 原样入账，未降级、未绕过）。
 
 ## M1 — Architecture Stabilization（架构债清偿，执行前 Explore 必须复核债项现状）
 
