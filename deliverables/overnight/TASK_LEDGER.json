@@ -8,10 +8,10 @@
     "at": "2026-10-10T16:05:46Z",
     "note": "run wf_079d3071-a11 终态 BLOCKED/BLOCKED_GOVERNANCE_CONFLICT，FAILED_PHASE=Implement，ATTEMPTS=0。0/5 Task PASS 判据由流水线取得；实施产物完整留在工作区且未回退。根因是结构性授权通道缺口（F-61），非执行手作弊、非指纹不确定：baseline 与 post 两次取证均 VALID_DETERMINISTIC、headChanged=false、externalChangedDuringTask=[]、stagedAppeared=[]，守卫只因治理路径归属触发。"
   },
-  "goalStatus": "RUNNING-M0-PRE-GATE-CLEARANCE-PHASE-D-ARTIFACT-VERIFIED-PENDING-HD-N-15-SEAL-ROUTING",
-  "lastSafeCommit": "a41ac70",
-  "currentHead": "3516abe874a3812e3e53fc32da8757d89d589c0c",
-  "headPointerNote": "账本的 lastSafeCommit/currentHead 在写入时点是真相；紧随其后的记账提交无法自引用，故以 git log -1 为准。",
+  "goalStatus": "RUNNING-M0-PRE-GATE-CLEARANCE-PHASE-E-SEALED-NEXT-CATALOG-SYNC-THEN-PHASE-H",
+  "lastSafeCommit": "31c53dfd669b8b8c46046852a4a26df58fb02990",
+  "currentHead": "31c53dfd669b8b8c46046852a4a26df58fb02990",
+  "headPointerNote": "2026-10-10T16:24:59Z：FIX-GOV-008 经 HD-N-15 甲一次性人工 bootstrap 封存为 31c53dfd669b8b8c46046852a4a26df58fb02990（2 files, 376+/23-）；保护目录未被扰动。",
   "branch": "feature/m0-baseline",
   "modelPolicy": {
     "allowed": [
@@ -1153,13 +1153,37 @@
       "title": "task 模式的治理守卫不存在「人工授权治理任务」的合法通道 ⇒ FIX-GOV-008 结构上无法在 task 模式 PASS",
       "detail": "守卫按设计 fail-closed（防止实施任务悄悄改门禁机器），但 classifyDelta 的授权集在 task 模式恒为 [spec.specPath]，SPEC 的 ALLOWED_WRITE_PATHS 完全不参与治理判定。于是即使人工逐字授权且 SPEC 与之一致，改 .qoder/workflows/** 或 dryrun-harness.mjs 的任务也必被 BLOCK。这是授权通道缺失，不是漏洞利用被放行，也不是本次实施有错。历史同型任务 FIX-GOV-001-R1（HD-N-01 授权同样两文件）走的是「工作区产物 + 专用只读 Review/Verify 脚本 + 人工 §28 精确封存」的治理通道，封存于 d2d7ddb。",
       "impact": "凡人工授权的治理本体变更都不能用 task 模式跑完五判据；若误把 BLOCK 当失败重试，会反复消耗预算并把正确产物留在无主状态。反向风险：若为绕过守卫而临时放宽 classifyDelta，等于让被审查的机器自我开门。",
-      "status": "OPEN-PENDING-HD-N-15",
+      "status": "OPEN",
       "proposedOptions": [
         "A 走既有治理通道（FIX-GOV-001-R1 / d2d7ddb 先例）：保留工作区产物，由专用只读脚本完成 Review A+B 与 Verify，再由人工明确指示精确封存",
         "B 立修复任务，为 classifyDelta 增加「人工授权治理集」入参并由 SPEC 显式声明，配回归场景后重跑 task 模式",
         "C 人工处置工作区产物（不推荐：丢弃 376 行已验证实施）"
       ],
-      "chainPosition": "本链不自选；交人工裁定（HD-N-15）"
+      "chainPosition": "本链不自选；交人工裁定（HD-N-15）",
+      "resolutionState": "NOT_FIXED_BY_FIX-GOV-008",
+      "bootstrapNote": "FIX-GOV-008 封存的是 D4-2 argv 自回显（证据强度加固），并未给 classifyDelta 增加人工授权集通道；本任务得以封存，靠的是人工对这一次、这一个任务（FIX-GOV-008）的 HUMAN_BOOTSTRAP_SEAL 授权（HD-N-15 = 甲），结构性缺口仍在 ⇒ F-61 保持 OPEN，正式修复通道由 FIX-GOV-009 承载（BACKLOG，待人工授权）。"
+    },
+    "F-62": {
+      "id": "F-62",
+      "at": "2026-10-10T16:24:59Z",
+      "severity": "P3-DOCUMENTATION-ACCURACY",
+      "foundBy": "编排器 §2 封存前完整性核查（非 Reviewer/Verifier 报告）",
+      "title": "FIX-GOV-008 新写的披露文字沿用了修复前的行号自引用（:307/:319/:308），与修复后真实行号不符",
+      "detail": "project-feature-delivery.js:419 注释称『上面 :307/:319 的 norm』，:2664 REMAINING_LIMITATION 称『只由 :308 的命令逐字比较…兜住』；实测 norm 定义在 :400、commandVerbatim 比较在 :401、strictRaw 在 :421，而 :306-:312 是新加的 base64DecodeAscii 函数体。D4-2 的改动把解析器整体下移，行号引用未随之更新。",
+      "impact": "纯披露文本失准，不影响任何判定行为；但对『治理文件里的行号即证据』这一本项目自我约束的惯例是真实损害，后续读者按 :307/:308 跳转将落到错误代码。",
+      "disposition": "本轮不修：§10 要求当前字节 == 已审查字节，任何编辑都会作废三个 read-only verdict 并触发重审。列入 FIX-GOV-009 之后的治理维护批次（人工授权下的纯注释修订）。",
+      "status": "OPEN"
+    },
+    "F-63": {
+      "id": "F-63",
+      "at": "2026-10-10T16:24:59Z",
+      "severity": "P3-GATE-OBSERVABILITY",
+      "foundBy": "编排器 §2 封存前完整性核查（复核本轮 required 门禁实际输出）",
+      "title": "G-GOV-HARNESS-STATIC 名称承诺『禁用 API 静态扫描』，实际只产出 SYNTAX_OK（扫描代码不可达）",
+      "detail": "该门禁命令为 `node .qoder/workflow-state/dryrun-harness.mjs check`，而 dryrun-harness.mjs:75 在 check 分支即 process.exit(0)，:78-88 的禁用 API 正则扫描永远跑不到 ⇒ exit 0 的证据只有 SYNTAX_OK。禁用 API 这件事实际由另一条 required 门禁 G-GOV-NO-FORBIDDEN-API-IN-DIFF 承担（本轮 FORBIDDEN_HITS=0）。",
+      "impact": "门禁名与门禁证据不符 = 误读风险（读者会以为扫描真的跑了）。§8/§9 的实质要求未受影响，因为独立的那条门禁覆盖了它；本批未声称该门禁完成了扫描（上一轮实施者的这一过度声称已被三个 read-only invocation 独立指出）。",
+      "disposition": "OPEN；FIX-GOV-009 之后的治理批次应把该门禁改为真正可达的扫描命令（或改名 G-GOV-HARNESS-SYNTAX 并保留 G-GOV-NO-FORBIDDEN-API-IN-DIFF）。本轮同样因 §10 字节一致性要求而不改。",
+      "status": "OPEN"
     }
   },
   "humanDecisionsRequired": [
@@ -1318,14 +1342,14 @@
     {
       "id": "HD-N-15",
       "at": "2026-10-10T15:42:48Z",
-      "decisionState": "PENDING-HUMAN-DECISION",
+      "decisionState": "RULED_AND_EXECUTED",
       "decision": "FIX-GOV-008 的合法执行通道：task 模式经 F-61 结构性 BLOCK 后，是否采纳先例路由（甲＝治理通道：只读 Review A+B＋Verify＋人工精确封存指示），还是先修守卫（乙＝另立治理修复任务为 classifyDelta 增加人工授权集入参并补回归场景），或丙＝人工自行处置工作区产物。",
       "blocks": [
         "Phase E 封存",
         "Phase F/G catalog 同步中的 FIX-GOV-008 状态行",
         "M0 pre-gate 收尾"
       ],
-      "outcome": null,
+      "outcome": "已按 §2–§14 于 2026-10-10T16:24:59Z 封存为 31c53dfd669b8b8c46046852a4a26df58fb02990；FORMAL TASK_DELTA/GOVERNANCE_GUARD 未签发（F-61 仍 OPEN）",
       "knownResidualWeakness": "FLASH_ONLY 下审查者与被审查的审查机器同模型，独立性只剩 invocation 隔离一层（HD-N-13 乙已知情承担）。",
       "safetyRedlines": [
         "未经人工明确指示不封存（不 commit 这两个治理文件）",
@@ -1340,7 +1364,15 @@
         "precedent": "fixGov001R1（sealCommit d2d7ddb）",
         "independentVerdicts": "Reviewer A=PASS(0 blocker/4 notes) + Reviewer B=PASS(0 blocker/6 notes) + Verifier=TASK_PASS(AC-01..AC-11 met)，三个互不可见只读 invocation 于 2026-10-10T16:05:46Z 完成；编排器复核两文件指纹仍为 a36634eb3734… / b4b2d0df6c5e…，暂存区空，M9 exit 0"
       },
-      "decisionNowNarrowedTo": "证据已齐，剩余唯一问题＝封存通道与形式判据：甲 依先例直接精确封存（并如实登记 F-61 使流水线三条形式判据MACHINE_GATE_PASS/TASK_DELTA_PASS/GOVERNANCE_GUARD_PASS 只能以『编排器复算 + 三方独立只读复核』替代流水线产出）；乙 先立治理修复任务补 classifyDelta 的人工授权集入参与回归场景，再回 task 模式重跑一遍以取得形式判据；丙 人工自行处置。"
+      "decisionNowNarrowedTo": "证据已齐，剩余唯一问题＝封存通道与形式判据：甲 依先例直接精确封存（并如实登记 F-61 使流水线三条形式判据MACHINE_GATE_PASS/TASK_DELTA_PASS/GOVERNANCE_GUARD_PASS 只能以『编排器复算 + 三方独立只读复核』替代流水线产出）；乙 先立治理修复任务补 classifyDelta 的人工授权集入参与回归场景，再回 task 模式重跑一遍以取得形式判据；丙 人工自行处置。",
+      "ruling": "甲（OPTION A）：允许恰好一次 HUMAN_BOOTSTRAP_SEAL of FIX-GOV-008",
+      "scopeDiscipline": "本授权仅覆盖 FIX-GOV-008，不得泛化为以后 Governance Task 自动绕过 TASK_DELTA / GOVERNANCE_GUARD",
+      "safetyRedlinesHonored": {
+        "未经人工明确指示不封存": "人工本轮明确指示封存后方才执行",
+        "不回退工作区产物": "全程零 checkout/restore/reset/clean/stash",
+        "不改 classifyDelta 来放行本任务": "classifyDelta 未被改动（本轮 diff 仅两个治理文件的 argv 部分）",
+        "SCRIPT_SIDE_HASH_AVAILABLE 必须仍为 false": "实测 :251 仍为 false，禁用 API 扫描 FORBIDDEN_HITS=0"
+      }
     }
   ],
   "pendingFixTasks": {
@@ -1537,7 +1569,34 @@
       "sealedAt": "2026-10-10T13:34:15Z",
       "sealCommit": "a41ac70"
     },
-    "FIX-GOV-008": "ARTIFACT-VERIFIED-A-B-VERIFIER-PASS-PENDING-HD-N-15-SEAL-ROUTING"
+    "FIX-GOV-008": {
+      "source": "F-60（门禁与指纹的内容身份只到『执行手转述命令文本』，宽松 norm 会吞掉空白型改写）",
+      "objective": "把内容身份升级为『命令自身逐字回显（指纹 A 行 / 门禁 Q 行）+ 脚本侧自实现 base64 独立重算并逐字符比对』，缺失或不符即终态阻塞，required 与 record 同等不放行",
+      "status": "SEALED / PASS-WITH-HD-N-15-BOOTSTRAP-AUTHORIZATION",
+      "commit": "31c53dfd669b8b8c46046852a4a26df58fb02990",
+      "sealedAt": "2026-10-10T16:24:59Z",
+      "honestNote": "非标准五判据 TASK_PASS：FORMAL_TASK_DELTA_VERDICT=NOT_ISSUED_DUE_TO_F61、FORMAL_GOVERNANCE_GUARD_VERDICT=NOT_PASSABLE_BY_CURRENT_DESIGN_F61；保证来自人工一次性授权（ASSURANCE_OVERRIDE=HUMAN_BOOTSTRAP_AUTHORIZATION_HD_N_15），不伪造 TASK_DELTA_PASS / GOVERNANCE_GUARD_PASS。",
+      "evidence": "见 phaseE_HD_N_15_bootstrap_seal（§2 六项现场重跑 + §7 122/122 + §8 七行为 + §10 字节相等复用 A/B/Verifier + §11 十判据全真）"
+    },
+    "FIX-GOV-009": {
+      "status": "BACKLOG_REQUIRES_HUMAN_AUTHORIZATION",
+      "title": "Human-authorized governance write-set protocol（为 F-61 建立合法的治理任务写入通道）",
+      "registeredAt": "2026-10-10T16:24:59Z",
+      "authorizedToImplementTonight": false,
+      "note": "本夜仅登记，零代码。禁止简单关闭 Governance Guard。",
+      "futureDesignMinimums": [
+        "taskType=governance 显式分类",
+        "humanAuthorizationId 非空且可核对",
+        "精确路径白名单（exact path allowlist）",
+        "禁止通配符",
+        "禁止目录级隐式授权",
+        "当前任务 diff ⊆ 授权路径集",
+        "治理回归必跑",
+        "独立 Review 必做",
+        "独立 Verify 必做",
+        "授权不可由 Worker 自行生成"
+      ]
+    }
   },
   "specConflictLog": [
     {
@@ -2925,5 +2984,321 @@
       "GOVERNANCE_GUARD_PASS": "按 task 模式定义必然为 FAIL（F-61）；改走治理通道则需人工明确下达封存指令方成立"
     },
     "stillNotSealed": "HD-N-15 未裁定 ⇒ Phase E 的 fix(governance): harden machine gate command evidence 仍不执行。"
+  },
+  "phaseE_HD_N_15_bootstrap_seal": {
+    "at": "2026-10-10T16:24:59Z",
+    "taskId": "FIX-GOV-008",
+    "authorization": {
+      "id": "HD-N-15",
+      "option": "甲 (OPTION A)",
+      "what": "允许恰好一次 HUMAN_BOOTSTRAP_SEAL of FIX-GOV-008",
+      "recordedReason": "治理任务修改治理文件本身触发 F-61，属于当前治理模型的 bootstrap limitation",
+      "explicitlyNotTheReason": [
+        "代码质量不足",
+        "Machine Gate 红",
+        "Reviewer 红",
+        "Verifier 红",
+        "Scope 不明"
+      ],
+      "scopeLimit": "仅适用于 FIX-GOV-008；不得泛化为以后 Governance Task 自动绕过 TASK_DELTA / GOVERNANCE_GUARD",
+      "oneTimeOnly": true
+    },
+    "noBlindSealReexecution": {
+      "note": "§2 要求全部现场重跑，禁止引用旧结果。以下六项均为本轮真实执行输出。",
+      "A_gitState": {
+        "branch": "feature/m0-baseline",
+        "headBeforeSeal": "9d69fc4",
+        "headCommitIsBookkeepingOnly": true,
+        "proofHeadBookkeepingOnly": "git log --name-only 3516abe..HEAD 的全部路径 = deliverables/overnight/GOAL_PROGRESS.md + TASK_LEDGER.json；git log 3516abe..HEAD -- <两个治理文件> 为空 ⇒ 治理 blob 未被这两个 commit 扰动",
+        "porcelainBeforeSeal": [
+          " M .qoder/workflow-state/dryrun-harness.mjs",
+          " M .qoder/workflows/project-feature-delivery.js",
+          "?? docs/qgraphflow/dialogue-turn-sequence/"
+        ],
+        "stagedBeforeSeal": [],
+        "diffNameOnly": [
+          ".qoder/workflow-state/dryrun-harness.mjs",
+          ".qoder/workflows/project-feature-delivery.js"
+        ],
+        "diffStat": "2 files changed, 376 insertions(+), 23 deletions(-)",
+        "cachedCheckExit": 0
+      },
+      "B_protectedScope": {
+        "path": "docs/qgraphflow/dialogue-turn-sequence/",
+        "policy": "永远不得 修改/stage/删除/clean",
+        "liveTreeFingerprintRecomputedWithScriptsOwnAlgorithm": "E|docs/qgraphflow/dialogue-turn-sequence/|2|9eb05078952d3b82cb53850404821449c518b3d70f491d5beaeaacdb795f82e0",
+        "protectionBaseline": "E|…|2|9eb05078952d3b82cb53850404821449c518b3d70f491d5beaeaacdb795f82e0",
+        "membersLive": [
+          "graph.json|34972|5f12d3d4503d2305f352b21b8d275bb5e2ea544a32f3d539ea6909951373f138|2fe742d810f7cd0ce2f5eb401f0050a0",
+          "index.html|794348|2bd127b7c22c25b20e04804cc5c745f686f7f462cae96649aa9b47612d4bf600|c1bb9c9b90d92db933577e4056e3ba91"
+        ],
+        "unchanged": true,
+        "stillUntrackedAfterSeal": true
+      },
+      "C_governanceRegression": {
+        "command": "node .qoder/workflow-state/dryrun-harness.mjs test",
+        "exit": 0,
+        "REGRESSION_TOTAL": 122,
+        "REGRESSION_TOTAL_requirement": ">=122",
+        "allPass": true,
+        "OLD_SCENARIO_COUNT": 106,
+        "OLD_SCENARIOS_PRESERVED": true,
+        "OLD_ASSERTION_SEMANTICS_CHANGED": false,
+        "OLD_EXPECTATION_DIGEST": "cecf72bcb036d66b319f6dfd8c77d119bf2a4bdd8a63fea913394bfb0272a7bf",
+        "NEW_SCENARIOS": 16,
+        "newScenariosRequirement": ">=16",
+        "harnessReadsRealWorkflowSource": "dryrun-harness.mjs:55-56 readFileSync(../workflows/project-feature-delivery.js) ⇒ 122 条判据作用于将被封存的实际字节，非副本"
+      },
+      "D_M9_finalIntegrity": {
+        "command": "node .qoder/workflow-state/dryrun-harness.mjs check",
+        "exit": 0,
+        "output": "SYNTAX_OK (wrapped-async ESM check)"
+      },
+      "E_strayFileCheck": {
+        "gitLsFilesOthersExcludeStandard": [
+          "docs/qgraphflow/dialogue-turn-sequence/graph.json",
+          "docs/qgraphflow/dialogue-turn-sequence/index.html"
+        ],
+        "conclusion": "NO_NEW_STRAY_FILES = true（门禁与回归跑完之后复检，未出现任何新的未知文件）",
+        "policyIfChanged": "任何新的未知文件 → STOP + BLOCKED_EXTERNAL_OR_REVIEWER_ARTIFACT；不得自行删除未知文件",
+        "violated": false
+      },
+      "F_deterministicFingerprints": {
+        "authority": "DETERMINISTIC_BYTE_HASH",
+        "note": "core.autocrlf=true ⇒ git blob hash ≠ worktree 原始字节 hash，属预期而非篡改；本轮以 worktree 原始 sha256 为封存身份。",
+        "artifacts": {
+          ".qoder/workflows/project-feature-delivery.js": {
+            "bytes": 196116,
+            "sha256": "a36634eb37347a45afffd112f0b49ed15bd2d8158fed60745659a49a2d2268a9"
+          },
+          ".qoder/workflow-state/dryrun-harness.mjs": {
+            "bytes": 143698,
+            "sha256": "b4b2d0df6c5e9c01131355cbc7747521fbc8bfd5f01a1c3b09dff9c15d58d7b8"
+          }
+        }
+      }
+    },
+    "machineCommandsRecomputed": {
+      "source": "本会话按 SPEC 冻结的 MACHINE_GATE_COMMANDS 逐条 bash.exe -c 现场执行（非引用上一轮结果）",
+      "declared": 12,
+      "submitted": 12,
+      "required": 10,
+      "record": 2,
+      "requiredRed": [],
+      "recordNonzero": [
+        "G-RUFF-FULL"
+      ],
+      "table": [
+        {
+          "gateId": "G-GOV-NODE-SYNTAX",
+          "kind": "required",
+          "exitCode": 0
+        },
+        {
+          "gateId": "G-GOV-HARNESS-STATIC",
+          "kind": "required",
+          "exitCode": 0
+        },
+        {
+          "gateId": "G-GOV-HARNESS-REGRESSION",
+          "kind": "required",
+          "exitCode": 0
+        },
+        {
+          "gateId": "G-GOV-ROSTER-INTEGRITY",
+          "kind": "required",
+          "exitCode": 0
+        },
+        {
+          "gateId": "G-GOV-NEW-SCENARIOS-7",
+          "kind": "required",
+          "exitCode": 0
+        },
+        {
+          "gateId": "G-GOV-CONSTANTS-UNCHANGED",
+          "kind": "required",
+          "exitCode": 0
+        },
+        {
+          "gateId": "G-GOV-PROTOCOL-BUMP",
+          "kind": "required",
+          "exitCode": 0
+        },
+        {
+          "gateId": "G-GOV-NO-FORBIDDEN-API-IN-DIFF",
+          "kind": "required",
+          "exitCode": 0
+        },
+        {
+          "gateId": "G-GOV-SCOPE",
+          "kind": "required",
+          "exitCode": 0
+        },
+        {
+          "gateId": "G-BACKEND-REGRESSION",
+          "kind": "required",
+          "exitCode": 0
+        },
+        {
+          "gateId": "G-RUFF-FULL",
+          "kind": "record",
+          "exitCode": 1
+        },
+        {
+          "gateId": "G-GIT-STATUS",
+          "kind": "record",
+          "exitCode": 0
+        }
+      ],
+      "doubleTruthPreserved": "G-RUFF-FULL 真实 exitCode=1 原样记录，未降级、未绕过、未改名（PROJECT_BASELINE_HEALTH 仍 DEGRADED）"
+    },
+    "section8_coreCheck": {
+      "requirement": "确认 FIX-GOV-008 确实针对 F-60 的命令证据/逐字完整性问题；COMMAND_NOT_VERBATIM 不得变成 warning-only，必须仍 fail-closed",
+      "addressesF60": true,
+      "commandNotVerbatimStillFailClosed": {
+        "raisedAt": "project-feature-delivery.js:402 → problems.push('FINGERPRINT_EVIDENCE_INVALID:COMMAND_NOT_VERBATIM…')",
+        "aggregatedAt": ":525 out.evidenceValid = problems.length === 0",
+        "consumedBy": [
+          ":530 isVerifiedEvidence()",
+          ":602 retry-ownership reject",
+          ":701 delta evidenceRejected",
+          ":771-772 → BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN",
+          ":1960 adjudication BLOCK"
+        ],
+        "isWarningOnly": false
+      },
+      "gateArgvEchoCallSite": ":2218 detectGateArgvEcho(cmds, spec)，位于 :2208 detectGateDeclaration 之后；两者均以 blocked(...) 终态返回，无警告分支",
+      "recordGatesBlockedToo": true,
+      "hashCapabilityFabricated": false,
+      "sevenBehaviors": [
+        {
+          "case": "exact legal command → PASS",
+          "evidence": "d6-20-honest-exact-command-passes → TASK_PASS",
+          "live": true
+        },
+        {
+          "case": "command text mutation → BLOCK",
+          "evidence": "d6-16-argv-content-mutation → BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN (ARGV_NOT_VERBATIM:CONTENT)",
+          "live": true
+        },
+        {
+          "case": "whitespace-relevant mutation → BLOCK",
+          "evidence": "d6-15-argv-whitespace-mutation → BLOCKED (ARGV_NOT_VERBATIM:WHITESPACE)",
+          "live": true
+        },
+        {
+          "case": "argument mutation → BLOCK",
+          "evidence": "d6-16 CONTENT + d6-17 同 gateId 换命令 → BLOCK",
+          "live": true
+        },
+        {
+          "case": "same gateId + wrong command → BLOCK",
+          "evidence": "d6-17-gate-id-same-command-changed → GATE_ARGV_NOT_VERBATIM",
+          "live": true
+        },
+        {
+          "case": "executor claims success but command mismatch → BLOCK",
+          "evidence": "d6-18-executor-claims-green-with-wrong-argv → GATE_ARGV_NOT_VERBATIM（正是『仅 exitCode=0 冒充正确 command』的禁止路径）",
+          "live": true
+        },
+        {
+          "case": "evidence disagreement → BLOCK",
+          "evidence": "d6-19-evidence-disagreement → BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN",
+          "live": true
+        }
+      ],
+      "notClaimedPath": "exitCode=0 单独不足以放行：argv 身份由命令自身回显的 Q/A 行与脚本侧自实现 base64 逐字符比对共同决定",
+      "honestResidual": "脚本沙箱仍无自读字节能力；D4-2 把『改令成本』抬高，未彻底消除回传面风险（见 :2664 REMAINING_LIMITATION 三条 a/b/c）"
+    },
+    "section9_honestyOfInvariants": {
+      "SCRIPT_SIDE_HASH_AVAILABLE": false,
+      "CONTENT_IDENTITY_AUTHORITY": "DETERMINISTIC_BYTE_HASH",
+      "FINGERPRINT_BACKEND": "AGENT_EXECUTOR_FALLBACK",
+      "FP_PROTOCOL": "D4-2",
+      "EXECUTION_MODE_default": "FULL（未被本批改动）",
+      "inventedApisIntroduced": 0,
+      "scanEvidence": "G-GOV-NO-FORBIDDEN-API-IN-DIFF required exit=0 → FORBIDDEN_HITS=0（对两文件 diff 的 + 行扫 require/process/import/crypto/fs./Buffer./Math.random/Date.now/new Date）",
+      "note": "脚本内仅有 2 处提到 fs/crypto/require 等标识，均在 :226 注释与 :250 事实边界字符串里，内容是『沙箱里没有这些能力』——属披露，非使用。"
+    },
+    "section10_verdictReuseBasis": {
+      "rule": "字节一致 → 三个 read-only verdict 可复用；任一不一致 → 旧 verdict 作废、必须重跑 Review/Verify",
+      "currentVsReviewed": {
+        ".qoder/workflows/project-feature-delivery.js": {
+          "current": "a36634eb37347a45afffd112f0b49ed15bd2d8158fed60745659a49a2d2268a9",
+          "reviewed": "a36634eb37347a45afffd112f0b49ed15bd2d8158fed60745659a49a2d2268a9",
+          "equal": true
+        },
+        ".qoder/workflow-state/dryrun-harness.mjs": {
+          "current": "b4b2d0df6c5e9c01131355cbc7747521fbc8bfd5f01a1c3b09dff9c15d58d7b8",
+          "reviewed": "b4b2d0df6c5e9c01131355cbc7747521fbc8bfd5f01a1c3b09dff9c15d58d7b8",
+          "equal": true
+        }
+      },
+      "decision": "复用 Reviewer A / Reviewer B / Verifier 三个独立 read-only invocation 的结论，不重跑（额度纪律）",
+      "verdictsReused": {
+        "reviewerA": "PASS",
+        "reviewerB": "PASS",
+        "verifier": "TASK_PASS"
+      }
+    },
+    "section11_bootstrapFormula": {
+      "RECOMPUTED_MACHINE_COMMANDS": "PASS",
+      "GOVERNANCE_REGRESSION": "PASS",
+      "M9_FINAL_INTEGRITY": "PASS",
+      "CURRENT_ARTIFACT_HASHES_EQ_REVIEWED": "YES",
+      "REVIEWER_A": "PASS",
+      "REVIEWER_B": "PASS",
+      "VERIFIER": "TASK_PASS",
+      "ACTUAL_SCOPE_EQ_EXACT_TASK_OWNED_GOVERNANCE_FILES": "YES",
+      "NO_NEW_STRAY_FILES": "YES",
+      "PROTECTED_PATH_UNCHANGED": "YES",
+      "HD_N_15_BOOTSTRAP_SEAL_ALLOWED": "YES",
+      "mandatoryHonestRecords": {
+        "FORMAL_TASK_DELTA_VERDICT": "NOT_ISSUED_DUE_TO_F61",
+        "FORMAL_GOVERNANCE_GUARD_VERDICT": "NOT_PASSABLE_BY_CURRENT_DESIGN_F61",
+        "ASSURANCE_OVERRIDE": "HUMAN_BOOTSTRAP_AUTHORIZATION_HD_N_15",
+        "explicitlyNotFabricated": [
+          "TASK_DELTA_PASS",
+          "GOVERNANCE_GUARD_PASS"
+        ]
+      }
+    },
+    "seal": {
+      "stagingMethod": "逐文件精准 git add -- <精确路径>（未使用 git add . / git add -A）",
+      "stagedFilesVerifiedExactly": [
+        ".qoder/workflow-state/dryrun-harness.mjs",
+        ".qoder/workflows/project-feature-delivery.js"
+      ],
+      "commitMessageVerbatim": "fix(governance): harden machine gate command evidence",
+      "FIX_GOV_008_COMMIT_SHA": "31c53dfd669b8b8c46046852a4a26df58fb02990",
+      "prohibitedAndNotDone": [
+        "push",
+        "merge",
+        "rebase",
+        "tag"
+      ]
+    },
+    "postSealVerification": {
+      "head": "31c53dfd669b8b8c46046852a4a26df58fb02990",
+      "branch": "feature/m0-baseline",
+      "showStatOneline": "31c53df fix(governance): harden machine gate command evidence | 2 files changed, 376 insertions(+), 23 deletions(-)",
+      "porcelain": [
+        "?? docs/qgraphflow/dialogue-turn-sequence/"
+      ],
+      "gitDiffHeadNameOnly": [],
+      "worktreeBlobsStillEqualReviewedHashes": true,
+      "protectedDirStillUntrackedAndUnchanged": true,
+      "conclusion": "被提交的字节 == 工作区字节 == 三个 read-only verdict 审查过的字节。"
+    },
+    "newObservationsFoundByOrchestratorDuringPreSeal": [
+      "F-62",
+      "F-63"
+    ],
+    "notClaimed": [
+      "不声称本任务取得标准五判据 TASK_PASS（FORMAL TASK_DELTA / GOVERNANCE_GUARD 因 F-61 未签发）",
+      "不声称 F-61 已被修复：bootstrap limitation 仍在，本次只是人工一次性授权绕过",
+      "不声称 FIX-GOV-008 已进入 M0 Milestone Gate（M0 门禁 = NOT_ENTERED）",
+      "不声称 G-GOV-HARNESS-STATIC 验证了禁用 API 扫描（见 F-63）"
+    ]
   }
 }
