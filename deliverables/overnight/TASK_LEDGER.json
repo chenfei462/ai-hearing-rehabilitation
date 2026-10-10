@@ -4,11 +4,11 @@
   "currentMilestone": "M0",
   "currentTask": {
     "taskId": "FIX-GOV-008",
-    "state": "IMPLEMENTED-IN-WORKING-TREE-TASK-MODE-BLOCKED-GOVERNANCE-CONFLICT-PENDING-INDEPENDENT-REVIEW-A-B-AND-VERIFIER",
-    "at": "2026-10-10T15:42:48Z",
+    "state": "IMPLEMENTED-IN-WORKING-TREE-REVIEW-A-PASS-REVIEW-B-PASS-VERIFIER-TASK-PASS-PENDING-HD-N-15-SEAL-ROUTING",
+    "at": "2026-10-10T16:05:46Z",
     "note": "run wf_079d3071-a11 终态 BLOCKED/BLOCKED_GOVERNANCE_CONFLICT，FAILED_PHASE=Implement，ATTEMPTS=0。0/5 Task PASS 判据由流水线取得；实施产物完整留在工作区且未回退。根因是结构性授权通道缺口（F-61），非执行手作弊、非指纹不确定：baseline 与 post 两次取证均 VALID_DETERMINISTIC、headChanged=false、externalChangedDuringTask=[]、stagedAppeared=[]，守卫只因治理路径归属触发。"
   },
-  "goalStatus": "RUNNING-M0-PRE-GATE-CLEARANCE-PHASE-D-IMPL-IN-WORKTREE-TASK-MODE-STRUCTURALLY-BLOCKED-PENDING-INDEPENDENT-REVIEW",
+  "goalStatus": "RUNNING-M0-PRE-GATE-CLEARANCE-PHASE-D-ARTIFACT-VERIFIED-PENDING-HD-N-15-SEAL-ROUTING",
   "lastSafeCommit": "a41ac70",
   "currentHead": "3516abe874a3812e3e53fc32da8757d89d589c0c",
   "headPointerNote": "账本的 lastSafeCommit/currentHead 在写入时点是真相；紧随其后的记账提交无法自引用，故以 git log -1 为准。",
@@ -1337,8 +1337,10 @@
         "runId": "wf_079d3071-a11",
         "finding": "F-61",
         "machineEvidence": "orchestratorRecomputedMachineEvidence（required 10/10 exit 0，122/122，digest 未变）",
-        "precedent": "fixGov001R1（sealCommit d2d7ddb）"
-      }
+        "precedent": "fixGov001R1（sealCommit d2d7ddb）",
+        "independentVerdicts": "Reviewer A=PASS(0 blocker/4 notes) + Reviewer B=PASS(0 blocker/6 notes) + Verifier=TASK_PASS(AC-01..AC-11 met)，三个互不可见只读 invocation 于 2026-10-10T16:05:46Z 完成；编排器复核两文件指纹仍为 a36634eb3734… / b4b2d0df6c5e…，暂存区空，M9 exit 0"
+      },
+      "decisionNowNarrowedTo": "证据已齐，剩余唯一问题＝封存通道与形式判据：甲 依先例直接精确封存（并如实登记 F-61 使流水线三条形式判据MACHINE_GATE_PASS/TASK_DELTA_PASS/GOVERNANCE_GUARD_PASS 只能以『编排器复算 + 三方独立只读复核』替代流水线产出）；乙 先立治理修复任务补 classifyDelta 的人工授权集入参与回归场景，再回 task 模式重跑一遍以取得形式判据；丙 人工自行处置。"
     }
   ],
   "pendingFixTasks": {
@@ -1535,7 +1537,7 @@
       "sealedAt": "2026-10-10T13:34:15Z",
       "sealCommit": "a41ac70"
     },
-    "FIX-GOV-008": "IMPLEMENTED-IN-WORKING-TREE-TASK-MODE-BLOCKED-GOVERNANCE-CONFLICT-PENDING-INDEPENDENT-REVIEW"
+    "FIX-GOV-008": "ARTIFACT-VERIFIED-A-B-VERIFIER-PASS-PENDING-HD-N-15-SEAL-ROUTING"
   },
   "specConflictLog": [
     {
@@ -2808,5 +2810,120 @@
       "GOVERNANCE_GUARD_PASS（正是本次 BLOCK 的判定点，改走治理通道后须重新成立）",
       "Phase E 封存（在未获人工/治理通道裁定前禁止）"
     ]
+  },
+  "phaseDIndependentVerification": {
+    "recordedAt": "2026-10-10T16:05:46Z",
+    "why": "F-61 使 task 模式无法产出这三条判据（流水线在 Implement 即 BLOCK，从未进入 Machine Gate/Review/Verify）。人工 §9 要求 HIGH Risk 必须『两个彼此不可见的 Reviewer A+B 均 PASS + 独立 Verifier PASS + 完整治理回归 PASS』，故按 FIX-GOV-001-R1 先例以三个相互独立的只读 invocation 补齐证据；本步骤零写入、零 commit、零破坏性 git。",
+    "executionMode": "FLASH_ONLY（HD-N-13 乙授权本批；三个角色运行时同为 qfmodel，独立性只剩 invocation 隔离一层）",
+    "channel": "Agent tool（read-only 指示），非 task 模式流水线",
+    "reviewerA": {
+      "verdict": "PASS",
+      "blockers": 0,
+      "nonBlockingNotes": 4,
+      "personallyRan": [
+        "node --check workflow → 0",
+        "harness test → 0（122/122、roster 106/16、digest 未变、7 新场景命中 SPEC 终态）",
+        "harness check → 0 但只打印 SYNTAX_OK（⇒ NB-1）",
+        "真实 bash 跑 5 行取证包装器：自打印 A|970|… 与脚本期望逐字节相等（REAL_CLI_A_EQ_JS_A=TRUE，1302==1302）",
+        "JS 编码器 == /usr/bin/base64 == Buffer（a=YQ== / ab=YWI= / abc=YWJj）",
+        "M8 等价扫描 376 新增行 → FORBIDDEN_HITS=0"
+      ],
+      "keyFindings": [
+        "strict 路径独立存在：:421 strictRaw/strictLines 只剥 \\r 与单个末尾换行，不复用 :400/:413 的宽松 norm",
+        "门禁顺序 detectGateDeclaration(:2208) 在 detectGateArgvEcho(:2218) 之前 ⇒ d6-06 仍 GATE_COMMAND_NOT_DECLARED、d6-17/18 仍 GATE_ARGV_NOT_VERBATIM，旧判定未被顶掉",
+        "KNOWN_PLATFORM_LIMITATION 在代码中出现 0 次 ⇒ 未新增绕过出口",
+        "AC-08（后端 235）它主动不跑，交 Verifier 核实"
+      ]
+    },
+    "reviewerB": {
+      "verdict": "PASS",
+      "blockers": 0,
+      "nonBlockingNotes": 6,
+      "personallyRan": [
+        "node --check → 0；harness test → 0（122/122）；harness check → 0",
+        "SPEC 冻结门禁 M4/M5/M6/M7/M8/M9 逐条经 Git Bash → 全 0（M10/M11 主动不跑）",
+        "自行用 harness :447 公式重算 digest：git show HEAD 版 106 行 → cecf72bc…；工作区版 → 同一值；旧行 0 改动；恰新增 7 行且 id 逐字一致",
+        "单独比对 d6-01..d6-13（digest 过滤用 !/^d6-/ 不覆盖它们）⇒ 全部未变",
+        "花括号配对提取 + 与 git show HEAD 字符串相等：detectRequiredDowngrade / detectGateDeclaration / gateCompute / gateSplit / effGateKind / scanUnsafeDbCommand / detectForbiddenGit / blocked() / classifyDelta 均 byte-IDENTICAL",
+        "重建真实下发包装器跑 B= 与 printf A 行（不 eval、零写入）→ 与脚本期望一致；12 条声明门禁（含 2 条 record）→ 12/12 Q 行匹配",
+        "验证 ROLLBACK_PLAN 的哈希而非采信文本：HEAD 内容经 CRLF 归一后 == 5512598f…/441daf23…，且 git log 3516abe..HEAD -- 两文件为空 ⇒ restore 精确回到基线"
+      ],
+      "keyFindings": [
+        "场景不会空转：HEAD 版 workflow 拒新 stdout（PROTOCOL_MISMATCH）⇒ d6-20 不实现就不过；新版拒旧 shape ⇒ 双向咬合",
+        "harness 渲染 A 行用的是第二套独立编码器（hb64 = 原生 btoa + 位运算兜底），不是 workflow 自己的编码器 ⇒ 非自证",
+        "GATE_SCHEMA:1196 把 argvEcho 加进 required ⇒ 属加强不是放宽",
+        "部分回滚不是自愈而是响亮失败：任一方向都会 PROTOCOL_MISMATCH/ARGV_ECHO_MISSING → UNCERTAIN"
+      ],
+      "incident": "它自己第一次 shell 往返把多行 B='…' 字面量切错，正文泄漏到 shell 并在仓库根产生一个 0 字节杂散文件（正是 R13 危害形态）；它如实披露、删除、重跑 M9 → 0 并复核 git status。编排器随后独立复核通过。"
+    },
+    "verifier": {
+      "verdict": "TASK_PASS",
+      "personallyRan": [
+        "SPEC 冻结的 12 条门禁全部逐字经 Git Bash 复跑：M1 0 / M2 0 / M3 0 / M4 0 / M5 0 / M6 0 / M7 0 / M8 0 / M9 0 / M10 0（235 passed, 33 warnings）/ M11 1（Found 291 errors，record 原样入账）/ M12 0",
+        "M3 共执行 4 次（直接 + M4/M5 内嵌）全绿",
+        "两文件字节+sha256 与 run 指纹一致（MATCH ×2）",
+        "git diff --cached 为空；untracked 仅受保护目录两文件",
+        "把脚本钉住的包装器实跑 3 次：exit 0、10 行 stdout、前后哈希与 porcelain 完全相同 ⇒ 取证命令自身零写入",
+        "ASCII/非 ASCII 对照探针：ASCII 970 字符 == 970 字节；含非 ASCII 时 ${#B}=12 而字节数=26 ⇒ 长度自洽约束真实存在（NONASCII fail-closed 非装饰）"
+      ],
+      "acVerdicts": "AC-01..AC-11 全部 met（AC-10 实质成立但文本『HEAD 仍为 3516abe』已过时，见下）",
+      "gateWordingFlags": [
+        "M6 只证三串『存在』不证『未移动』（它另经 diff 确认未移动）",
+        "M7 只证 'D4-2' 字符串存在，不证旧形态被拒（由 :416 + d4-* 场景证）",
+        "M8/M9 用裸 git diff 未加 textconv 覆写 ⇒ 它验了非空转（374 行 / 55 KB 实差异）",
+        "M2 的 check 早退于 STATIC 扫描之前 ⇒ 名为 STATIC 实不扫（与两位 Reviewer 独立同判）"
+      ],
+      "rollbackJudgement": "成立。FP_PROTOCOL 只存在于这两个受跟踪文件；.qoder/workflow-state/*.spec.json 被 gitignore 且只含散文，没有任何持久化证据携带 D4-2 ⇒ 回退不留孤儿状态。但必须整体原子回退：harness 在 :763/:757 硬编码 D4-2 与 A 行，只回退一侧会让门禁链路一直 UNCERTAIN。",
+      "note": "core.autocrlf=true ⇒ git blob 哈希 ≠ 工作区原始字节哈希，SPEC 里 5512598f… 基线无法用裸工作区读复现，这不是篡改证据。",
+      "incident": "它构造畸形手工包装器探针（自己的引号缺陷，SPEC R13 场景）期间短暂出现一个以 payload 派生命名的未跟踪根文件；现已消失，经 porcelain / ls-files / M9 三面复核干净。它建议人工在 Phase E 封存前立即再跑一次 M9/porcelain。"
+    },
+    "convergenceOfThree": {
+      "agree": [
+        "三位独立只读 invocation 对『门禁命令自身回显 argv + 脚本侧逐字符复核』的实现判定一致：PASS / TASK_PASS，零 blocker",
+        "G-GOV-HARNESS-STATIC 名不副实（check 早退）由三方各自独立发现并同判为既存问题、非本 diff 引入、由 M3+M8 补偿",
+        "残余弱点口径一致：SCRIPT_SIDE_HASH_AVAILABLE 仍 false ⇒ 提高伪造成本，不消除伪造"
+      ],
+      "newFollowupsRaised": [
+        "R-b(Reviewer B)：record 条目若声称 EXECUTED_AND_RECORDED 却无数字 exitCode 且 argvEcho 为空，:969 会跳过、gateCompute 仍接受 ⇒ 该 record 的 argv 未经互证。非放宽（既存 record 语义），建议后续治理任务要求『声称已入账必须给数字 exitCode』",
+        "Reviewer B：新注释与终态串里的行号引用已过时（:307/:319/:308/:804 现落在 base64DecodeAscii 内，真正 norm 在 :400/:413）",
+        "Reviewer A / Verifier：AC-10 与 ROLLBACK_PLAN 文本写 HEAD 3516abe，实际 HEAD 503f814（仅编排器记账提交，两文件字节未变）⇒ 封存说明须如实改写基线号",
+        "Reviewer A：BLOCKED_FINGERPRINT_PAYLOAD_NONASCII 终态已实现但无场景覆盖（Verifier 用真机 ASCII/非 ASCII 探针补上了存在性证明）",
+        "harness :17 头注释仍写 协议 V|D4-1（文档漂移）"
+      ]
+    },
+    "artifactIntegrityReverifiedByOrchestratorAfterAllThree": {
+      "at": "2026-10-10T16:05:46Z",
+      "porcelain": [
+        " M .qoder/workflow-state/dryrun-harness.mjs",
+        " M .qoder/workflows/project-feature-delivery.js",
+        "?? docs/qgraphflow/dialogue-turn-sequence/"
+      ],
+      "staged": [],
+      "untrackedFiles": [
+        "docs/qgraphflow/dialogue-turn-sequence/graph.json",
+        "docs/qgraphflow/dialogue-turn-sequence/index.html"
+      ],
+      "m9Exit": 0,
+      "fingerprints": {
+        ".qoder/workflows/project-feature-delivery.js": {
+          "bytes": 196116,
+          "sha256": "a36634eb37347a45afffd112f0b49ed15bd2d8158fed60745659a49a2d2268a9"
+        },
+        ".qoder/workflow-state/dryrun-harness.mjs": {
+          "bytes": 143698,
+          "sha256": "b4b2d0df6c5e9c01131355cbc7747521fbc8bfd5f01a1c3b09dff9c15d58d7b8"
+        }
+      },
+      "matchesBlockedRunSnapshot": true,
+      "strayFilesFromAgentIncidents": "none present（两起均已由当事 agent 自行清除并经编排器三面复核）"
+    },
+    "clauseLedgerAfterThisStep": {
+      "INDEPENDENT_REVIEW_PASS_A+B": "已具备（两个互不可见 invocation 均 PASS、均 0 blocker）",
+      "VERIFY_TASK_PASS": "已具备（独立 Verifier TASK_PASS，12 条门禁逐字复跑，AC-01..AC-11 met）",
+      "MACHINE_GATE_PASS": "编排器侧 required 10/10 exit 0 已复算；但『流水线内 gateId 合同对账 + 真实 exitCode 计算』这一形式判据从未由流水线产出（run 未进入该阶段）",
+      "TASK_DELTA_PASS": "流水线未产出（BLOCK 发生在 Delta 判定同点）",
+      "GOVERNANCE_GUARD_PASS": "按 task 模式定义必然为 FAIL（F-61）；改走治理通道则需人工明确下达封存指令方成立"
+    },
+    "stillNotSealed": "HD-N-15 未裁定 ⇒ Phase E 的 fix(governance): harden machine gate command evidence 仍不执行。"
   }
 }
