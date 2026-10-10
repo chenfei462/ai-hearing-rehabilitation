@@ -4,9 +4,9 @@
   "currentMilestone": "M0",
   "currentTask": {
     "taskId": "FIX-PERF-03",
-    "state": "EXECUTING-REDISPATCHED",
-    "at": "2026-10-10T05:55:20Z",
-    "note": "HD-N-04 已获人工批准（范围仅 FIX-PERF-03）；首跑 wf_e7c7af02-88c 因 F-57 结构性自锁 BLOCKED，实施三文件在位且经我独立复跑全绿，负向自证改用零文件命令后实测可 FAIL 断言。现重新派发同任务以取正式 Machine Gate / Review(A+B) / Verify 结论。"
+    "state": "BLOCKED_MODEL_UNAVAILABLE-AWAITING-HUMAN",
+    "at": "2026-10-10T06:15:24Z",
+    "note": "HD-N-04 授权范围内的重试已派发（wf_64827cc9-6ae，FULL，args 内含 F-57 修正后的零文件负向自证 + 三条 64-hex 重试字节证据），Preflight/Classify/Explore/Scope Check 全过，Task Spec 阶段撞 Max 信用额度墙 → BLOCKED_MODEL_UNAVAILABLE。政策禁止换模型或自动降级，故停在 PAUSED_FOR_HUMAN：需人工恢复额度后 resume 同一 run，或显式授权其它路径。实施三文件仍在位、仍未封存。"
   },
   "goalStatus": "PAUSED_FOR_HUMAN_AT_M0_MILESTONE_GATE",
   "lastSafeCommit": "ed36481",
@@ -558,6 +558,18 @@
         "A（推荐）恢复/升级 Max 额度 → 用 resume 只重跑 Verify（Review 走缓存）→ PASS 后按 §28/§29 精确封存 → 续跑 M0",
         "B 人工显式授权本次治理 Fix 走 D3 FLASH_ONLY_DEGRADED_MODE 的独立 qfmodel 验收（判据等价、但需书面授权，且不得自动推广到后续 Task）",
         "C 人工直接审阅工作区 diff 并自行 commit（Orchestrator 代跑 commit 需 §26 验收，人工接手即视为 HD 批准）"
+      ],
+      "recurrences": [
+        {
+          "at": "2026-10-10T06:15:24Z",
+          "runId": "wf_64827cc9-6ae",
+          "taskId": "FIX-PERF-03",
+          "failedPhase": "Task Spec",
+          "terminalState": "BLOCKED_MODEL_UNAVAILABLE",
+          "errorVerbatim": "You've reached your credit usage limit. Please upgrade your subscription plan to get more resources.",
+          "differsFromOriginal": "原 F-29 是\"封学前主动停\"（预防性），本次是**流水线内部被动断**：同一 run 已完成 2 次模型探针 + 4 个 Max 决策角色后，第 8 个 agent（Task Spec）撞墙。新增可观测量：**同一 run 内 Max 角色可用性是\"够跑几步就断\"的渐变，而非布尔量**，因此 Preflight 探针通过 ≠ 任务能跑完。",
+          "disciplineCheck": "未换模型、未自动降级 FLASH_ONLY、未跳过 Task Spec 直接让 Flash 实现、未写任何文件（工作树与 HEAD 逐字节未变）。"
+        }
       ]
     },
     "F-30": {
@@ -1162,7 +1174,7 @@
         "cd backend && venv312/Scripts/python.exe -m ruff check app/"
       ],
       "selfProofRequired": "临时把 metrics 用例身份改为匿名，该用例必须 FAILED（证明断言真在把关）；验证后还原且不得提交",
-      "status": "EXECUTING-REDISPATCHED",
+      "status": "BLOCKED_MODEL_UNAVAILABLE-AWAITING-HUMAN",
       "blockedBy": "HD-N-04（向 docs/workflow/TASK_CATALOG.md 写入 FIX-* 行属治理写）；实施须走 project-feature-delivery task",
       "registeredAt": "2026-10-09T23:10:21Z",
       "humanAuthorization": {
@@ -1175,6 +1187,11 @@
         "at": "2026-10-10T05:55:20Z",
         "result": "BLOCKED / BLOCKED_REPAIR_OUT_OF_SCOPE（FAILED_PHASE=Repair，ATTEMPTS=1）",
         "note": "非门禁失败、非实现失败：见 F-57"
+      },
+      "secondRun": {
+        "runId": "wf_64827cc9-6ae",
+        "at": "2026-10-10T06:15:24Z",
+        "result": "BLOCKED / BLOCKED_MODEL_UNAVAILABLE @Task Spec（F-29 复发）"
       }
     },
     "FIX-PERF-04": {
@@ -1266,7 +1283,7 @@
       "gitWritesByFlash": "none（HEAD 仍 1a62703，staging 空，无破坏性 git 命令）"
     }
   ],
-  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。\n[2026-10-09T19:20:37Z] M0-006 = TASK_PASS（run wf_6c897bee-ab8，mode=FULL，agents=27，toolUses=427，7597134ms，repair=2）。\n[2026-10-09T20:03:41Z] M0-007 = TASK_PASS（run wf_cc12b79d-5be，mode=FULL，agents=15，toolUses=127，1779557ms，repair=0）。\n[2026-10-09T20:43:35Z] M0-008 = TASK_PASS（run wf_dfb3e8e5-ed5，mode=FULL，agents=15，toolUses=158，2196279ms，repair=0）。\n[2026-10-09T20:58:02Z] F-54：:5432 监听进程 6892 → 6740（原生 postgres.exe 服务），历史观测快照过期；实例身份仍未知，零接触纪律不变。已封存交付物未改写。\n[2026-10-09T23:08:36Z] F-44 只读复核（未改仓库文件）：PF-01 独立复现 [401,401,401] + 7 条用例状态映射（仅 metrics 落错误路径）+ 身份矩阵 401/403/200 + 更正\"补 therapist fixture\"（conftest.py:158 已存在）+ 真实 200 路径中位数 4.70ms 证明修正后仍绿 + 建议同批清偿 F-01。新增 F-55（缓存命中样本主导两条用例中位数）。另自查发现 F-56：notes 曾被 \"[object Object]\" 拼接毁掉 7 键正文，已自 6fe4904 原样恢复至 notesPreCorruption。FIX-PERF-03/04 仍待 HD-N-04 落库，自治链未实施测试代码改动。\n[2026-10-09T23:10:41Z] 续记：FIX-PERF-03 / FIX-PERF-04 已登记进 pendingFixTasks（各含 evidenceGrounded、explicitlyNotDoing、gateCommands、selfProofRequired，状态 BACKLOG-GATED-BY-HD-N-04）。本写入按 F-56 建议先做运行时类型断言，并在写后校验原 notes 为逐字节前缀。测试代码与业务代码零改动。\n[2026-10-10T05:55:20Z] HD-N-04 = APPROVED（人工授权，范围仅 FIX-PERF-03；docs/workflow/** 仍列为禁改 ⇒ catalog 插入子项未执行，M0 Exit 该项仍欠）。首跑 wf_e7c7af02-88c BLOCKED/BLOCKED_REPAIR_OUT_OF_SCOPE = F-57（文件型自证门禁与 §16 非持久化互斥 + allowedRepairFiles 不读 SPEC 白名单），编排器未做任何还原、执行手未作弊。独立复跑：A 7 passed / B C 各 1 passed / D 10 passed / E **235 passed 0 failed**（F-01 闭合）/ ruff app/ 291 errors 属 record 存量 / 修正后的零文件负向自证实测 FAIL 且报「有效成功样本数不足」。自建探针文件取 sha256 后 rm 清除，未用破坏性 git。现重新派发取正式三关结论。",
+  "notes": "[object Object]\n[2026-10-09T17:07:46Z] M0-005 TASK_PASS（run wf_5a685efc-fc6）。M0 里程碑门禁仍需人工：HD-N-04（把 FIX-* 行写入 docs/workflow/TASK_CATALOG.md，属治理写）、HD-N-05（基线文档 8 vs 7 口径）。\n[2026-10-09T19:20:37Z] M0-006 = TASK_PASS（run wf_6c897bee-ab8，mode=FULL，agents=27，toolUses=427，7597134ms，repair=2）。\n[2026-10-09T20:03:41Z] M0-007 = TASK_PASS（run wf_cc12b79d-5be，mode=FULL，agents=15，toolUses=127，1779557ms，repair=0）。\n[2026-10-09T20:43:35Z] M0-008 = TASK_PASS（run wf_dfb3e8e5-ed5，mode=FULL，agents=15，toolUses=158，2196279ms，repair=0）。\n[2026-10-09T20:58:02Z] F-54：:5432 监听进程 6892 → 6740（原生 postgres.exe 服务），历史观测快照过期；实例身份仍未知，零接触纪律不变。已封存交付物未改写。\n[2026-10-09T23:08:36Z] F-44 只读复核（未改仓库文件）：PF-01 独立复现 [401,401,401] + 7 条用例状态映射（仅 metrics 落错误路径）+ 身份矩阵 401/403/200 + 更正\"补 therapist fixture\"（conftest.py:158 已存在）+ 真实 200 路径中位数 4.70ms 证明修正后仍绿 + 建议同批清偿 F-01。新增 F-55（缓存命中样本主导两条用例中位数）。另自查发现 F-56：notes 曾被 \"[object Object]\" 拼接毁掉 7 键正文，已自 6fe4904 原样恢复至 notesPreCorruption。FIX-PERF-03/04 仍待 HD-N-04 落库，自治链未实施测试代码改动。\n[2026-10-09T23:10:41Z] 续记：FIX-PERF-03 / FIX-PERF-04 已登记进 pendingFixTasks（各含 evidenceGrounded、explicitlyNotDoing、gateCommands、selfProofRequired，状态 BACKLOG-GATED-BY-HD-N-04）。本写入按 F-56 建议先做运行时类型断言，并在写后校验原 notes 为逐字节前缀。测试代码与业务代码零改动。\n[2026-10-10T05:55:20Z] HD-N-04 = APPROVED（人工授权，范围仅 FIX-PERF-03；docs/workflow/** 仍列为禁改 ⇒ catalog 插入子项未执行，M0 Exit 该项仍欠）。首跑 wf_e7c7af02-88c BLOCKED/BLOCKED_REPAIR_OUT_OF_SCOPE = F-57（文件型自证门禁与 §16 非持久化互斥 + allowedRepairFiles 不读 SPEC 白名单），编排器未做任何还原、执行手未作弊。独立复跑：A 7 passed / B C 各 1 passed / D 10 passed / E **235 passed 0 failed**（F-01 闭合）/ ruff app/ 291 errors 属 record 存量 / 修正后的零文件负向自证实测 FAIL 且报「有效成功样本数不足」。自建探针文件取 sha256 后 rm 清除，未用破坏性 git。现重新派发取正式三关结论。\n[2026-10-10T06:15:24Z] FIX-PERF-03 重试 run wf_64827cc9-6ae（FULL）在 Task Spec 阶段 **BLOCKED_MODEL_UNAVAILABLE**：机器报错原文为信用额度耗尽（F-29 复发，已加 recurrences 字段），不是模型标识失效——同 run 内两次模型探针与 Classify/Explore/Scope Check 三个 Max 只读角色均已真实产出。Explore 独立逐字节复核了我提交的三条 retryArtifacts sha256 与工作树一致；但 applyRetryOwnership() 在 Task Spec 之后（line 1578）才执行 ⇒ **编排器侧 RETRY_OWNED 判定尚未产生，不得宣称已被机器接受**。本次零仓库写入（HEAD 仍 d7c3092，三文件 sha 与派发前逐字节相同），ATTEMPTS=0，成本 8 agents/39 tool uses/584953 ms。人工选项：(甲) 恢复 Max 额度后以 resumeFromRunId+同 args 复跑（7 个 agent 命中缓存）；(乙) 显式授权 FLASH_ONLY；(丙) 人工直接封存前自行跑门禁。本链不自选、不自动降级。FIX-PERF-03 **未封存**。",
   "pausedAt": "2026-10-09T14:28:05Z",
   "timestampCorrections": [
     {
@@ -1993,6 +2010,33 @@
     },
     "strayArtifactHandling": "backend/_neg_probe_fix_perf_03.py 由本链自建，sha256 189b2629ed4e577a…（先取摘要后删除），用 rm 清除；未使用任何破坏性 git 命令；其正文完整保留在 run journal 与本会话输出中",
     "nextAction": "以修正后的门禁命令设计重新派发同一任务（负向自证改为单条零文件 python -c 命令；EXPECTED_FILES/allowedRepairFiles 严格为三个测试文件）",
-    "sealState": "尚未封存：Task PASS 需 Machine Gate ∧ 独立 Review(HIGH: A+B) ∧ Verify ∧ Task Delta ∧ Governance Guard，本批仅完成到\"实施在位 + 独立复跑取证\""
+    "sealState": "尚未封存：Task PASS 需 Machine Gate ∧ 独立 Review(HIGH: A+B) ∧ Verify ∧ Task Delta ∧ Governance Guard，本批仅完成到\"实施在位 + 独立复跑取证\"",
+    "redispatch": {
+      "runId": "wf_64827cc9-6ae",
+      "at": "2026-10-10T06:15:24Z",
+      "executionMode": "FULL",
+      "WORKFLOW_STATUS": "BLOCKED",
+      "BLOCK_REASON": "BLOCKED_MODEL_UNAVAILABLE",
+      "FAILED_PHASE": "Task Spec",
+      "ATTEMPTS": 0,
+      "UNAVAILABLE_MODEL": "qmodel_38max (Qwen3.8-Max)",
+      "machineErrorVerbatim": "agent[8] task-spec failed: You've reached your credit usage limit. Please upgrade your subscription plan to get more resources. Report Issue (input /feedback)",
+      "interpretation": "是**信用额度耗尽**（与 F-29 同因复发），不是模型标识失效：同一 run 内 Preflight 的两次模型探针均返回 \"OK\"（含 Max 探针），Classify/Explore/Scope Check 三个 Max 只读角色也都真实产出了结论 —— 若标识失效这些调用不可能成功。政策要求 BLOCKED_MODEL_UNAVAILABLE 时绝不换模型、绝不自动降级 FLASH_ONLY，故本链停在这里等人工。",
+      "phasesCompletedBeforeHalt": [
+        "Preflight ×2 模型探针 = \"OK\"",
+        "Preflight git 守护 = branch feature/m0-baseline / dirty=true / dirtyFiles 恰为三个测试文件（+ qgraphflow 未跟踪目录）",
+        "Preflight D4 确定性字节取证（V|D4-1 baseline，只读 invocation，filesWritten=[]）",
+        "Classify（Max）= blocked:false, taskType=[backend,bugfix,security,observability], medicalSensitive:false, privacySensitive=…",
+        "Explore（Max，17213 B 结论）= 「FIX-PERF-03 同任务重试……D4 字节证据逐字节核实一致」——即我提交的三条 retryArtifacts sha 与真实工作树一致，由独立只读角色复核",
+        "Scope Check（Max）= atomic:true, estimatedDevDays:0.5（Mega 拒绝路径未触发）"
+      ],
+      "haltedAt": "Task Spec（第 8 个 agent，额度耗尽即失败，未落盘任何新 spec；.qoder/workflow-state/ 无新增文件）",
+      "retryOwnershipEvaluated": "NO —— applyRetryOwnership() 在脚本 line 1578、紧跟 Task Spec 产物之后执行，本次未跑到该处 ⇒ **机器侧 RETRY_OWNED 判定尚未产生**，不得声称\"编排器已接受重试归属\"。已具备的是：args 里携带的 64-hex 字节证据 + Explore 的独立逐字节复核 + 我在派发前后两次自测 sha256 相等。",
+      "worktreeAfterRun": "零改动（与派发前逐字节相同）：backend/tests/test_performance.py=a788ef6e, backend/tests/test_middleware.py=fa639d5e, backend/tests/test_role_permissions.py=a32d3875；HEAD 仍为 d7c3092；无新文件、无 staged 改动、qgraphflow 目录单元未触碰",
+      "cost": "8 agents / 39 tool uses / 584953 ms（≈9.7 分钟），额度消耗主要在上表 4 个 Max 角色",
+      "resumePrecondition": "Max 额度恢复后：Workflow({scriptPath: 同一治理脚本, resumeFromRunId:\"wf_64827cc9-6ae\", args: <完全相同的 args>}) —— 7 个已完成 agent 命中缓存不重跑，从 Task Spec 起继续。**复跑前必须重取一次三文件 sha256 并确认与上列值相等**：D4 baseline 是缓存产物，工作树若在此期间变化，缓存 baseline 与真实树不一致会触发 EXTERNAL_CHANGED 类判定。",
+      "nextAction": "交人工：恢复/提升 Max 额度后复跑同一 run；或人工另行显式授权 FLASH_ONLY（本链不得自决）。FIX-PERF-03 仍**未封存**。",
+      "sealState": "未封存：三文件仍为工作树未提交状态（Task PASS 五判据一个都没正式取得——本次连 Machine Gate 都没开始跑）"
+    }
   }
 }
