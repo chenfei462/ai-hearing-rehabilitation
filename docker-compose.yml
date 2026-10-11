@@ -3,7 +3,7 @@
 # 停止命令: docker-compose down
 # 查看日志: docker-compose logs -f [service_name]
 
-version: '3.8'
+name: ai-hearing-rehabilitation
 
 services:
   # 前端服务 - React + Vite
