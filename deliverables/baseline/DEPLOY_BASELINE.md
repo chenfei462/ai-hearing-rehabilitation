@@ -75,7 +75,8 @@ exitCode=1
 
 ### A.4 根因归类（配置缺陷，三重证据；spec AC-02 要求项）
 
-Compose v5 项目名解析规则要求非空、匹配 `[a-z0-9][a-z0-9_-]*` 的项目名。解析优先级：compose 顶层 `name:` > `COMPOSE_PROJECT_NAME`（环境变量/.env）> 项目目录名规范化。本轮三条路径全部落空：
+Compose v5 项目名解析规则要求非空、匹配 `[a-z0-9][a-z0-9_-]*` 的项目名。解析优先级（本批 Compose 5.1.4 五档只读探针实测，见下行注记）：`COMPOSE_PROJECT_NAME`（进程环境变量 > 根 `.env` 文件）> compose 顶层 `name:` > 项目目录名规范化（非 ASCII 目录名规范化后为空）。本轮三条路径全部落空：
+实测优先级链：COMPOSE_PROJECT_NAME > dotenv > name: > dirname（Compose 5.1.4，五档只读探针，本批实测）。
 
 1. **目录名非 ASCII → 规范化后为空**：项目目录即仓库根 `听觉康复`（`docker compose` 将目录名小写化并剔除非法字符集后得到空串）。
 2. **`docker-compose.yml` 无顶层 `name:` 键**：全文 81 行读取核实（`docker-compose.yml:1-81`，首键区仅 `version`（L6）与 `services`（L8）），grep 证实无 `name:`。
