@@ -12,7 +12,7 @@
 - **Exit / Gate**：8 个基线文档落盘 `deliverables/baseline/`（非治理保护区，Flash 可写）；每条命令有真实 exitCode 记录；集成/安全/性能三项 TODO 未勾选项有当前真实结论；P0 存量缺陷清单产出并插入 FIX-* 任务。
 - **Dependencies**：无前置里程碑。
 - **Risk**：基线大面积红（高）——处置：如实记录，FIX-* 任务在 M1 内清偿，不放水。
-- **Deliverables**：REPO_INVENTORY / BACKEND_TEST_BASELINE / FRONTEND_BASELINE / DB_API_BASELINE / SECURITY_BASELINE / PERF_BASELINE / DEPLOY_BASELINE + 缺陷清单。
+- **Deliverables**：REPO_INVENTORY / BACKEND_TEST_BASELINE / FRONTEND_BASELINE / DB_API_BASELINE / INTEGRATION_BASELINE / SECURITY_BASELINE / PERF_BASELINE / DEPLOY_BASELINE（8 份，分别对应 M0-001..008）+ 缺陷清单。HD-N-05 已由本批人工授权裁定采用 8 份口径，逐项核对任务→实际产物；不以文件名后缀推断份数。
 
 ## M1 — Architecture Stabilization
 
