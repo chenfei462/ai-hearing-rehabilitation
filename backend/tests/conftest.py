@@ -9,6 +9,7 @@ import pytest
 import pytest_asyncio
 import os
 from unittest.mock import AsyncMock
+from urllib.parse import urlsplit
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.pool import NullPool, StaticPool
@@ -22,6 +23,34 @@ from app.models.item_bank import ItemBank
 
 # 测试数据库 URL（使用 SQLite 内存数据库）
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+aiosqlite://")
+
+# 测试侧 Redis DSN 的隔离缺省端点（F-67：绝不回落宿主 localhost:6379）。
+# 该值只存在于测试基础设施，禁止写入任何生产代码（backend/app/**）。
+TEST_REDIS_URL_DEFAULT = "redis://127.0.0.1:16479/1"
+
+
+def resolve_test_redis_url() -> str:
+    """解析测试用 Redis DSN，并执行 fail-closed 守卫（人工验收约束③）。
+
+    优先级：显式环境变量 ``TEST_REDIS_URL`` > 隔离缺省 ``redis://127.0.0.1:16479/1``。
+    安全设计：任何等效端口为 6379 的 DSN（含 ``redis://host`` 的隐式默认端口）
+    一律直接抛错，绝不静默回落到宿主 Redis。Redis 客户端在省略端口时按协议
+    使用隐式 6379，因此 ``redis://`` / ``rediss://`` 且无显式端口同样视为 6379
+    并拒绝——这是刻意的守卫行为，不是缺陷。
+    """
+    url = os.environ.get("TEST_REDIS_URL") or TEST_REDIS_URL_DEFAULT
+    parsed = urlsplit(url)
+    if parsed.port is None and parsed.scheme in ("redis", "rediss"):
+        effective_port = 6379
+    else:
+        effective_port = parsed.port
+    if effective_port == 6379:
+        raise RuntimeError(
+            "测试必须使用隔离 Redis 端点，检测到指向宿主端口 6379 的配置"
+            f"（TEST_REDIS_URL={url}）。请设置 TEST_REDIS_URL 指向隔离实例"
+            f"（缺省 {TEST_REDIS_URL_DEFAULT}），禁止连接宿主 localhost:6379。"
+        )
+    return url
 
 
 async def _ensure_user(engine, user_id: int, phone: str, role: str, nickname: str):
@@ -44,7 +73,7 @@ def test_settings():
     """测试配置"""
     return Settings(
         DATABASE_URL=TEST_DATABASE_URL,
-        REDIS_URL="redis://localhost:6379/1",
+        REDIS_URL=resolve_test_redis_url(),
         SECRET_KEY="test-only-secret-key-with-at-least-32-characters-long",
         DEBUG=False,
     )
