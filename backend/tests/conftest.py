@@ -11,7 +11,7 @@ import os
 from unittest.mock import AsyncMock
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool, StaticPool
 from sqlalchemy import select
 
 from app.core.database import Base, get_db
@@ -62,6 +62,9 @@ async def test_engine():
             "connect_args": {"check_same_thread": False},
             "poolclass": StaticPool,
         })
+    else:
+        # Each test has its own event loop; do not reuse loop-bound connections.
+        engine_kwargs["poolclass"] = NullPool
     engine = create_async_engine(TEST_DATABASE_URL, **engine_kwargs)
 
     async with engine.begin() as conn:

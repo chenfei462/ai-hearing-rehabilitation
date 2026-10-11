@@ -23,7 +23,7 @@ class TrainingStatsService:
 
     async def get_summary(self, user_id: int, days: int = 30) -> TrainingSummary:
         """获取用户训练概览（含正确率曲线、依从率、连续训练天数）"""
-        start_date = datetime.now(timezone.utc) - timedelta(days=days)
+        start_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
 
         # --- 1. 基础统计 ---
         result = await self.db.execute(
@@ -317,7 +317,7 @@ class TrainingStatsService:
 
     async def _calculate_adherence(self, user_id: int, days: int) -> float:
         """计算依从率：实际训练天数 / 天数范围"""
-        start_date = datetime.now(timezone.utc) - timedelta(days=days)
+        start_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
 
         result = await self.db.execute(
             select(func.count(distinct(func.date(TrainingSession.start_time))))

@@ -149,7 +149,7 @@ class TrainingService:
         stats = result.one()
 
         session.status = "completed"
-        session.end_time = datetime.now(timezone.utc)
+        session.end_time = datetime.now(timezone.utc).replace(tzinfo=None)
         session.total_items = stats.total or 0
         session.correct_items = stats.correct or 0
         session.accuracy = stats.correct / stats.total if stats.total > 0 else 0
@@ -245,7 +245,7 @@ class TrainingService:
         state.confidence = updated_state.confidence
         state.attempts = updated_state.attempts
         state.correct_count = updated_state.correct_count
-        state.last_attempt_at = datetime.now(timezone.utc)
+        state.last_attempt_at = datetime.now(timezone.utc).replace(tzinfo=None)
         await self.db.flush()
 
         return {
