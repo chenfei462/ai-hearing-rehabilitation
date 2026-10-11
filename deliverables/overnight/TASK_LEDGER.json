@@ -3,12 +3,12 @@
   "goalObjective": "Autonomous Delivery Orchestrator: M0 -> M0 Gate -> ... -> M10 -> M10 Gate -> Release Gate -> PROJECT_READY (no fake completion; stop at PAUSED_FOR_HUMAN or BLOCKED if unsafe).",
   "currentMilestone": "M0",
   "currentTask": {
-    "taskId": "FIX-GOV-008",
-    "state": "IMPLEMENTED-IN-WORKING-TREE-REVIEW-A-PASS-REVIEW-B-PASS-VERIFIER-TASK-PASS-PENDING-HD-N-15-SEAL-ROUTING",
-    "at": "2026-10-10T16:05:46Z",
-    "note": "run wf_079d3071-a11 终态 BLOCKED/BLOCKED_GOVERNANCE_CONFLICT，FAILED_PHASE=Implement，ATTEMPTS=0。0/5 Task PASS 判据由流水线取得；实施产物完整留在工作区且未回退。根因是结构性授权通道缺口（F-61），非执行手作弊、非指纹不确定：baseline 与 post 两次取证均 VALID_DETERMINISTIC、headChanged=false、externalChangedDuringTask=[]、stagedAppeared=[]，守卫只因治理路径归属触发。"
+    "taskId": "FIX-INT-01",
+    "state": "ISOLATED_POSTGRES_FIXTURE_REPAIR_IN_PROGRESS",
+    "at": "2026-10-11T00:46:05Z",
+    "actor": "GPT_CURRENT_CODEX_SESSION"
   },
-  "goalStatus": "STOPPED-AFTER-PHASE-H-FOUR-DECISION-PACKAGES-AWAITING-HUMAN",
+  "goalStatus": "TAKEOVER-BATCH-COMPLETE-AWAITING-HUMAN-MILESTONE-GATE-NOT-ENTERED",
   "lastSafeCommit": "35cf29babdddb7c2b8f5d6c8e970a46daa690ada",
   "currentHead": "4c3bfe5",
   "headPointerNote": "2026-10-10T16:48:08Z：Phase H 四份包入账后完成去重复查（F-64 降格、F-66 限定为新侧面、F-65 确认非重复），HD-N-05/09/10/14 全部 PENDING。",
@@ -449,7 +449,16 @@
         "driver pins verified identical to pyproject (fastapi 0.110.0 / SQLAlchemy 2.0.29 / asyncpg 0.29.0) on venv312 Py3.12.10 -> env drift eliminated as explanation",
         "13 DB-dependent RBAC/IDOR cases never reach assertion layer under CI口径 => security regression verification does not HOLD"
       ],
-      "disposition": "FIX-INT-01 (engine/loop lifecycle alignment) + FIX-INT-02 (pin dev deps) proposed in INTEGRATION_BASELINE.md §7; requires Max SPEC authoring; M1 clearance"
+      "disposition": "FIX-INT-01 (engine/loop lifecycle alignment) + FIX-INT-02 (pin dev deps) proposed in INTEGRATION_BASELINE.md §7; requires Max SPEC authoring; M1 clearance",
+      "latestReproduction": {
+        "at": "2026-10-11T00:46:05Z",
+        "isolatedTarget": "127.0.0.1:55432",
+        "exitCode": 1,
+        "failed": 4,
+        "passed": 9,
+        "errors": 22,
+        "sameRootCause": true
+      }
     },
     "F-20": {
       "summary": "Workflow governance defect: anti-downgrade guard and Gate Schema are mutually unsatisfiable for baseline/audit tasks, and the guard message misattributes planner-authored tiers to executor tampering",
@@ -1025,7 +1034,17 @@
       "detail": "`ls -la .dockerignore backend/.dockerignore frontend/.dockerignore` exit 2（三处均不存在，该失败本身即取证）。同时实测上下文内含 backend/.env（存在，本任务零值读取）、backend/venv312 574M、backend/venv 14M、frontend/node_modules 390M、frontend/dist 1.7M ⇒ 一旦 F-48 修复使 build 可跑，.env 与虚拟环境将进入构建上下文乃至镜像层。相关面还包括 .env.example 模板缺口（OSS 五键、COOKIE_SECURE/COOKIE_SAMESITE、VPC_ID/VSWITCH_ID/SECURITY_GROUP_ID 未覆盖，而 runbook:5 要求 COOKIE_SECURE=true 无模板承载；COOKIE_SECURE 在 config.py:152 默认 False）与 serverless.yml:77/:84 的匿名公网 HTTP 触发器（authType anonymous + disableURLInternet false）。",
       "proposedFix": "SEC-003 生产硬化清单落地：三级 .dockerignore、.env.example 补齐缺失键、COOKIE_SECURE 默认值决策、匿名触发器暴露面复核。本基线任务禁新增该文件（OUT_OF_SCOPE）。",
       "status": "OPEN-BACKLOG (SEC-003)",
-      "id": "F-50"
+      "id": "F-50",
+      "subitemClosureByTakeoverBatch": {
+        "closedSubitem": "『三级 .dockerignore 全缺』—— 已建 backend/.dockerignore 与 frontend/.dockerignore。实测所有现存构建路径的上下文就是这两级：compose `context: ./backend`(docker-compose.yml:24) / `./frontend`(:12)，CI `context: ./backend`(.github/workflows/ci.yml:171) / `./frontend`(:180) ⇒ 根 `.dockerignore` 至今不存在（`ls` exit 2）但也不被任何构建路径读取，故该子项对现实构建已闭合。",
+        "stillOpenSubitems": [
+          ".env.example 缺 OSS 五键 / COOKIE_SECURE / COOKIE_SAMESITE / VPC_ID / VSWITCH_ID / SECURITY_GROUP_ID",
+          "COOKIE_SECURE 在 config.py:152 默认 False 的决策",
+          "serverless.yml:77/:84 匿名公网 HTTP 触发器暴露面"
+        ],
+        "resultingStatus": "F-50 整条维持 OPEN-BACKLOG (SEC-003)，只把第一个子项标注为已关闭 ⇒ 不借本次封存宣称秘密面已清。",
+        "at": "2026-10-11T03:57:28Z"
+      }
     },
     "F-51": {
       "at": "2026-10-09T20:43:35Z",
@@ -1161,7 +1180,17 @@
       ],
       "chainPosition": "本链不自选；交人工裁定（HD-N-15）",
       "resolutionState": "NOT_FIXED_BY_FIX-GOV-008",
-      "bootstrapNote": "FIX-GOV-008 封存的是 D4-2 argv 自回显（证据强度加固），并未给 classifyDelta 增加人工授权集通道；本任务得以封存，靠的是人工对这一次、这一个任务（FIX-GOV-008）的 HUMAN_BOOTSTRAP_SEAL 授权（HD-N-15 = 甲），结构性缺口仍在 ⇒ F-61 保持 OPEN，正式修复通道由 FIX-GOV-009 承载（BACKLOG，待人工授权）。"
+      "bootstrapNote": "FIX-GOV-008 封存的是 D4-2 argv 自回显（证据强度加固），并未给 classifyDelta 增加人工授权集通道；本任务得以封存，靠的是人工对这一次、这一个任务（FIX-GOV-008）的 HUMAN_BOOTSTRAP_SEAL 授权（HD-N-15 = 甲），结构性缺口仍在 ⇒ F-61 保持 OPEN，正式修复通道由 FIX-GOV-009 承载（BACKLOG，待人工授权）。",
+      "gptImplementationStatus": "CODE_AND_REGRESSION_VERIFIED_LIVE_FORMAL_DEMONSTRATION_NOT_RUN",
+      "gptIndependentEvidence": {
+        "regressionPassed": 157,
+        "reviews": [
+          "GPT_A_PASS",
+          "GPT_B_PASS"
+        ],
+        "verifier": "GPT_VERIFIED",
+        "humanAuthorization": "GPT-HANDOVER-20261011-01"
+      }
     },
     "F-62": {
       "id": "F-62",
@@ -1233,6 +1262,55 @@
       "novelAspectOnly": "新内容仅一点：守卫的匹配对象是【命令字符串】，而真实破坏力来自【命令的运行时副作用】，二者语义层不同，故一条不含 5432 字样的合法启动命令可完全绕开 BLOCKED_UNSAFE_DATABASE_TARGET。这是 SEC-SB31 的暴露面为何至今无机器拦截的解释，而非第二个独立缺陷。",
       "notCountedAsNewDiscovery": false,
       "severityNote": "维持 P1-GOVERNANCE-GUARD-GAP：缺口本身未被 SEC-SB31/F-24 覆盖，但其被保护对象已有 P0 记录"
+    },
+    "F-67": {
+      "id": "F-67",
+      "at": "2026-10-11T03:57:28Z",
+      "severity": "P3-LATENT-TEST-ISOLATION",
+      "foundBy": "接管封存期复核 FIX-INT-01 时（编排器亲读 backend/tests/conftest.py:47/:224/:227/:255-260）",
+      "title": "测试 Settings 硬编码 redis://localhost:6379/1，与本批隔离用的 :16479 不一致（当前惰性、无实连）",
+      "detail": "conftest.py:47 把 REDIS_URL 写死为宿主 :6379；而本批隔离验证用的是自建的 127.0.0.1:16479。当前不构成暴露：conftest.py:224-227 用 _MemoryRedis 顶替 redis.asyncio.from_url，:255-260 又替换 app.core.redis.get_redis/redis_client，且 `netstat -ano` 实测宿主 :6379 无监听。风险是未来任何绕过这些 patch 的真实 redis 测试会指向未隔离的宿主端口。",
+      "priorObservationRef": "lastRun_M0_006.baselineFindings[4]（ENV 笔记已写过『conftest.py:47 硬编码 localhost:6379/1』）",
+      "notANewDiscoveryBecause": "事实本体已在 M0-006 ENV 笔记留痕；本条只是把它升格为可跟踪状态并补实测『当前惰性』判据。",
+      "impact": "HD-N-10 ②（显式端口隔离）目前靠运行期 env 与 fixture patch 成立，仓库内无强制；与 postgres 侧的 :5432 禁区属同一隔离纪律缺口。",
+      "status": "OPEN-LATENT",
+      "disposition": "本批零改动（不动 conftest）。候选口径交人工：把 test_settings 的 REDIS_URL 改为读取显式 env 并默认指向非宿主端口，或加一条 required 门禁断言测试进程不打开 :6379。"
+    },
+    "F-68": {
+      "id": "F-68",
+      "at": "2026-10-11T03:57:28Z",
+      "severity": "P3-BUILD-CONTEXT-SIDE-EFFECT",
+      "foundBy": "编排器为 FIX-DEP-01 做独立审查时，按 Docker `**` 语义逐条匹配两把 .dockerignore 与全部已跟踪文件",
+      "title": "新增 backend/.dockerignore 的 `**/.env*` 顺带把已跟踪的 `backend/.env.example` 也排除出构建上下文",
+      "detail": "精确匹配结果：backend 上下文 116 个已跟踪文件中仅 1 个被排除 = `.env.example`（命中 `**/.env*`）；frontend 上下文 78 个已跟踪文件零排除。功能无害（镜像不读该模板，`compose config` exit 0、frontend 镜像构建成功），但运维后果真实：容器内不再能看到应有变量清单，而这正是 `.env.example` 的唯一用途。",
+      "priorArt": "F-50（P1-SECRET-SURFACE：三级 .dockerignore 全缺 + `COPY . .` ⇒ 秘密入层）——本条是【关闭 F-50 的那次修复】带来的新侧面，不是 F-50 本身。",
+      "novelAspectOnly": "F-50 说的是秘密漏进镜像；本条说的是修好之后模板文件被一起挡在镜像外，方向相反、对象不同。",
+      "impact": "低。若需修复，口径是把 `**/.env*` 收紧为 `**/.env` + `**/.env.*` 并加 `!**/.env.example`（Docker 支持 ! 反选），属新的实施决策，本批不改（改即作废刚取到的构建字节证据）。",
+      "status": "OPEN",
+      "disposition": "随 FIX-DEP-01 封存时一并如实披露；不在本批改动 .dockerignore。"
+    },
+    "ENV-F04": {
+      "id": "ENV-F04",
+      "at": "2026-10-11T03:57:28Z",
+      "severity": "P2-ENVIRONMENT",
+      "foundBy": "编排器接管封存期复跑 docker compose build（第二次尝试）",
+      "title": "宿主 egress 经 fake-IP 代理（198.18.0.x）时对 deb.debian.org / registry 间歇 500+unexpected EOF",
+      "detail": "compose 构建在 backend 基础层 `apt-get install ffmpeg libsndfile1` 失败：libx11-6 与 libelf1t64 拉取报 500 reading HTTP response body: unexpected EOF，IP 落在 198.18.0.0/15（典型 fake-IP 代理段），exit 100。同一时间窗内 node:20-alpine 里新锁 `npm ci` 首跑也 exit 1、重试 exit 0。⇒ 属机器/网络条件，不是仓库缺陷，也不是 HD-N-09 丙的 compose 项目名修复失败。",
+      "impact": "HD-N-09 丙所需的『真实 compose build 成功』证据获取受阻于 egress；重试可成，不得为此放松构建门。",
+      "status": "OPEN-ENVIRONMENT",
+      "disposition": "留痕；不改 Dockerfile 镜像源、不加 --fix-missing、不换基础镜像（任何一项都等于放松门）。"
+    },
+    "F-69": {
+      "id": "F-69",
+      "at": "2026-10-11T03:57:28Z",
+      "severity": "P3-DOC-ACCURACY",
+      "foundBy": "Reviewer A 在 FIX-DEP-01 独立审查中作为非阻断观察提出；编排器亲自复跑核实后才入账（未采信转述）",
+      "title": "DEPLOY_BASELINE.md:78 写反了 Compose 项目名优先级：实测 COMPOSE_PROJECT_NAME 覆盖顶层 name:，而非被其覆盖",
+      "detail": "原文口径：『解析优先级：compose 顶层 `name:` > `COMPOSE_PROJECT_NAME`（环境变量/.env）> 项目目录名规范化』。实测（本会话现场，只读）：加了顶层 `name: ai-hearing-rehabilitation` 之后，`COMPOSE_PROJECT_NAME=rotest docker compose config` 仍输出 `name: rotest`（exit 0）⇒ 前两级顺序与文档相反。该文档是 M0-008 的封存产物，其 F-M0008-01 结论（项目名为空导致 compose 全命令 exit 1）不受影响，错的只是这三者排序。",
+      "dedupCheck": "入账前按本链去重纪律回查：TASK_LEDGER.json 与 GOAL_PROGRESS.md 中 'precedence' 与 'DEPLOY_BASELINE.md:78' 命中数均为 0；catalog / DEPLOY_BASELINE 内既有条目只陈述失败事实与修复建议，未主张过正确顺序 ⇒ 非重复、非既有记录的复现。",
+      "impact": "两处实际决策依赖这条口径：(a) 若以为顶层 name: 不可被 env 覆盖，会误判『硬编码项目名使多检出共享 postgres_data/redis_data 卷且无法按开发者隔离』——实测可隔离；(b) HD-N-09 的修复方案比较当时是在这个错误排序上做的。",
+      "status": "OPEN",
+      "disposition": "本批不改 deliverables/baseline/DEPLOY_BASELINE.md：人工授权的治理写范围恰为 MILESTONES.md + TASK_CATALOG.md 两文件，扩到基线产物即越权。事实已在 catalog 附录与本条留档，交人工决定是否立一条 docs 修复任务。"
     }
   },
   "humanDecisionsRequired": [
@@ -1295,7 +1373,21 @@
       "decisionPackageRoutedBy": "人工（M0 PRE-GATE HUMAN DECISION CLEARANCE（2026-10-10） §1.E：不得根据编号猜测，须读 ledger/TASK_CATALOG/decision records/pendingFixTasks 找真实内容，只形成 Decision Package，不得实施）",
       "statusNote": "DECISION-PACKAGE-REQUIRED-NOT-IMPLEMENTED（原状态仍 OPEN，未因本批裁决而解除）",
       "decisionPackage": "见 phaseH_decisionPackages.packages['HD-N-05']（只读，未实施）",
-      "decisionState": "PENDING-HUMAN-DECISION"
+      "decisionState": "RULED-A-IMPLEMENTED-AND-SEALED-9d0aae4",
+      "resolution": {
+        "choice": "A",
+        "scope": "8 named baseline deliverables, explicitly include INTEGRATION_BASELINE; task-to-artifact 1:1",
+        "state": "APPROVED_BY_HUMAN_IN_GPT_HANDOVER",
+        "at": "2026-10-11T00:46:05Z",
+        "authorizationId": "GPT-HANDOVER-20261011-01",
+        "source": "deliverables/overnight/GPT_HANDOVER_2026-10-11.md",
+        "userVerbatim": [
+          "你自己直接做",
+          "你用gpt接手全部工作"
+        ]
+      },
+      "currentDecisionState": "APPROVED_SCOPE_EXECUTION_TRACKED_SEPARATELY",
+      "takeoverNote": "人工裁定 A（8 份实名产物）已封存于 9d0aae4：MILESTONES.md:15 补齐 INTEGRATION_BASELINE 并写明 8 份口径，消除同文件 `:12` 说 8 / `:15` 只点名 7 的自相矛盾；catalog M0-005 行同步实名产物。编排器复核：磁盘 8 份 = 8 个封存 commit 1:1（`grep -c '^| M0-00'` = 8），不以文件名后缀推断份数。"
     },
     {
       "id": "HD-N-06",
@@ -1340,8 +1432,22 @@
       "decisionPackageRoutedBy": "人工（M0 PRE-GATE HUMAN DECISION CLEARANCE（2026-10-10） §1.D/§13：暂不授权实施，状态 NEEDS_DECISION_PACKAGE，必须先比较 COLD_ONLY / WARM_ONLY / DUAL_BASELINE）",
       "statusNote": "NEEDS-DECISION-PACKAGE（三选项对比 + 六项说明：测量定义/缓存处理/阈值语义/CI 稳定性/生产代表性/迁移成本；禁止本轮实施；在此之前禁止修改性能基线语义）",
       "decisionPackage": "见 phaseH_decisionPackages.packages['HD-N-09']（只读，未实施）",
-      "decisionState": "PENDING-HUMAN-DECISION",
-      "materialRevision": "原『结构性不可达』判定下调为 PARTIAL（一行 `name:` 即可修，实测 exit 0）；并新增第二重拦截：今日 Docker daemon 未运行（docker info exit 1）"
+      "decisionState": "RULED-C-IMPLEMENTED-AND-GREEN-BUILD-EVIDENCE-OBTAINED-SEALED-211a18d",
+      "materialRevision": "原『结构性不可达』判定下调为 PARTIAL（一行 `name:` 即可修，实测 exit 0）；并新增第二重拦截：今日 Docker daemon 未运行（docker info exit 1）",
+      "resolution": {
+        "choice": "丙",
+        "scope": "Fix explicit ASCII Compose name and obtain real compose build success; no relaxed build gate",
+        "state": "APPROVED_BY_HUMAN_IN_GPT_HANDOVER",
+        "at": "2026-10-11T00:46:05Z",
+        "authorizationId": "GPT-HANDOVER-20261011-01",
+        "source": "deliverables/overnight/GPT_HANDOVER_2026-10-11.md",
+        "userVerbatim": [
+          "你自己直接做",
+          "你用gpt接手全部工作"
+        ]
+      },
+      "currentDecisionState": "APPROVED_SCOPE_EXECUTION_TRACKED_SEPARATELY",
+      "takeoverNote": "丙的两层拦截均已实证分离并处置：第一层（项目名为空）由 `version:` → `name: ai-hearing-rehabilitation` 修复，`docker compose config` exit 0；第二层（egress 抖动 ENV-F04）以逐字命令重试至第 4 次 `docker compose build` exit 0 跨过，双镜像 Built，全程未放松构建门（两个 Dockerfile 与 CI 口径 0 字节改动，`git diff d51880d..HEAD` 为证）。Phase H 包中另记的第三拦截『当日 docker daemon 未运行』亦已解除（`docker history` 与只读 `docker run` 均可执行）。原『结构性不可达』判定正式作废，与 2026-10-10 M0-008 当时 exit 1 属时点差而非事实冲突。"
     },
     {
       "id": "HD-N-10",
@@ -1356,8 +1462,22 @@
       "decisionPackageRoutedBy": "人工（M0 PRE-GATE HUMAN DECISION CLEARANCE（2026-10-10） §1.F：同 HD-N-05，读真实记录形成 Decision Package，不得实施）",
       "statusNote": "DECISION-PACKAGE-REQUIRED-NOT-IMPLEMENTED（:5432 未知实例仍禁止触碰，BLOCKED_UNSAFE_DATABASE_TARGET 继续有效）",
       "decisionPackage": "见 phaseH_decisionPackages.packages['HD-N-10']（只读，未实施）",
-      "decisionState": "PENDING-HUMAN-DECISION",
-      "materialRevision": "PID 由旧记 6740 漂移为实测 6888；身份结论不变 = 原生 Windows 服务 postgresql-x64-15、非容器（版本串 15.19 与 listen_addresses='*' 属子代理报告、编排器未复跑，见 phaseH_decisionPackages.orchestratorIndependentVerification.notIndependentlyReverified）；新增真实写入向量 F-66 与 CI 盲区 F-64"
+      "decisionState": "RULED-1PLUS2-PARTIAL-1STILL-HUMAN",
+      "materialRevision": "PID 由旧记 6740 漂移为实测 6888；身份结论不变 = 原生 Windows 服务 postgresql-x64-15、非容器（版本串 15.19 与 listen_addresses='*' 属子代理报告、编排器未复跑，见 phaseH_decisionPackages.orchestratorIndependentVerification.notIndependentlyReverified）；新增真实写入向量 F-66 与 CI 盲区 F-64",
+      "resolution": {
+        "choice": "①+② safe isolation",
+        "scope": "Host :5432 remains forbidden; ownership remains unknown. Only new labelled test DB at loopback :55432 and Redis at :16479; do not touch existing resources",
+        "state": "APPROVED_BY_HUMAN_IN_GPT_HANDOVER",
+        "at": "2026-10-11T00:46:05Z",
+        "authorizationId": "GPT-HANDOVER-20261011-01",
+        "source": "deliverables/overnight/GPT_HANDOVER_2026-10-11.md",
+        "userVerbatim": [
+          "你自己直接做",
+          "你用gpt接手全部工作"
+        ]
+      },
+      "currentDecisionState": "APPROVED_SCOPE_EXECUTION_TRACKED_SEPARATELY",
+      "takeoverNote": "②（显式隔离）在本批执行层成立：验证只走自建 :55432 / :16479，宿主 :5432 零连接（PID 6888 无 ESTABLISHED）；但仓库内无强制（F-67 即其侧面）。①（查明宿主库数据归属并落档）仍属人工，本链禁止连接故未做。身份结论维持 NOT_SAFE_FOR_DESTRUCTIVE_TESTS。"
     },
     {
       "id": "HD-N-11",
@@ -1390,12 +1510,26 @@
     {
       "id": "HD-N-14",
       "at": "2026-10-10T13:34:15Z",
-      "decisionState": "PENDING-HUMAN-RATIFICATION",
+      "decisionState": "RATIFIED-A-HUMAN-IN-CHAT",
       "decision": "追认或撤销 RATIFY-LINT-TIER（见 ratificationItems[0]）：FIX-TEST-FLAKE-001 的 lint 门禁分层由 SPEC 调整为 required=G-LINT-APP-CI、record=G-LINT-APP（真实 exitCode=1 原样保留）。",
       "knownResidualWeakness": "若追认，则「编排器派发文本」与「SPEC 落地口径」之间允许一次经 Review/Verify 认可的再分层；若不追认，则该任务必须重跑并 MACHINE_FAIL。本链不自行认定哪种口径为准。",
       "blocks": "不阻塞 Phase D（FIX-GOV-008 已授权、baseline 就绪）；仅影响 F-13 清偿的验收口径归档。",
       "outcome": "",
-      "decisionPackage": "见 phaseH_decisionPackages.packages['HD-N-14']（只读，未批准）"
+      "decisionPackage": "见 phaseH_decisionPackages.packages['HD-N-14']（只读，未批准）",
+      "resolution": {
+        "choice": "A",
+        "scope": "Ratify lint tiers for sealed FIX-TEST-FLAKE-001 only. Preserve full 291-error lint debt and no future blanket exemption",
+        "state": "APPROVED_BY_HUMAN_IN_GPT_HANDOVER",
+        "at": "2026-10-11T00:46:05Z",
+        "authorizationId": "GPT-HANDOVER-20261011-01",
+        "source": "deliverables/overnight/GPT_HANDOVER_2026-10-11.md",
+        "userVerbatim": [
+          "你自己直接做",
+          "你用gpt接手全部工作"
+        ]
+      },
+      "currentDecisionState": "APPROVED_SCOPE_EXECUTION_TRACKED_SEPARATELY",
+      "takeoverNote": "人工『全部按你建议的来』= 追认 A 仅适用于已封存 FIX-TEST-FLAKE-001 的 lint 分层；实测双真相仍成立（required CI 子集 exit 0，全量 record exit 1 / 291 errors），新 I/N/UP/B 债无阻断力这一后果已被明文承认。C（固化）与『基线零增长』修复任务仍未立。"
     },
     {
       "id": "HD-N-15",
@@ -1637,7 +1771,7 @@
       "evidence": "见 phaseE_HD_N_15_bootstrap_seal（§2 六项现场重跑 + §7 122/122 + §8 七行为 + §10 字节相等复用 A/B/Verifier + §11 十判据全真）"
     },
     "FIX-GOV-009": {
-      "status": "BACKLOG_REQUIRES_HUMAN_AUTHORIZATION",
+      "status": "AUTHORIZED_GPT_INDEPENDENT_VERIFIED_AWAITING_SEAL",
       "title": "Human-authorized governance write-set protocol（为 F-61 建立合法的治理任务写入通道）",
       "registeredAt": "2026-10-10T16:24:59Z",
       "authorizedToImplementTonight": false,
@@ -1653,7 +1787,9 @@
         "独立 Review 必做",
         "独立 Verify 必做",
         "授权不可由 Worker 自行生成"
-      ]
+      ],
+      "authorizationSource": "deliverables/overnight/GPT_HANDOVER_2026-10-11.md",
+      "implementationAuthority": "GPT_CURRENT_CODEX_SESSION"
     }
   },
   "specConflictLog": [
@@ -2001,7 +2137,7 @@
     },
     "caveat": "快照在本账本写盘之前枚举，可能含 TASK_LEDGER.json/GOAL_PROGRESS.md 自身的上一版哈希（自指项）；后续任务的 pre-existing 判据只取 treeUnits 与非记账路径。"
   },
-  "pausedReasonCurrent": "依 §12/§28/§29：Phase H 之后立即 STOP。四项待人工裁决（HD-N-05/09/10/14）未定，禁止进入 M0 Milestone Gate，禁止进入 M1，禁止自动继续全项目 Goal。",
+  "pausedReasonCurrent": "本批四项人工裁决（HD-N-05 A / HD-N-09 丙 / HD-N-10 ①+② / HD-N-14 A）在授权范围内的实施与封存已全部落地：另一批次 bf1c92b / e090ef2，接管批次 1afeaf7 / 8b93178 / 211a18d / 9d0aae4。构建绿证已取得 ⇒ 本批无剩余待取证项。依 §28/§29 与 handover 红线：未进 M0 Milestone Gate、未进 M1、未做生产批准、未 push。仍属人工的事项：HD-N-10 ①（宿主 :5432 数据归属）、F-67 / F-68 / F-69 / ENV-F04 的处置、FIX-GOV-009 的正式 Workflow 端到端运行证据、以及是否授权进入 M0 Milestone Gate。本链到此停止，不自选下一步。",
   "m005LatestRun": {
     "taskId": "M0-005-integration-test-baseline",
     "runId": "wf_5a685efc-fc6",
@@ -3525,5 +3661,353 @@
       "discipline": "本链先例：F-59 → F-13 复现证据条目；同一错误（把既有记录当新缺陷）第二次发生，故本批在登记前先回查台账原文"
     },
     "at_correction": "2026-10-10T16:48:08Z"
+  },
+  "supersededGoalStatusBeforeGptHandover": "STOPPED-AFTER-PHASE-H-FOUR-DECISION-PACKAGES-AWAITING-HUMAN",
+  "supersededCurrentTaskBeforeGptHandover": {
+    "taskId": "FIX-GOV-008",
+    "state": "IMPLEMENTED-IN-WORKING-TREE-REVIEW-A-PASS-REVIEW-B-PASS-VERIFIER-TASK-PASS-PENDING-HD-N-15-SEAL-ROUTING",
+    "at": "2026-10-10T16:05:46Z",
+    "note": "run wf_079d3071-a11 终态 BLOCKED/BLOCKED_GOVERNANCE_CONFLICT，FAILED_PHASE=Implement，ATTEMPTS=0。0/5 Task PASS 判据由流水线取得；实施产物完整留在工作区且未回退。根因是结构性授权通道缺口（F-61），非执行手作弊、非指纹不确定：baseline 与 post 两次取证均 VALID_DETERMINISTIC、headChanged=false、externalChangedDuringTask=[]、stagedAppeared=[]，守卫只因治理路径归属触发。"
+  },
+  "gptHandover": {
+    "at": "2026-10-11T00:46:05Z",
+    "authorizationId": "GPT-HANDOVER-20261011-01",
+    "source": "deliverables/overnight/GPT_HANDOVER_2026-10-11.md",
+    "actor": "GPT_CURRENT_CODEX_SESSION",
+    "automaticModelFallback": false,
+    "runtimeQoderModelsChanged": false,
+    "decisions": {
+      "HD-N-05": {
+        "choice": "A",
+        "scope": "8 named baseline deliverables, explicitly include INTEGRATION_BASELINE; task-to-artifact 1:1"
+      },
+      "HD-N-09": {
+        "choice": "丙",
+        "scope": "Fix explicit ASCII Compose name and obtain real compose build success; no relaxed build gate"
+      },
+      "HD-N-10": {
+        "choice": "①+② safe isolation",
+        "scope": "Host :5432 remains forbidden; ownership remains unknown. Only new labelled test DB at loopback :55432 and Redis at :16479; do not touch existing resources"
+      },
+      "HD-N-14": {
+        "choice": "A",
+        "scope": "Ratify lint tiers for sealed FIX-TEST-FLAKE-001 only. Preserve full 291-error lint debt and no future blanket exemption"
+      }
+    },
+    "historicalPhaseHPackagesPreserved": true,
+    "productionApproval": false,
+    "m1EntryAuthorized": false,
+    "tasks": {
+      "FIX-GOV-009": {
+        "state": "CODE_AND_REGRESSION_GPT_VERIFIED_AWAITING_PRECISE_BOOTSTRAP_SEAL",
+        "reviewA": "PASS_AFTER_REPAIR_1",
+        "reviewB": "PASS_AFTER_REPAIR_1",
+        "independentVerifier": "VERIFIED",
+        "regression": {
+          "exitCode": 0,
+          "passed": 157,
+          "old122ExpectationsUnchanged": true,
+          "old106Digest": "cecf72bcb036d66b319f6dfd8c77d119bf2a4bdd8a63fea913394bfb0272a7bf"
+        },
+        "repairRounds": 1,
+        "liveQoderFormalTaskPass": "NOT_RUN",
+        "formalTaskDeltaVerdict": "NOT_ISSUED_IN_GPT_MANUAL_BATCH",
+        "formalGovernanceGuardVerdict": "NOT_ISSUED_IN_GPT_MANUAL_BATCH",
+        "authority": "USER_AUTHORIZED_GPT_BOOTSTRAP_FOR_THIS_TASK_ONLY"
+      },
+      "FIX-GOV-M0-DOCS": {
+        "state": "GPT_INDEPENDENT_VERIFIED_AWAITING_SEAL",
+        "independentVerifier": "VERIFIED",
+        "namedBaselineDocuments": 8
+      },
+      "FIX-DEP-01": {
+        "state": "IMPLEMENTED_AND_INDEPENDENT_REVIEW_A_B_PASS",
+        "composeConfigExitCode": 0,
+        "contextMatcherSamples": 75,
+        "actualBuildPending": true
+      },
+      "FIX-DEP-02": {
+        "state": "LOCK_METADATA_FIXED_REVIEW_A_B_PASS_REBUILD_RUNNING",
+        "node": "20.20.2",
+        "npm": "10.8.2",
+        "npmCiBeforeExitCode": 1,
+        "npmCiAfterExitCode": 0,
+        "oldLockPackagesUnchanged": 607,
+        "addedLockPackage": "node_modules/tailwindcss/node_modules/yaml@2.9.1",
+        "manifestChanged": false,
+        "existingDependencyVersionsChanged": false
+      },
+      "FIX-INT-01": {
+        "state": "IN_PROGRESS",
+        "sourceFinding": "F-19",
+        "isolatedPostgresBefore": {
+          "exitCode": 1,
+          "failed": 4,
+          "passed": 9,
+          "errors": 22
+        }
+      }
+    },
+    "verification": {
+      "sqliteFullSuite": {
+        "exitCode": 0,
+        "passed": 235,
+        "warnings": 33,
+        "cwd": "external test directory without repository .env",
+        "databaseSafety": "Fixtures SQLite in-memory; app engine lazy URL targets only :55432"
+      },
+      "dockerServerVersion": "29.5.2",
+      "composeBuildAttempt1": {
+        "exitCode": 1,
+        "reason": "npm ci Missing yaml@2.9.1 from lock file"
+      },
+      "composeBuildAttempt2": "RUNNING",
+      "temporaryResources": {
+        "ownerLabel": "codex.task=gpt-hearing-20261011",
+        "postgres": "127.0.0.1:55432",
+        "redis": "127.0.0.1:16479"
+      },
+      "realHost5432": "NOT_CONNECTED"
+    },
+    "runnerCorrections": [
+      "Initial SQLite DATABASE_URL overrides were incompatible with production engine pool parameters; discarded as runner setup error, not project failure. Corrected safe lazy app engine URL and external cwd; full SQLite suite passed.",
+      "Initial isolated Redis :16379 conflicted with an existing unrelated container. Existing resource untouched; selected :16479. No new project finding invented."
+    ],
+    "dockerRuntimeRecovery": {
+      "settingsModified": false,
+      "imagesVolumesDatabasesModifiedByRecovery": false,
+      "preservedSocketBackups": [
+        "C:\\Users\\hacjr\\AppData\\Local\\Docker\\run.gpt-backup-20261011-01",
+        "C:\\Users\\hacjr\\AppData\\Local\\Docker\\run.gpt-backup-20261011-02",
+        "C:\\Users\\hacjr\\AppData\\Local\\docker-secrets-engine.gpt-backup-20261011-01"
+      ],
+      "reason": "Docker startup rejected inaccessible orphaned AF_UNIX sockets; recovered runtime socket directories while preserving backups"
+    }
+  },
+  "orchestratorTakeover": {
+    "at": "2026-10-11T03:57:28Z",
+    "trigger": "编排器在本链发现第二个执行体（GPT/Codex 批次）正在同一工作树实施同一批人工裁决；未猜测、未覆盖，先把事实呈报人工。",
+    "humanRouting": "人工在本会话 AskUserQuestion 中选择：①『我接管并封存它的未提交改动』（= 授权编排器为并非自己写下的字节复跑门禁、独立审查并逐文件精确落 commit）；②『现在跑，取当前真相』（= 当场独立复跑所有承重门禁，不引用旧结果）。",
+    "authorizationChain": [
+      "35 节夜间链人工授权（Phase E–H + STOP）",
+      "GPT-HANDOVER-20261011-01（deliverables/overnight/GPT_HANDOVER_2026-10-11.md，另一执行体的授权本体；其红线对本接管同样生效）",
+      "本会话人工两句指令：接管封存 + 现在取当前真相"
+    ],
+    "whatThisIsNot": "不是 Max/Flash Workflow 运行，不产生 TASK_DELTA_PASS / GOVERNANCE_GUARD_PASS / 形式 TASK_PASS；不是 M0 Milestone Gate；不是 M1 入口；不是生产批准。",
+    "seals": {
+      "FIX-INT-01": {
+        "commit": "1afeaf7",
+        "files": [
+          "backend/tests/conftest.py",
+          "backend/app/services/training_service.py",
+          "backend/app/services/training_stats_service.py"
+        ],
+        "change": "非 sqlite 测试引擎改 NullPool（逐测试事件循环不得复用绑定循环的连接）；四处写 TIMESTAMP WITHOUT TIME ZONE 列改为 tz-naive。",
+        "evidenceRunByOrchestratorImmediatelyBeforeSeal": {
+          "isolatedPostgresIntegration": "exit 0 / 34 passed（tests/test_integration.py + test_training_api.py + test_role_permissions.py，目标 127.0.0.1:55432 + redis 127.0.0.1:16479，口令全程掩码，脚本从 docker inspect 读取不外显）",
+          "defaultSqliteFullSuite": "exit 0 / 235 passed / 33 warnings",
+          "host5432": "监听仍为 PID 6888（原生 postgresql-x64-15 服务），全程零 ESTABLISHED ⇒ 未连接宿主库"
+        },
+        "inheritedNotReproduced": "另一批次记录的前态 exit 1 / 4 failed / 9 passed / 22 errors 未由本编排器复跑（复跑需回退已跟踪文件，与封存期禁写冲突），原样标注为对方记录。"
+      },
+      "FIX-DEP-02": {
+        "commit": "8b93178",
+        "files": [
+          "frontend/package-lock.json"
+        ],
+        "change": "+18 / -0，唯一新增 node_modules/tailwindcss/node_modules/yaml@2.9.1（dev/optional/peer）。",
+        "evidenceRunByOrchestratorImmediatelyBeforeSeal": {
+          "abInBuildImage": "node:20-alpine / npm 10.8.2 同一镜像同一命令：旧锁（git HEAD）exit 1 = EUSAGE『package.json 与 package-lock.json 不同步』+『Missing: yaml@2.9.1 from lock file』（两次复现，含 --prefer-offline ⇒ 确定性而非网络）；新锁 exit 0（完整安装）。",
+          "hostContrast": "host npm 11.12.1 / node 24.15.0 `npm ci --dry-run` 对旧锁与新锁都 exit 0 ⇒ 该缺陷只属于 npm 10 世代，即镜像构建所用版本。",
+          "graphCoherence": "postcss-load-config（tailwindcss 嵌套）声明 optional peer yaml ^2.4.2，2.9.1 满足且标记自洽。",
+          "frontendImageBuilt": "ai-hearing-rehabilitation-frontend:latest @ 2026-10-11T09:45:23+09:00，消费本锁。",
+          "zeroDeletionProof": "diff 为 +18/-0 ⇒ 既有 607 包与全部版本逐字未变（等价复核另一批次 oldLockPackagesUnchanged / manifestChanged=false 两项断言）。"
+        },
+        "scratchHygiene": "A/B 探针只跑在 C:\\tmp\\lockbefore 与 C:\\tmp\\lockafter 的副本里；仓库与 frontend/node_modules 零副作用。",
+        "transientDisclosed": "新锁首跑 exit 1 为 registry egress 抖动，重试 exit 0；同一 egress 抖动也是后端 apt 层失败的原因（见 ENV-F04）。"
+      },
+      "FIX-DEP-01": {
+        "commit": "211a18d",
+        "files": [
+          "docker-compose.yml",
+          "backend/.dockerignore",
+          "frontend/.dockerignore"
+        ],
+        "change": "`version: '3.8'` → `name: ai-hearing-rehabilitation`（compose 仅这一行，1+/1−）；新建两把 .dockerignore（各 50 行）。",
+        "evidenceRunByOrchestratorImmediatelyBeforeSeal": {
+          "composeBuild": "`docker compose build` 逐字命令第 4 次 exit 0（日志 1644 行，末条 buildkit 时间戳 1357.6 s），backend 1.76 GB / frontend 96 MB 双镜像 Built；第 2、3 次 exit 1 定性 ENV-F04 egress，未当作门禁结论。",
+          "composeConfig": "exit 0；`COMPOSE_PROJECT_NAME=rotest docker compose config` → `name: rotest`（env 覆盖顶层 name，开发者隔离能力未丧失）。",
+          "imageHygiene": "只读 `docker run --rm --entrypoint sh` 取证：`/app` = 852K、`NO_DOTENV_IN_IMAGE`、`NO_VENV_DIR_IN_IMAGE`，`docker history` 显示 COPY 层 872 kB（宿主 backend/venv312 574 MB 未入镜像；1.76 GB 归因 apt 457 MB + pip 723 MB）。",
+          "dockerfilesUnchanged": "git diff d51880d..HEAD -- backend/Dockerfile frontend/Dockerfile = 0 字节 ⇒ 构建门未被放松的字节级证明。",
+          "securityPayoff": "backend/.env 在盘且含真实 SECRET_KEY / DASHSCOPE_API_KEY（值零输出，审查者也只报长度）；修复前会被 `COPY . .` 打进每层镜像 ⇒ 关闭 F-50 的 .dockerignore 子项（不是 F-50 整条）。",
+          "protectedDirectory": "封前现场复算 treeSha256 = 9eb05078…82e0 == 保护基线，fileCount=2 ⇒ UNCHANGED。"
+        },
+        "reviewAdjudication": {
+          "policy": "发布配置 ⇒ HIGH ⇒ 两个互不可见 Reviewer invocation。",
+          "reviewerB": "PASS，零 blocker。",
+          "reviewerA": "REQUEST_CHANGES，两条 blocker：(1) `**/venv` 不匹配 venv312；(2) 1.76 GB 说明 venv 被打包。",
+          "howAdjudicated": "按字节否证，不按多数票压过：backend/.dockerignore:19 实测是 `**/venv*`（grep 原文），Docker `**/` 语义匹配零级目录 ⇒ venv312 命中；镜像 COPY 层 872 kB、/app 无 venv 目录 ⇒ 两条 blocker 的事实前提均不成立。",
+          "acceptedFromA": "COMPOSE_PROJECT_NAME 优先级问题（催生 F-69）；封存必须逐路径 stage，不得卷入同批脏治理文件。",
+          "rejectedAsInapplicable": "『头部注释沿用 docker-compose = v1 风险』⇒ 本机 `docker-compose --version` 与 `docker compose version` 同为 v5.1.4。",
+          "honestResidual": "本接管批次不签发形式判据，因此不存在『推翻正式 Review 结论』的权限问题；此处是接管方对独立审查者事实错误的证据复核，全过程与双方原文均留档，人工可复核后要求重做。"
+        },
+        "sideEffect": "`**/.env*` 连带排除 tracked 的 backend/.env.example（116 个中唯一 1 个；frontend 78 个中 0 个）⇒ 记 F-68。"
+      },
+      "FIX-GOV-M0-DOCS": {
+        "commit": "9d0aae4",
+        "files": [
+          "docs/workflow/MILESTONES.md",
+          "docs/workflow/TASK_CATALOG.md"
+        ],
+        "change": "HD-N-05 采用 8 份实名产物口径（MILESTONES.md:15 补齐 INTEGRATION_BASELINE，消除同文件 8-vs-7 自相矛盾）；catalog 三处过时事实改写：M0-008『当前构建补证尚未完成』→ 记录 exit 0 与镜像取证；FIX-GOV-009『AUTHORIZED_GPT_IN_PROGRESS』→ 已封存 `e090ef2` 并如实标注形式判据 NOT_ISSUED；F-61『OPEN』→ `CHANNEL_SEALED_IN_E090EF2 / FORMAL_WORKFLOW_RUN_NOT_EXERCISED`。附录补 4 行（FIX-INT-01 / FIX-DEP-01 / FIX-DEP-02 / FIX-GOV-M0-DOCS）与接管续记一条。",
+        "whyCorrectedBeforeSeal": "另一批次写这些字节时构建证据确实未取得；现在已取得，照原样封存会把已失效的陈述固化进治理文档。改动仅限事实句，DAG / 依赖列 / 任务 ID / 编号 / Critical Path 零改动，M1..M10 全部仍 BACKLOG，`M0 Milestone Gate = NOT_ENTERED` 保留。",
+        "evidenceRunByOrchestratorImmediatelyBeforeSeal": {
+          "harness": "157/157 passed；OLD_SCENARIO_COUNT=106 / D6=16 / D7=35；OLD_EXPECTATION_DIGEST=cecf72bc…72a7bf 逐字节未变。",
+          "m0RowCount": "grep -c '^| M0-00' = 8 ⇒ 与 8 份产物、8 个封存 commit 1:1。",
+          "protectedDirectory": "封前再次复算 = 9eb05078…82e0 UNCHANGED。"
+        }
+      }
+    },
+    "evidenceGapClosedBeforeSeal": "FIX-DEP-01 与 M0 治理文档同步曾因『构建绿证未取得』而暂缓；第 4 次 `docker compose build` exit 0 后该门缺口关闭，两者才依次封存。暂缓—取证—封存这一顺序本身就是本批的做法记录。",
+    "composeBuildGreenEvidence": "见 composeAttempt3.attempts[n=4] 与 supportingGatesThisSession。",
+    "gateLedgerThisSession": {
+      "dryrunHarness": "157/157 passed，OLD_SCENARIO_COUNT=106 / D6=16 / D7=35，旧期望摘要 cecf72bc…72a7bf 未变（与另一批次记录逐字一致）。",
+      "sqliteFullSuite": "exit 0 / 235 passed。",
+      "lintDualTruth": "CI 子集 exit 0『All checks passed!』；全量 exit 1『Found 291 errors』⇒ 双真相仍在，未降级。",
+      "composeConfig": "exit 0（项目名解析成功，不再是 project name must not be empty）。",
+      "protectedDirectory": "docs/qgraphflow/dialogue-turn-sequence/ treeSha256 9eb05078…82e0 == 保护基线；每次封存前各复算一次，未修改、未 stage、未删除。"
+    },
+    "correctionsToGptHandoverRecord": [
+      "gptHandover.verification.composeBuildAttempt2 记为 RUNNING —— 编排器实测该尝试已完成并 exit 1，失败点是 backend 基础层 apt-get（ENV-F04 egress），compose 项目名修复本身生效（两服务均按 ai-hearing-rehabilitation-* 命名产出，frontend 构建成功）。原文不删，此处为带日期的订正。",
+      "gptHandover.tasks['FIX-DEP-01'].actualBuildPending = true —— 该字段在记录当时为真；第 4 次构建 exit 0 后已不成立，现封存为 211a18d，本接管块 composeAttempt3.attempts[n=4] 为订正证据。原文不删。",
+      "gptHandover.tasks['FIX-INT-01'].state = IN_PROGRESS —— 已被本编排器推进并封存为 1afeaf7（含现场隔离 postgres 34 passed 复跑）。原文不删，以本条为带日期订正。",
+      "gptHandover.tasks['FIX-GOV-M0-DOCS'].state = GPT_INDEPENDENT_VERIFIED_AWAITING_SEAL —— 封存为 9d0aae4；封存前编排器改写了其中三处已失效的事实句（构建补证、FIX-GOV-009 状态、F-61 状态），因此封存的字节不完全是另一批次写下的原字节，这一改动本身即本条记录的对象。",
+      "gptHandover.tasks['FIX-GOV-009'].state 末尾的 AWAITING_PRECISE_BOOTSTRAP_SEAL —— 实际已提交 e090ef2（2 files / 233+/42−，恰为授权精确路径），其自报的 liveQoderFormalTaskPass=NOT_RUN 与两条形式判据 NOT_ISSUED 编排器复核后原样采信并写入 catalog。"
+    ],
+    "composeAttempt3": {
+      "gateCommand": "docker compose build  (逐字未改：无 -p、无 --fix-missing、无换镜像源、无换基础镜像、两个 Dockerfile 零改动)",
+      "recordedAt": "2026-10-11",
+      "recorder": "Qoder 编排器（人工接管批次）",
+      "attempts": [
+        {
+          "n": 1,
+          "recordedBy": "GPT 批次（本编排器未复跑其结论；但其 npm ci 前态已由本编排器在 node:20-alpine 镜像内独立复现）",
+          "exitCode": 1,
+          "failedStep": "frontend: RUN npm ci",
+          "reason": "Missing: yaml@2.9.1 from lock file",
+          "resolution": "frontend/package-lock.json 补 node_modules/tailwindcss/node_modules/yaml@2.9.1（+18/-0，既有 607 包未动）⇒ 封存 8b93178"
+        },
+        {
+          "n": 2,
+          "recordedBy": "本编排器现场执行（后台任务 b4uuqxzrk）",
+          "exitCode": 1,
+          "failedStep": "backend base 层: RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libsndfile1",
+          "failedArchives": [
+            "libx11-6_1.8.12-1_amd64.deb",
+            "libelf1t64_0.192-4_amd64.deb"
+          ],
+          "error": "500 reading HTTP response body: unexpected EOF [IP: 198.18.0.178 / .189, port 80]",
+          "log": "C:/tmp/compose_build_retry.log",
+          "elapsedS": 1141
+        },
+        {
+          "n": 3,
+          "recordedBy": "本编排器现场执行（后台任务 b37s7vcxk）",
+          "exitCode": 1,
+          "failedStep": "backend base 层: 同一条 apt-get",
+          "failedArchives": [
+            "libxext6_1.3.4-1+b3_amd64.deb"
+          ],
+          "fetched": "133 MB in 6min 13s（205/206 包成功，失败包与第 2 次不同 ⇒ 随机性出网抖动，非确定性仓库缺陷）",
+          "error": "500 reading HTTP response body: unexpected EOF [IP: 198.18.0.178]",
+          "log": "C:/tmp/compose_build_retry.log",
+          "elapsedS": 388,
+          "classification": "ENV-F04（机器/网络条件，非项目缺陷、非门禁结论）"
+        },
+        {
+          "n": 4,
+          "recordedBy": "本编排器现场执行（后台任务 bd6cqmhy7）",
+          "exitCode": 0,
+          "log": "C:/tmp/compose_build_retry4.log",
+          "logLines": 1644,
+          "lastBuildkitTimestampS": 1357.6,
+          "outcome": [
+            "Image ai-hearing-rehabilitation-backend Built",
+            "Image ai-hearing-rehabilitation-frontend Built",
+            "COMPOSE_BUILD_ATTEMPT4_EXIT=0"
+          ],
+          "images": {
+            "ai-hearing-rehabilitation-backend": "1.76GB",
+            "ai-hearing-rehabilitation-frontend": "96MB"
+          }
+        }
+      ],
+      "supportingGatesThisSession": {
+        "dockerComposeConfig": {
+          "exitCode": 0,
+          "name": "ai-hearing-rehabilitation"
+        },
+        "composeProjectNameEnvOverride": {
+          "command": "COMPOSE_PROJECT_NAME=rotest docker compose config",
+          "result": "name: rotest",
+          "conclusion": "环境变量优先级【高于】compose 顶层 name: ⇒ 每开发者项目隔离能力未因本次修复丧失"
+        },
+        "imageHygieneInspection": {
+          "command": "docker run --rm --entrypoint sh ai-hearing-rehabilitation-backend:latest -c 'ls /app; du -sh /app'",
+          "read_only": true,
+          "findings": {
+            "NO_DOTENV_IN_IMAGE": true,
+            "NO_VENV_DIR_IN_IMAGE": true,
+            "appSize": "852K",
+            "copyLayerSize": "872kB",
+            "sizeAttribution": "1.76GB = apt 层 457MB + pip 层 723MB + python 基础层，与 COPY . . 层无关"
+          }
+        },
+        "dockerfilesUnchanged": "git diff d51880d..HEAD -- backend/Dockerfile frontend/Dockerfile ⇒ 0 字节",
+        "batchFootprint": "11 个文件；compose 仅 1 行（-version / +name）",
+        "governanceHarness": "node .qoder/workflow-state/dryrun-harness.mjs test ⇒ REGRESSION: 157/157 passed；OLD_SCENARIO_COUNT=106；D6=16；D7=35；OLD_EXPECTATION_DIGEST=cecf72bcb036d66b319f6dfd8c77d119bf2a4bdd8a63fea913394bfb0272a7bf（逐字节未变）",
+        "sqliteFullSuite": "235 passed / 0 failed",
+        "lintDualTruth": "CI 子集（--select E,F,W --ignore E501）exit 0；全量 ruff check app/ exit 1 / 291 errors ⇒ PROJECT_BASELINE_HEALTH 仍 DEGRADED",
+        "protectedDirectory": "docs/qgraphflow/dialogue-turn-sequence/ treeSha256=9eb05078952d3b82cb53850404821449c518b3d70f491d5beaeaacdb795f82e0，fileCount=2 ⇒ 与本会话内多次复算逐字节相符，UNCHANGED"
+      },
+      "reviewAdjudication": {
+        "policy": "发布配置 ⇒ HIGH ⇒ 两个互不可见 Reviewer invocation",
+        "reviewerB": "PASS，无 blocker",
+        "reviewerA": "REQUEST_CHANGES（2 条 blocker）",
+        "adjudication": "按字节证据否证，非按多数票压过：A 称 `**/venv` 只匹配精确名 `venv` ⇒ 实测 backend/.dockerignore:19 是 `**/venv*`，匹配 venv312；镜像 COPY 层 872 kB、/app 852K、无 venv 目录 ⇒ blocker 1、2 均不成立",
+        "acceptedFromA": [
+          "COMPOSE_PROJECT_NAME 覆盖顶层 name:（已由本编排器实测确认，并据此推翻 DEPLOY_BASELINE.md:78 的优先级表述）",
+          "封存必须逐路径 stage，不得卷入同批脏治理文件（已遵守）"
+        ],
+        "rejectedFromA_as_inapplicable": "『头部注释沿用 docker-compose 属 v1 风险』⇒ 本机 `docker-compose --version` = v5.1.4，与插件同一二进制"
+      },
+      "sideEffectDisclosure": "**/.env* 连带把 tracked 文件 backend/.env.example 排除出构建上下文（backend 116 个 tracked 文件中唯一 1 个；frontend 78 个中 0 个）。两个 Dockerfile 均不引用 .env.example ⇒ 构建与运行无影响，但它是模板文件离开镜像事实，记 F-68。",
+      "seal": {
+        "commit": "211a18d",
+        "message": "fix(deploy): name compose project and add build-context ignore files",
+        "stagedPaths": [
+          "docker-compose.yml",
+          "backend/.dockerignore",
+          "frontend/.dockerignore"
+        ],
+        "blobEqualsReviewedBytes": true,
+        "notPushed": true
+      },
+      "verdictLine": "HD-N-09 丙 的构建证据已取得并可复算：`docker compose build` **exitCode=0**（第 4 次，逐字命令、门禁未削弱、Dockerfile 零改动），双镜像 `ai-hearing-rehabilitation-backend` / `-frontend` Built；`docker compose config` exitCode=0；镜像内无 `.env`、无 venv（COPY 层 872 kB）。前两次红色定性为出网抖动 ENV-F04，未当作门禁结论。",
+      "greenEvidenceObtained": true,
+      "whatThisEvidenceIsNot": "它不是 Qoder Workflow 正式运行签发的五判据：本批为人工接管批次，`FORMAL_TASK_DELTA_VERDICT / FORMAL_GOVERNANCE_GUARD_VERDICT = NOT_ISSUED_IN_TAKEOVER_BATCH`。真实构建成功这件事本身有 exitCode 与镜像字节为证，两者互不矛盾。"
+    },
+    "fixGov009HonestStatus": "两文件实现与回归已由另一批次提交于 e090ef2，本编排器现场复跑 157/157 通过；形式判据仍 NOT_ISSUED（不属于 Qoder Workflow 运行），bootstrap 封存授权只限该任务本身，不推定 F-61 闭合、不外溢到未来任何治理写。",
+    "orchestratorSelfCorrectionsThisTurn": [
+      "受保护目录首次复算得 treeSha256=c9485e31ff5b647e0d6c54a15397afeebdc31f92ef2e6382dc3191c00f947bee『不等于』保护基线 —— 原因是我用裸文件名而非脚本 `find \"$P\" -type f -print` 的相对路径形态序列化 manifest。按 :431 的原文口径逐字重跑后得 9eb05078…82e0 == 基线，成员级 sha256（graph.json 5f12d3d4…、index.html 2bd127b7…）与 fileCount=2 两次均相符 ⇒ 该红是【编排器的算法复现缺陷】（与先前误剥末行换行那次同类，第二次），不是外部改动，未据此得出任何 PAUSED 结论。两版数字都留档以证明差异来源。",
+      "第一版 Docker `**` 语义匹配器把 `**/` 翻译成 `.* / `（要求至少一级目录），导致 backend 排除数误报 0 ⇒ 若就此入账，F-68（`.env.example` 被连带排除）会被漏掉。修正为 `(?:.*/)?`（`**/` 匹配零级目录）后实测：backend 116 个 tracked 文件排除 1 个、frontend 78 个排除 0 个。该缺陷同样属编排器侧，未污染门禁结论。",
+      "Reviewer A 的两条 blocker 我最初按『审查者否决即停封』的默认动作处理；核实后发现其事实前提（`**/venv` 精确匹配、1.76 GB 含 venv）与文件原文和镜像层字节均不符 ⇒ 依证据否证并留档，而非按职级或票数取舍。"
+    ],
+    "dedupDiscipline": [
+      "拟新增『AGENTS.md §9 与 80-testing.md 引用 backend/.venv 而实测不存在』⇒ 撤回，ENV-F03 / F-52 已记录同类，不重复计数。",
+      "拟新增『conftest redis 硬编码』⇒ 降格为 F-67，并显式引用其先见于 lastRun_M0_006.baselineFindings[4] 的 ENV 笔记，标注非新发现。",
+      "本链第三次同类自查（F-64/F-66 之后）⇒ 规则沿用：登记任何新 F-*/ENV-* 前必须回查台账 findings、GOAL_PROGRESS 原文。"
+    ],
+    "redLinesHonored": "零 push / merge / rebase / tag / git reset / git clean / git stash；每次仅 git add -- <精确路径>（无 add . / -A）；宿主 :5432 零连接；既有容器与数据卷零启停零删除；Secret 值零输出；仅新建并使用带标签的一次性隔离资源（:55432 / :16479）。"
   }
 }
