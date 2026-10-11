@@ -51,6 +51,7 @@ let D3_TEST_FORCE_MAX_ROUTE = false      // 仅测试 trip-wire：验证 FLASH_O
 
 // 角色 → FULL 模式设计模型（真值）。FLASH_ONLY 下运行时统一路由到 FLASH。
 const ROLE_FULL_MODEL = {
+  governanceWriter: MAX,
   planner: MAX, explorer: MAX, reviewer: MAX, reviewerB: MAX, verifier: MAX, rca: MAX, snapshot: MAX,
   worker: FLASH, gate: FLASH, evidence: FLASH, fixer: FLASH, probeFlash: FLASH, probeMax: MAX,
 }
@@ -75,12 +76,77 @@ const EXPECTED_RUNTIME_MODEL = {
   FULL: { planner: MAX, explorer: MAX, reviewer: MAX, reviewerB: MAX, verifier: MAX, rca: MAX, snapshot: MAX, worker: FLASH, gate: FLASH, evidence: FLASH, fixer: FLASH },
   FLASH_ONLY: { planner: FLASH, explorer: FLASH, reviewer: FLASH, reviewerB: FLASH, verifier: FLASH, rca: FLASH, snapshot: FLASH, worker: FLASH, gate: FLASH, evidence: FLASH, fixer: FLASH },
 }
+EXPECTED_RUNTIME_MODEL.FULL.governanceWriter = MAX
+EXPECTED_RUNTIME_MODEL.FLASH_ONLY.governanceWriter = FLASH
+let GOVERNANCE_REQUESTED = false
+let GOVERNANCE_AUTHORIZATION = null
+let GOVERNANCE_PATHS = Object.freeze([])
+let GOVERNANCE_SOURCE_SHA256 = null
+let GOVERNANCE_SPEC_LOCK = null
+let GOVERNANCE_SPEC_SNAPSHOT = null
+let TASK_DELTA_AUTH = Object.freeze([])
+function implementationModel() { return modelFor(GOVERNANCE_REQUESTED ? 'governanceWriter' : 'worker') }
+// Conservative Windows identity key. This only detects lexical aliases; the independent
+// read-only executor must confirm that source/write/spec entities do not alias via links.
+function governanceFileIdentity(p) { return canonicalPath(p).toLowerCase() }
+function sameGovernanceFile(a, b) { return governanceFileIdentity(a) === governanceFileIdentity(b) }
+function governancePathAuthorized(p) { return GOVERNANCE_PATHS.indexOf(p) >= 0 }
+function implementationRules(repair) {
+  if (!GOVERNANCE_REQUESTED) return FLASH_RULES + (repair ? '\n' + FLASH_REPAIR_RULES : '')
+  return `[GovernanceWriter — independent writing invocation; no acceptance authority]
+- 只允许创建/修改精确文件：${GOVERNANCE_PATHS.join(', ')}；此冻结人工授权是治理保护的唯一例外，所有其他治理/业务路径仍禁止写入。
+- TASK_SPEC 与授权来源本身不可修改；不得自行制造/扩张授权。已有未提交修改仅当该文件被精确授权时可按合同编辑，其他 pre-existing 文件不得触碰。
+- 禁止破坏性或变更类 Git、生产/未知数据库操作、Secret 读取；禁止删除/跳过/放宽测试或降级门禁。
+- 只按合同${repair ? '与 allowedRepairFiles 做针对性修复' : '实施'}；禁止调用其他模型或Agent。如实报告所有gitCommandsRun/commandsRun与实际文件。
+- IMPLEMENTED/FIXED 不等于 PASS；独立 Reviewer A+B 与 Verify 才有验收权。`
+}
+
+// Caller provenance and the read-only executor are platform trust boundaries. The sandbox
+// cannot read source bytes or verify human signatures; this protocol does not claim either.
+function exactGovernanceFile(p) {
+  if (typeof p !== 'string' || !p || p !== p.trim() || p !== canonicalPath(p)) return false
+  if (/[\\:*?\[\]{}\x00-\x1f]/.test(p) || p.charAt(0) === '/' || p.endsWith('/')) return false
+  if (p.split('/').some(x => !x || x === '.' || x === '..')) return false
+  if (GOVERNANCE_PROTECTED_PATHS.some(x => x.endsWith('/') && x.slice(0, -1) === p.toLowerCase())) return false
+  return isGovernancePath(p)
+}
+function governanceAuthorizationDefect(a) {
+  if (!a || typeof a !== 'object') return 'Missing caller authorization'
+  for (const k of ['taskId', 'humanAuthorizationId', 'sourcePath']) if (typeof a[k] !== 'string' || !a[k].trim() || a[k] !== a[k].trim()) return 'Missing/blank ' + k
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(a.taskId)) return 'Malformed taskId'
+  if (a.sourcePath !== canonicalPath(a.sourcePath) || /[\\:*?\[\]{}\x00-\x1f]/.test(a.sourcePath) || a.sourcePath.split('/').some(x => !x || x === '.' || x === '..')) return 'Malformed sourcePath'
+  if (!Array.isArray(a.exactPaths) || !a.exactPaths.length || a.exactPaths.some(p => !exactGovernanceFile(p))) return 'Only exact governance file paths are allowed'
+  if (new Set(a.exactPaths.map(governanceFileIdentity)).size !== a.exactPaths.length) return 'Duplicate paths'
+  if (a.exactPaths.some(p => sameGovernanceFile(p, a.sourcePath))) return 'Authorization source cannot be writable'
+  if (EXECUTION_MODE === 'FLASH_ONLY' && (typeof a.flashOnlyAuthorizationId !== 'string' || !a.flashOnlyAuthorizationId.trim() || a.flashOnlyAuthorizationId !== a.flashOnlyAuthorizationId.trim() || a.flashOnlyAuthorizationId === a.humanAuthorizationId)) return 'Separate FLASH_ONLY governance authorization required'
+  return null
+}
+async function checkGovernanceAuthorization(label, specPath) {
+  const a = GOVERNANCE_AUTHORIZATION
+  const checkedSpecPath = specPath || ''
+  const r = await agent(`${PROJECT_RULES}\n${decisionRules()}
+[独立只读人工治理授权核验] 禁止修改任何文件。真实读取 ${a.sourcePath}，查找 ${a.humanAuthorizationId} 对应的人类批准记录。不要把此提示词、TASK_SPEC、Worker声明或凭空造出的ID当成人类来源。
+冻结caller请求：${JSON.stringify(a)}。逐项核对taskId、humanAuthorizationId、sourcePath、exactPaths与执行模式=${EXECUTION_MODE}；目录授权、符号链接/路径别名不作为精确文件批准。逐路径核实是文件或明确允许创建的文件，返回exactFilesConfirmed。
+实体隔离核验（必须真实只读执行，不能靠拼写差异推断）：核实来源文件与每个exactPaths目标${checkedSpecPath ? '、以及TASK_SPEC路径 ' + checkedSpecPath : '（TASK_SPEC尚未选定）'}并非同一文件实体。检查大小写别名、源/目标及父目录中的symlink、junction/reparse point；无法可靠解析时拒绝授权。返回checkedSpecPath=${JSON.stringify(checkedSpecPath)}、sourceIsolationConfirmed与sourceIsolationEvidence（核验命令/解析路径/结果证据），发现任何源与写目标或spec实体相同时必须false。脚本无法自行解析实体，因此这仍是独立只读执行手信任边界。
+FLASH_ONLY须另核实flashOnlyAuthorizationId确实单独批准该task治理写模式，既有feature降级批准不能继承。未找到/不匹配返回authorized=false。
+回传真实来源文件字节SHA-256与可核对原文证据evidence；authority仅人类来源可为HUMAN。不得输出secret。filesChanged必须为空。此执行手证据仍依赖平台/只读调用可信度，不是人类签名认证。`,
+    { label, phase: 'Governance Authorization', model: modelFor('planner'), effort: 'high', schema: { type: 'object', properties: {
+      authorized: { type: 'boolean' }, authority: { type: 'string' }, taskId: { type: 'string' }, humanAuthorizationId: { type: 'string' }, sourcePath: { type: 'string' }, exactPaths: { type: 'array', items: { type: 'string' } }, executionMode: { type: 'string' }, flashOnlyAuthorizationId: { type: 'string' }, sourceSha256: { type: 'string' }, evidence: { type: 'string' }, exactFilesConfirmed: { type: 'boolean' }, checkedSpecPath: { type: 'string' }, sourceIsolationConfirmed: { type: 'boolean' }, sourceIsolationEvidence: { type: 'string' }, filesChanged: { type: 'array', items: { type: 'string' } },
+    }, required: ['authorized', 'authority', 'taskId', 'humanAuthorizationId', 'sourcePath', 'exactPaths', 'executionMode', 'sourceSha256', 'evidence', 'exactFilesConfirmed', 'checkedSpecPath', 'sourceIsolationConfirmed', 'sourceIsolationEvidence', 'filesChanged'] } })
+  if (!r) return { modelBlocked: mname(modelFor('planner')) }
+  const samePaths = Array.isArray(r.exactPaths) && JSON.stringify(r.exactPaths.slice().sort()) === JSON.stringify(a.exactPaths.slice().sort())
+  if (r.checkedSpecPath !== checkedSpecPath || r.sourceIsolationConfirmed !== true || typeof r.sourceIsolationEvidence !== 'string' || !r.sourceIsolationEvidence.trim()) return { defect: 'Independent source/write-set/spec file-entity isolation not confirmed' }
+  if (!r.authorized || r.authority !== 'HUMAN' || r.taskId !== a.taskId || r.humanAuthorizationId !== a.humanAuthorizationId || r.sourcePath !== a.sourcePath || !samePaths || r.executionMode !== EXECUTION_MODE || !r.exactFilesConfirmed || !Array.isArray(r.filesChanged) || r.filesChanged.length || typeof r.evidence !== 'string' || !r.evidence.trim() || !FP_SHA256_RE.test(r.sourceSha256 || '') || (EXECUTION_MODE === 'FLASH_ONLY' && r.flashOnlyAuthorizationId !== a.flashOnlyAuthorizationId) || (GOVERNANCE_SOURCE_SHA256 && GOVERNANCE_SOURCE_SHA256 !== r.sourceSha256)) return { defect: 'Independent source evidence does not match frozen human authorization' }
+  GOVERNANCE_SOURCE_SHA256 = r.sourceSha256
+  return { ok: true }
+}
 function mname(m) { return m === MAX ? MAX + ' (Qwen3.8-Max)' : (m === FLASH ? FLASH + ' (Qwen3.8-Flash)' : String(m)) }
 
 // D3：把当前执行模式与各角色运行时模型汇总为报告字段（供审计与最终报告）。
 function modeSummary() {
   return {
     ACTIVE_EXECUTION_MODE: EXECUTION_MODE,
+    GOVERNANCE_AUTHORIZATION: { requested: GOVERNANCE_REQUESTED, status: GOVERNANCE_PATHS.length ? 'SOURCE_VERIFIED' : 'NOT_AUTHORIZED', caller: GOVERNANCE_AUTHORIZATION, exactPaths: GOVERNANCE_PATHS.slice(), sourceSha256: GOVERNANCE_SOURCE_SHA256, trustBoundary: 'Caller provenance and independent read-only executor; no script-side filesystem or cryptographic human-signature verification.' },
     DEFAULT_EXECUTION_MODE: 'FULL',
     FULL_MODE_PRESERVED: true,
     FLASH_ONLY_MODE_PRESERVED: true,
@@ -88,7 +154,7 @@ function modeSummary() {
     DEGRADED_MODE_OPT_IN: "FLASH_ONLY 是人工授权的显式降级选项（未删除）：仅当调用方传 executionMode:'FLASH_ONLY' 或人工把顶部 EXECUTION_MODE 改为 'FLASH_ONLY' 时生效；生效时全部运行时角色模型 = qfmodel，且门禁/审查/验收判据一条不降。默认模式自 D5 起为 FULL（qmodel_38max 规划/审查/验收 + qfmodel 实施/门禁）。",
     ALLOWED_RUNTIME_MODELS: [...allowedRuntimeModels()],
     ROLE_RUNTIME_MODELS: {
-      planner: mname(modelFor('planner')), explorer: mname(modelFor('explorer')), worker: mname(modelFor('worker')),
+      planner: mname(modelFor('planner')), explorer: mname(modelFor('explorer')), worker: mname(modelFor('worker')), governanceWriter: mname(modelFor('governanceWriter')),
       gate: mname(modelFor('gate')), reviewer: mname(modelFor('reviewer')), reviewerB: mname(modelFor('reviewerB')),
       verifier: mname(modelFor('verifier')), rca: mname(modelFor('rca')), snapshot: mname(modelFor('snapshot')), evidence: mname(modelFor('evidence')),
     },
@@ -564,6 +630,7 @@ let RETRY_OWNERSHIP = { retryOf: null, currentTaskIdentity: null, artifacts: [],
 let TASK_WRITE_PREFIXES = []
 
 function writePathAuthorized(p) {
+  if (GOVERNANCE_REQUESTED) return governancePathAuthorized(p)
   for (const w of TASK_WRITE_PREFIXES) { if (!w) continue; if (p === w || p.indexOf(w.replace(/\/$/, '') + '/') === 0 || (w.indexOf('*') >= 0 && p.indexOf(w.split('*')[0].replace(/\/$/, '')) === 0)) return true }
   return false
 }
@@ -696,9 +763,11 @@ function classifyDelta(baseline, current, authorizedGovernanceWrites) {
     externalChangedDuringTask: [], preExistingReverted: [], retryOwnedArtifacts: [],
     treeUnitChanges: [], headChanged: false, stagedAppeared: [],
     evidenceRejected: false, evidenceStatus: null,
+    governanceOutOfScope: [], specMutated: false,
   }
   res.evidenceStatus = { backend: FINGERPRINT_BACKEND, authority: CONTENT_IDENTITY_AUTHORITY, baseline: evidenceStatusOf(baseline), current: evidenceStatusOf(current) }
   if (!isVerifiedEvidence(baseline) || !isVerifiedEvidence(current)) { res.evidenceRejected = true; return res }
+  if (GOVERNANCE_SPEC_LOCK) res.specMutated = identityMap(current)[GOVERNANCE_SPEC_LOCK.path] !== GOVERNANCE_SPEC_LOCK.identity
   res.headChanged = !!(baseline.head && current.head && baseline.head !== current.head)
   const bStaged = new Set(((baseline.staged || []).map(canonicalPath)))
   for (const p of ((current.staged || []).map(canonicalPath))) if (!bStaged.has(p)) res.stagedAppeared.push(p)
@@ -711,7 +780,8 @@ function classifyDelta(baseline, current, authorizedGovernanceWrites) {
     if (inB && inC) {
       const bH = idB[p], cH = idC[p]
       if (bH && cH && bH !== cH) {
-        if (RETRY_OWNED[p]) { res.retryOwnedArtifacts.push(p); if (res.taskChanged.indexOf(p) < 0) res.taskChanged.push(p) }
+        if (governancePathAuthorized(p)) res.taskChanged.push(p)
+        else if (RETRY_OWNED[p]) { res.retryOwnedArtifacts.push(p); if (res.taskChanged.indexOf(p) < 0) res.taskChanged.push(p) }
         else if (baseline.trees && baseline.trees[p] && treeUnitChangeExplainableByTask(baseline, current, p)) {
           for (const m of (treeUnitDiff(baseline, current, p) || [])) { const mp = canonicalPath(String(m).replace(/ \(DELETED\)$/, '')); if (res.taskChanged.indexOf(mp) < 0) res.taskChanged.push(mp) }
         } else if (gov) res.taskGovernance.push(p)
@@ -740,11 +810,14 @@ function classifyDelta(baseline, current, authorizedGovernanceWrites) {
       else res.taskChanged.push(p)
     }
   }
+  if (GOVERNANCE_REQUESTED) res.governanceOutOfScope = res.taskChanged.filter(p => !governancePathAuthorized(p) && !(GOVERNANCE_SPEC_LOCK && p === GOVERNANCE_SPEC_LOCK.path))
   return res
 }
 function deltaViolations(delta) {
   const v = []
   if (!delta) return v
+  if (delta.specMutated) v.push({ code: 'BLOCKED_GOVERNANCE_CONFLICT', detail: 'Frozen TASK_SPEC identity changed after authorization' })
+  if (delta.governanceOutOfScope && delta.governanceOutOfScope.length) v.push({ code: 'BLOCKED_GOVERNANCE_CONFLICT', detail: 'Governance task diff exceeds exact human write-set: ' + delta.governanceOutOfScope.join(', ') })
   if (delta.evidenceRejected) v.push({ code: 'FINGERPRINT_EVIDENCE_INVALID', adjudicable: true, detail: '指纹证据未通过 D4 确定性校验（命令须逐字一致、sha256 须 64 位小写 hex、md5 须 32 hex、size 须非负整数、路径须 canonical、执行手须零写入），不得参与 Task Delta：' + j(delta.evidenceStatus, 800) })
   if (delta.headChanged) v.push({ code: 'BLOCKED_GIT_HISTORY_MUTATED', detail: '任务期间 HEAD 发生变化（疑似 commit/reset/rebase/checkout 等历史改写）' })
   if (delta.stagedAppeared && delta.stagedAppeared.length) v.push({ code: 'BLOCKED_GIT_INDEX_MUTATED', detail: '任务期间出现新的 staged 改动（git add）：' + delta.stagedAppeared.join(', ') })
@@ -762,7 +835,7 @@ function computeAllowedRepairFiles(delta, specObj) {
   const allowedWrites = canonicalPathList((specObj && specObj.ALLOWED_WRITE_PATHS) || expected)
   const inSpec = (p) => expected.length ? (expected.indexOf(p) >= 0 || writePathAuthorized(p)) : true
   let allowed = taskChanged.filter(inSpec).concat(retryOwned.filter((p) => RETRY_OWNED[p]))
-  allowed = allowed.filter((p) => !isGovernancePath(p) && !forbidden.has(p))
+  allowed = allowed.filter((p) => (!isGovernancePath(p) || governancePathAuthorized(p)) && !forbidden.has(p))
   return [...new Set(allowed)]
 }
 // 修复后指纹校验（§19）：全局不得引入 governance/external/head/index 违规；
@@ -783,7 +856,7 @@ function verifyRepairFingerprints(baseline, preSnap, postSnap, allowedRepairFile
     if (!preD.has(p)) { newly.push(p); continue }
     if (preId[p] && postId[p] && preId[p] !== postId[p]) newly.push(p)
   }
-  const outside = newly.filter((p) => !allowed.has(p) && !authSet.has(p) && !RETRY_OWNED[p])
+  const outside = newly.filter((p) => !allowed.has(p) && !(GOVERNANCE_REQUESTED ? false : authSet.has(p)) && !RETRY_OWNED[p])
   if (outside.length) return { ok: false, violation: { code: 'BLOCKED_REPAIR_OUT_OF_SCOPE', detail: 'Self-Repair/Fix 改动了非授权文件：' + outside.join(', ') + '（allowedRepairFiles=' + (allowed.size ? [...allowed].join(', ') : '∅') + '）' } }
   return { ok: true, delta }
 }
@@ -840,7 +913,7 @@ function isHighRisk(cls) {
   if (cls.riskLevel === 'high') return true
   if (cls.securitySensitive || cls.medicalSensitive || cls.privacySensitive) return true
   const t = cls.taskType || []
-  for (const x of ['auth', 'security', 'medical', 'migration', 'deployment']) { if (t.indexOf(x) >= 0) return true }
+  for (const x of ['auth', 'security', 'medical', 'migration', 'deployment', 'governance']) { if (t.indexOf(x) >= 0) return true }
   return false
 }
 
@@ -1025,7 +1098,7 @@ const CLASSIFY_SCHEMA = {
   properties: {
     blocked: { type: 'boolean', description: '无法可靠分类时为 true' },
     blockReason: { type: 'string' },
-    taskType: { type: 'array', items: { type: 'string', enum: ['frontend', 'backend', 'schema', 'migration', 'medical', 'knowledge', 'rag', 'training', 'irt', 'privacy', 'auth', 'security', 'observability', 'deployment', 'evaluation', 'cross_stack', 'bugfix', 'refactor', 'documentation'] } },
+    taskType: { type: 'array', items: { type: 'string', enum: ['frontend', 'backend', 'schema', 'migration', 'medical', 'knowledge', 'rag', 'training', 'irt', 'privacy', 'auth', 'security', 'observability', 'deployment', 'evaluation', 'cross_stack', 'bugfix', 'refactor', 'documentation', 'governance'] } },
     medicalSensitive: { type: 'boolean' },
     privacySensitive: { type: 'boolean' },
     securitySensitive: { type: 'boolean' },
@@ -1095,6 +1168,8 @@ const SCOPE_SCHEMA = {
 const SPEC_SCHEMA = {
   type: 'object',
   properties: {
+    taskType: { type: 'string', enum: ['feature', 'governance'] },
+    humanAuthorizationId: { type: 'string', description: 'Governance only: reference the frozen caller ID; cannot create authorization.' },
     TASK_ID: { type: 'string' },
     TITLE: { type: 'string' },
     OBJECTIVE: { type: 'string' },
@@ -1364,6 +1439,16 @@ if (typeof args === 'string') {
     })
   }
   if (args.executionMode === 'FULL' || args.executionMode === 'FLASH_ONLY') EXECUTION_MODE = args.executionMode
+  GOVERNANCE_REQUESTED = args.taskType === 'governance'
+  if (GOVERNANCE_REQUESTED) {
+    try {
+      const a = JSON.parse(JSON.stringify(args.governanceAuthorization || null))
+      const defect = governanceAuthorizationDefect(a)
+      if (defect) return blocked('BLOCKED_GOVERNANCE_AUTHORIZATION', 'Input', { DETAIL: defect })
+      a.exactPaths = Object.freeze(a.exactPaths.slice())
+      GOVERNANCE_AUTHORIZATION = Object.freeze(a)
+    } catch (_) { return blocked('BLOCKED_GOVERNANCE_AUTHORIZATION', 'Input', { DETAIL: 'Unserializable caller authorization' }) }
+  }
   // D3 测试专用 trip-wire（生产恒不传）：验证 FLASH_ONLY 下把角色路由到 qmodel_38max 会被 Preflight 路由守卫拦截。
   if (args.__d3_force_max_route === true) D3_TEST_FORCE_MAX_ROUTE = true
   // D4 §26–§30：同任务重试产物归属。只有调用方（人工授权的重跑指令）显式声明上一 run 的身份与产物证据时才生效；
@@ -1395,6 +1480,7 @@ phase('Preflight')
 // ============================================================
 {
   const runtimeRoles = ['planner', 'explorer', 'worker', 'gate', 'fixer', 'reviewer', 'reviewerB', 'verifier', 'rca', 'snapshot', 'evidence']
+  if (GOVERNANCE_REQUESTED) runtimeRoles.push('governanceWriter')
   for (const r of runtimeRoles) {
     const m = modelFor(r)
     if (!allowedRuntimeModels().has(m)) {
@@ -1635,7 +1721,7 @@ ${decisionRules()}
 """
 ${task}
 """
-将任务分类（可多选）：frontend/backend/schema/migration/medical/knowledge/rag/training/irt/privacy/auth/security/observability/deployment/evaluation/cross_stack/bugfix/refactor/documentation。
+将任务分类（可多选）：frontend/backend/schema/migration/medical/knowledge/rag/training/irt/privacy/auth/security/observability/deployment/evaluation/cross_stack/bugfix/refactor/documentation/governance。调用方显式taskType=${GOVERNANCE_REQUESTED ? 'governance' : 'feature'}，必须独立核对分类。
 判定 medicalSensitive（任务是否触及医疗内容/训练建议/疗效表达/转诊边界）、privacySensitive（是否触及用户健康信息/语音/个人数据）、securitySensitive（是否触及认证/授权/密钥/攻击面）。
 判定各项 touched/expected 布尔位与 riskLevel(low/medium/high)。
 【D3 HIGH Risk 判定】凡属以下任一类别，riskLevel 必须为 high（触发双独立审查）：安全关键、认证关键、RBAC、IDOR、隐私、健康数据、语音数据、医疗安全、敏感迁移、发布配置（deployment）。
@@ -1651,6 +1737,13 @@ if (cls.blocked) {
 }
 if (cls.humanDecisionRequired) {
   return pausedForHuman(cls.humanDecisionReason || '任务验收本质上需要真实人工审批（医疗专家验证 / 患者数据授权 / 伦理审查 / 版权许可 / 生产密钥 / 生产库危险操作 / 正式生产部署 / 支付 / 验证码 / 法务）。', 'Classify', { taskType: cls.taskType, riskLevel: cls.riskLevel })
+}
+if (GOVERNANCE_REQUESTED !== ((cls.taskType || []).indexOf('governance') >= 0)) return blocked('BLOCKED_GOVERNANCE_AUTHORIZATION', 'Classify', { DETAIL: 'Caller and independent governance classification must agree' })
+if (GOVERNANCE_REQUESTED) {
+  const ar = await checkGovernanceAuthorization('governance-authorization')
+  if (ar.modelBlocked) return modelBlocked('Governance Authorization', ar.modelBlocked)
+  if (ar.defect) return blocked('BLOCKED_GOVERNANCE_AUTHORIZATION', 'Governance Authorization', { DETAIL: ar.defect })
+  GOVERNANCE_PATHS = Object.freeze(GOVERNANCE_AUTHORIZATION.exactPaths.slice())
 }
 log(`分类完成：taskType=[${cls.taskType.join(',')}], risk=${cls.riskLevel}, medical=${cls.medicalSensitive}, privacy=${cls.privacySensitive}, security=${cls.securitySensitive}, humanDecisionRequired=${!!cls.humanDecisionRequired}`)
 
@@ -1721,12 +1814,14 @@ ${decisionRules()}
 ${task}
 """
 分类：${j(cls, 2000)}
+冻结人工治理授权（仅taskType=governance生效）：${j(GOVERNANCE_AUTHORIZATION, 3000)}
+治理任务返回taskType=governance、humanAuthorizationId与EXPECTED_FILES精确集合，并必须声明kind=required的 node .qoder/workflow-state/dryrun-harness.mjs test。
 探索结果：
 ${j({ CURRENT_STATE: exp.CURRENT_STATE, RELATED_FILES: exp.RELATED_FILES, DEPENDENCIES: exp.DEPENDENCIES, RISKS: exp.RISKS, EXISTING_TESTS: exp.EXISTING_TESTS, POTENTIAL_REGRESSIONS: exp.POTENTIAL_REGRESSIONS, TEST_COMMANDS: exp.TEST_COMMANDS }, 14000)}
 生成不可变任务合同 TASK_SPEC，包含全部字段：TASK_ID（短横线小写 slug，如 kb-pdf-parser）、TITLE、OBJECTIVE、CONTEXT、DEPENDENCIES、IN_SCOPE、OUT_OF_SCOPE、EXPECTED_FILES、FILES_FORBIDDEN_TO_CHANGE、DATABASE_IMPACT、API_IMPACT、FRONTEND_IMPACT、SECURITY_IMPACT、PRIVACY_IMPACT、MEDICAL_IMPACT、KNOWLEDGE_IMPACT、MIGRATION_REQUIREMENTS、ACCEPTANCE_CRITERIA、MANDATORY_TESTS、REGRESSION_TESTS、MACHINE_GATE_COMMANDS、ROLLBACK_PLAN、KNOWN_RISKS、DELIVERABLES（可选 ALLOWED_WRITE_PATHS：授权写入的目录前缀）。
 要求：
 - ACCEPTANCE_CRITERIA 必须可验证、可观察，尽量可通过测试判断（示例：AC-01 未认证请求必须返回 401）。禁止"功能正常"这类模糊描述。每条含 id/criterion/verification。
-- EXPECTED_FILES 必须逐条列出本任务允许创建/修改的确切路径（含写入 pre-existing 未跟踪目录内的文件）；如任务确需在整个目录内写入，另填 ALLOWED_WRITE_PATHS 目录前缀。二者都不含治理文件。
+- EXPECTED_FILES 必须逐条列出本任务允许创建/修改的确切路径（含写入 pre-existing 未跟踪目录内的文件）；如任务确需在整个目录内写入，另填 ALLOWED_WRITE_PATHS 目录前缀。普通任务二者都不含治理文件；治理任务只可引用下方冻结人工精确授权，禁止扩张、目录前缀或生成授权。
 - MANDATORY_TESTS 必须使用 TEST_COMMANDS 中真实存在的命令体系；medicalSensitive=true 时必须包含医疗安全回归测试（若项目暂无对应测试，则把"补齐该测试"写入 IN_SCOPE 与 MANDATORY_TESTS）。
 - MACHINE_GATE_COMMANDS 是 Machine Gate 的**冻结门禁合同**（FIX-GOV-001-R1），必须逐条声明本任务真正要运行的命令，每条含 gateId + kind + command + purpose：
   · gateId：稳定、非空、本 Task 内唯一（如 G-TARGET / G-BASE-PYTEST / G-MIGRATION），执行手无权新增/删除/改名。
@@ -1761,6 +1856,31 @@ log(`TASK_SPEC 生成：${spec.TASK_ID} — ${spec.TITLE}（AC ${spec.ACCEPTANCE
 }
 log(`GATE_SPEC 校验通过：声明 ${gateDecls(spec).length} 条门禁（required ${gateDecls(spec).filter(d => d.kind === 'required').length} / record ${gateDecls(spec).filter(d => d.kind === 'record').length}），gateId 全部唯一合法，对账键 = gateId`)
 
+if (GOVERNANCE_REQUESTED) {
+  const a = GOVERNANCE_AUTHORIZATION
+  const expected = spec.EXPECTED_FILES || []
+  const writes = spec.ALLOWED_WRITE_PATHS || expected
+  const sameExpected = JSON.stringify(expected.slice().sort()) === JSON.stringify(GOVERNANCE_PATHS.slice().sort())
+  const regression = gateDecls(spec).some(d => d.kind === 'required' && normGateCommand(d.command) === 'node .qoder/workflow-state/dryrun-harness.mjs test')
+  if (spec.TASK_ID !== a.taskId || spec.taskType !== 'governance' || spec.humanAuthorizationId !== a.humanAuthorizationId || !sameExpected || !Array.isArray(writes) || writes.some(p => !exactGovernanceFile(p) || !governancePathAuthorized(p)) || (spec.FILES_FORBIDDEN_TO_CHANGE || []).some(p => governancePathAuthorized(p)) || !regression || !exactGovernanceFile(spec.specPath) || !spec.specPath.startsWith('.qoder/workflow-state/') || !spec.specPath.endsWith('.spec.json') || GOVERNANCE_PATHS.some(p => sameGovernanceFile(p, spec.specPath)) || sameGovernanceFile(spec.specPath, a.sourcePath)) return blocked('BLOCKED_GOVERNANCE_AUTHORIZATION', 'Task Spec', { DETAIL: 'Spec must reference frozen exact authorization, immutable spec and required full governance regression' })
+  const sourceIsolation = await checkGovernanceAuthorization('governance-authorization-spec', spec.specPath)
+  if (sourceIsolation.modelBlocked) return modelBlocked('Task Spec', sourceIsolation.modelBlocked)
+  if (sourceIsolation.defect) return blocked('BLOCKED_GOVERNANCE_AUTHORIZATION', 'Task Spec', { DETAIL: sourceIsolation.defect })
+  const lockSnap = await snapshotWorktree('Governance TASK_SPEC immutable identity before Writer', 'Task Spec')
+  if (!lockSnap) return modelBlocked('Task Spec', mname(modelFor('snapshot')))
+  if (!isVerifiedEvidence(lockSnap) || !identityMap(lockSnap)[spec.specPath]) return blocked('BLOCKED_GOVERNANCE_AUTHORIZATION', 'Task Spec', { DETAIL: 'Cannot lock TASK_SPEC deterministic identity' })
+  GOVERNANCE_SPEC_LOCK = Object.freeze({ path: spec.specPath, identity: identityMap(lockSnap)[spec.specPath] })
+  GOVERNANCE_SPEC_SNAPSHOT = lockSnap
+}
+TASK_DELTA_AUTH = Object.freeze([spec.specPath].concat(GOVERNANCE_PATHS))
+if (GOVERNANCE_REQUESTED) {
+  const preWriter = await evaluateTaskDelta(WORKTREE_BASELINE, GOVERNANCE_SPEC_SNAPSHOT, TASK_DELTA_AUTH, 'Task Spec', 'pre_governance_writer')
+  if (preWriter.baseline && preWriter.baseline !== WORKTREE_BASELINE) WORKTREE_BASELINE = preWriter.baseline
+  const violation = preWriter.blocked || preWriter.viols[0]
+  if (violation) return blocked(violation.code, 'Task Spec', { DETAIL: violation.detail })
+}
+
+
 // ---------- D4 §26–§30：同任务重试产物归属（在任何写动作之前判定）----------
 // 只有 retryOfTaskId == 本任务 且路径在两版 TASK_SPEC 允许写集合内 且非治理 且
 // 上一 run manifest/journal 证据齐全 且 字节证据显示"上一 run 产物自上次结束以来未被外部改动"，
@@ -1787,19 +1907,19 @@ const _retryNote = Object.keys(RETRY_OWNED).length
   ? `\n- 同任务重试产物（RETRY_OWNED，允许你在 TASK_SPEC 范围内继续完善）：${Object.keys(RETRY_OWNED).join(', ')}。除此之外，任何任务前已存在的未提交内容都是用户改动，禁止触碰。`
   : ''
 const impl = await agent(`${PROJECT_RULES}
-${FLASH_RULES}
+${implementationRules(false)}
 [实施 TASK_SPEC] 第一步：读取 ${spec.specPath}（TASK_SPEC 全文），然后严格实施。
 TASK_SPEC 摘要（以文件为准）：
 ${j(spec, 14000)}
 探索线索（相关文件）：${j(exp.RELATED_FILES, 2000)}
 要求：
-- 只改 EXPECTED_FILES 范围内的文件；FILES_FORBIDDEN_TO_CHANGE 绝对不动；不得触碰用户在 Preflight 时已有的未提交修改。${_retryNote}
+- 只改 EXPECTED_FILES 范围内的文件；FILES_FORBIDDEN_TO_CHANGE 绝对不动；${GOVERNANCE_REQUESTED ? "仅冻结精确人工授权的治理文件允许按合同编辑，其余Preflight未提交修改不可动" : "不得触碰用户在 Preflight 时已有的未提交修改"}。${_retryNote}
 - 按 MANDATORY_TESTS 补齐/更新测试并本地运行；如实报告 TESTS_RUN 与 TEST_RESULTS。
 - 完成后返回 IMPLEMENTATION_REPORT：status=IMPLEMENTED + FILES_CREATED/FILES_MODIFIED/FILES_DELETED/DATABASE_CHANGES/API_CHANGES/FRONTEND_CHANGES/TESTS_ADDED/TESTS_MODIFIED/TESTS_RUN/TEST_RESULTS/DEVIATIONS_FROM_SPEC/KNOWN_LIMITATIONS/BLOCKERS。
 - 发现 TASK_SPEC 与真实代码冲突时：停止并返回 status=SPEC_CONFLICT（conflict/evidence/affectedFiles/recommendedDecision）。
 - 记住：IMPLEMENTED ≠ PASS。`,
-  { label: 'implement', phase: 'Implement', model: FLASH, schema: IMPL_SCHEMA })
-if (!impl) return modelBlocked('Implement', FLASH + ' (Qwen3.8-Flash)')
+  { label: GOVERNANCE_REQUESTED ? 'governance-write' : 'implement', phase: 'Implement', model: implementationModel(), schema: IMPL_SCHEMA })
+if (!impl) return modelBlocked('Implement', mname(implementationModel()))
 if (impl.status === 'SPEC_CONFLICT') {
   return blocked('SPEC_CONFLICT', 'Implement', {
     TASK_ID: spec.TASK_ID,
@@ -1826,7 +1946,7 @@ log(`实施完成（IMPLEMENTED ≠ PASS）：修改 ${(impl.FILES_MODIFIED || [
 // 不误报 BLOCK，也绝不放走真实外部改动。治理/HEAD/index 违规不仲裁、不降级，立即 BLOCK。
 let currentSnap = await snapshotWorktree('Implement 后 Task Delta 校验', 'Implement')
 if (!currentSnap) return modelBlocked('Implement', mname(modelFor('snapshot')))
-let _postEval = await evaluateTaskDelta(WORKTREE_BASELINE, currentSnap, [spec.specPath], 'Implement', 'post_implement')
+let _postEval = await evaluateTaskDelta(WORKTREE_BASELINE, currentSnap, TASK_DELTA_AUTH, 'Implement', 'post_implement')
 if (_postEval.baseline && _postEval.baseline !== WORKTREE_BASELINE) WORKTREE_BASELINE = _postEval.baseline
 let currentDelta = _postEval.delta
 let currentEvidence = _postEval.current || currentSnap
@@ -2054,7 +2174,7 @@ async function establishWorktreeBaseline(phaseName) {
 // 启动前：Task Delta（经确定性证据 + 必要时仲裁）若仍有 governance/external/head/index 违规，或 allowedRepairFiles 为空 → 不启动 Flash。
 // 启动后：扫描自报 gitCommandsRun（denylist）+ 修复后确定性指纹校验；任一层命中 → 返回 violation 交编排器 BLOCK。
 async function guardedFlashRepair(prompt, label, allowedRepairFiles, phaseName) {
-  const auth = [spec.specPath]
+  const auth = TASK_DELTA_AUTH
   const preSnap = await snapshotWorktree(`${label} 修复前快照`, phaseName || 'Repair')
   if (!preSnap) return { modelBlocked: mname(modelFor('snapshot')) }
   const preEval = await evaluateTaskDelta(WORKTREE_BASELINE, preSnap, auth, phaseName || 'Repair', 'pre_repair')
@@ -2066,8 +2186,8 @@ async function guardedFlashRepair(prompt, label, allowedRepairFiles, phaseName) 
   const allowedNow = computeAllowedRepairFiles(preDelta, spec)
   const allowed = (allowedNow && allowedNow.length) ? allowedNow : (allowedRepairFiles || [])
   if (!allowed.length) return { violation: { code: 'BLOCKED_REPAIR_OUT_OF_SCOPE', detail: 'REPAIR_SCOPE.allowedRepairFiles 为空：required 门禁失败的归属文件不在本任务 allowedWritePaths 内（可能属 pre-existing / governance / 归属不明），不得由 Flash 修复。' }, stage: 'REPAIR_SCOPE_EMPTY', preSnap, REPAIR_SCOPE: buildRepairScope(preDelta, allowed) }
-  const res = await agent(prompt, { label, phase: phaseName || 'Repair', model: FLASH, schema: FIXREPORT_SCHEMA })
-  if (!res) return { modelBlocked: FLASH + ' (Qwen3.8-Flash)' }
+  const res = await agent(prompt, { label, phase: phaseName || 'Repair', model: implementationModel(), schema: FIXREPORT_SCHEMA })
+  if (!res) return { modelBlocked: mname(implementationModel()) }
   const reported = Array.isArray(res.gitCommandsRun) ? res.gitCommandsRun : []
   for (const c of reported) {
     const d = detectForbiddenGit(c)
@@ -2267,14 +2387,13 @@ while (!gatePass(gate)) {
   let guard
   if (cycles === 1) {
     guard = await guardedFlashRepair(`${PROJECT_RULES}
-${FLASH_RULES}
-${FLASH_REPAIR_RULES}
+${implementationRules(true)}
 [Self-Repair] TASK_SPEC 见 ${spec.specPath}。Machine Gate 失败如下：
 ${failText}
 [REPAIR_SCOPE] 你**只能**修改以下本任务授权文件 allowedRepairFiles：${allowedRepairFiles.join(', ') || '（空）'}。
-治理保护文件（绝对禁区，任何情况不可创建/修改/删除）：${repairScope.governanceProtectedPaths.join(', ')}。
+治理保护：${GOVERNANCE_REQUESTED ? "仅冻结精确人工授权路径与allowedRepairFiles交集可修复，其他" : "全部"}保护路径禁止写入：${repairScope.governanceProtectedPaths.join(', ')}。
 pre-existing（任务前已存在、指纹须保持不变、绝不可动/还原）：${(repairScope.preExistingFiles || []).join(', ') || '（无）'}。
-只做一次针对性修复：仅修复上述失败，禁止顺便改其他问题、禁止扩大 scope、禁止删除/跳过测试、禁止任何破坏性或变更类 git 命令。修复后返回 status/summary/filesChanged/gitCommandsRun。若 blocker 归属治理文件 / pre-existing 文件 / 归属不明文件 → 不要修复，直接返回 status=BLOCKED 并说明。`,
+只做一次针对性修复：仅修复上述失败，禁止顺便改其他问题、禁止扩大 scope、禁止删除/跳过测试、禁止任何破坏性或变更类 git 命令。修复后返回 status/summary/filesChanged/gitCommandsRun。若 blocker 不在allowedRepairFiles / 归属不明文件 → 不要修复，直接返回 status=BLOCKED 并说明。`,
       'self-repair', allowedRepairFiles, 'Repair')
   } else {
     const rca = await agent(`${PROJECT_RULES}
@@ -2290,13 +2409,12 @@ ${failText}
     if (!rca) return modelBlocked('Repair', mname(modelFor('rca')))
     rcaRootCause = rca.ROOT_CAUSE
     guard = await guardedFlashRepair(`${PROJECT_RULES}
-${FLASH_RULES}
-${FLASH_REPAIR_RULES}
+${implementationRules(true)}
 [执行 FIX_SPEC] 严格按以下 FIX_SPEC 修复，禁止任何顺带改动：
 ROOT_CAUSE: ${rca.ROOT_CAUSE}
 FIX_SPEC:
 ${j(rca.FIX_SPEC, 8000)}
-[REPAIR_SCOPE] 只能修改 allowedRepairFiles：${allowedRepairFiles.join(', ') || '（空）'}；治理/pre-existing 文件绝对禁动；禁止任何破坏性或变更类 git 命令。完成后返回 status/summary/filesChanged/gitCommandsRun。`,
+[REPAIR_SCOPE] 只能修改 allowedRepairFiles：${allowedRepairFiles.join(', ') || '（空）'}；${GOVERNANCE_REQUESTED ? "仅精确人工授权且task-owned的治理文件可修复，其他治理/pre-existing文件禁止动" : "治理/pre-existing 文件绝对禁动"}；禁止任何破坏性或变更类 git 命令。完成后返回 status/summary/filesChanged/gitCommandsRun。`,
       'rca-fix', allowedRepairFiles, 'Repair')
   }
   if (guard.modelBlocked) return modelBlocked('Repair', guard.modelBlocked)
@@ -2315,7 +2433,7 @@ ${j(rca.FIX_SPEC, 8000)}
   }
   if (guard.result) attemptHistory.push({ cycle: cycles, kind: cycles === 1 ? 'FLASH_SELF_REPAIR' : 'MAX_RCA+FLASH_FIX', rootCause: rcaRootCause, status: guard.result.status, summary: guard.result.summary, filesChanged: guard.result.filesChanged || [], gitCommandsRun: guard.result.gitCommandsRun || [] })
   // D2：修复后刷新 Task Delta / allowedRepairFiles（供下一轮预检、Review、Verify）
-  if (guard.postSnap) { currentSnap = guard.postSnap; currentDelta = classifyDelta(WORKTREE_BASELINE, currentSnap, [spec.specPath]); allowedRepairFiles = computeAllowedRepairFiles(currentDelta, spec) }
+  if (guard.postSnap) { currentSnap = guard.postSnap; currentDelta = classifyDelta(WORKTREE_BASELINE, currentSnap, TASK_DELTA_AUTH); allowedRepairFiles = computeAllowedRepairFiles(currentDelta, spec) }
   phase('Machine Gate')
   gate = await runMachineGate(cycles + 1)
   if (!gate) return modelBlocked('Machine Gate', FLASH + ' (Qwen3.8-Flash)')
@@ -2347,6 +2465,7 @@ ${decisionRules()}
 - Machine Gate 结果（区分 required/record）：${j({ COMPUTED: { requiredPassed: gc.requiredPassed, recordCollectionComplete: gc.recordCollectionComplete, blockedMissingSafeTestEnv: gc.blockedMissingSafeTestEnv, requiredFailures: gc.requiredFailed.length, baselineHealth: gc.baselineHealth }, GATE_CONTRACT_DECLARED: gateDecls(spec).map(d => ({ gateId: d.gateId, kind: d.kind, command: normGateCommand(d.command), purpose: d.purpose || '-' })), commands: gate.commands, findings: gc.findings, skippedGates: gate.skippedGates || [] }, 7000)}
 - Implementation Report：${j(impl, 4000)}
 逐条检查 ACCEPTANCE_CRITERIA（每条给出 met 与 evidence）。
+治理任务必须独立核对真实来源与冻结授权集：${j(GOVERNANCE_AUTHORIZATION, 3000)}；全部当前diff必须在该精确集（新生成spec仅合同阶段例外）；FULL治理Writer=Max独立invocation，不得自审；治理回归必须required。
 判读约定：record 型命令红色（exitCode!==0）或缺安全环境属"基线发现"，应核对是否已如实落入 findings，不得据此判 REQUEST_CHANGES（基线红 ≠ 实现缺陷）；只有 required 命令失败、Scope 越界、 forbidden 文件被改、验收标准未满足、虚报 exitCode 才构成 blocker。
 门禁合同审查（FIX-GOV-001-R1：机器只按 gateId 对账"执行手 ↔ 冻结合同"，合同本身的定性错误只有你能发现）：逐条核对 MANDATORY_TESTS 是否都落成了 kind=required 的门禁。若本任务自己的目标测试/构建/迁移被声明为 kind=record（借"基线"之名规避失败），或 CONTRACT_DECLARED 与实际改动面明显不匹配（漏声明关键校验），必须出 blocker（REQUIRED_GATE_MISDECLARED_AS_RECORD / GATE_CONTRACT_UNDER_DECLARED），并在 REQUIRED_FIX 里写明应改的 SPEC 条目。反之，把与本次改动无关的存量全量检查声明为 record 是正确做法，不得因它红而判 REQUEST_CHANGES。
 至少 Review：Correctness / Scope Compliance / Regression Risk / Architecture Compliance / Database Safety / API Compatibility / Error Handling / Logging / Security / Privacy / Test Quality / Maintainability${extra.length ? ' / ' + extra.join(' / ') : ''}。
@@ -2403,12 +2522,11 @@ while (review.verdict === 'REQUEST_CHANGES') {
   const fixSpecText = review.blockers.map(b => `${b.BLOCKER_ID} @ ${b.LOCATION}\n  证据: ${b.EVIDENCE}\n  影响: ${b.IMPACT}\n  要求修复: ${b.REQUIRED_FIX}\n  验证方式: ${b.VERIFICATION_METHOD}`).join('\n')
   const reviewScope = buildRepairScope(currentDelta, allowedRepairFiles)
   const fxg = await guardedFlashRepair(`${PROJECT_RULES}
-${FLASH_RULES}
-${FLASH_REPAIR_RULES}
+${implementationRules(true)}
 [FIX] 只修复以下 review blockers，禁止顺便重构/升级依赖/改 UI/修 unrelated warning/修改任务合同：
 ${fixSpecText}
 TASK_SPEC 见 ${spec.specPath}。
-[REPAIR_SCOPE] 只能修改 allowedRepairFiles：${allowedRepairFiles.join(', ') || '（空）'}；治理/pre-existing 文件绝对禁动；禁止任何破坏性或变更类 git 命令。完成后返回 status/summary/filesChanged/gitCommandsRun。`,
+[REPAIR_SCOPE] 只能修改 allowedRepairFiles：${allowedRepairFiles.join(', ') || '（空）'}；${GOVERNANCE_REQUESTED ? "仅精确人工授权且task-owned的治理文件可修复，其他治理/pre-existing文件禁止动" : "治理/pre-existing 文件绝对禁动"}；禁止任何破坏性或变更类 git 命令。完成后返回 status/summary/filesChanged/gitCommandsRun。`,
     'fix', allowedRepairFiles, 'Fix')
   if (fxg.modelBlocked) return modelBlocked('Fix', fxg.modelBlocked)
   if (fxg.violation) {
@@ -2424,7 +2542,7 @@ TASK_SPEC 见 ${spec.specPath}。
   }
   const fx = fxg.result
   attemptHistory.push({ cycle: cycles, kind: 'REVIEW_FIX', blockers: review.blockers.map(b => b.BLOCKER_ID), status: fx.status, summary: fx.summary, gitCommandsRun: fx.gitCommandsRun || [] })
-  if (fxg.postSnap) { currentSnap = fxg.postSnap; currentDelta = classifyDelta(WORKTREE_BASELINE, currentSnap, [spec.specPath]); allowedRepairFiles = computeAllowedRepairFiles(currentDelta, spec) }
+  if (fxg.postSnap) { currentSnap = fxg.postSnap; currentDelta = classifyDelta(WORKTREE_BASELINE, currentSnap, TASK_DELTA_AUTH); allowedRepairFiles = computeAllowedRepairFiles(currentDelta, spec) }
 
   phase('Machine Gate')
   gate = await runMachineGate(cycles + 1)
@@ -2448,12 +2566,11 @@ ${gateFailSummary(gate)}
       { label: 'rca', phase: 'Repair', model: modelFor('rca'), effort: 'high', schema: RCA_SCHEMA })
     if (!rca2) return modelBlocked('Repair', mname(modelFor('rca')))
     const rf2g = await guardedFlashRepair(`${PROJECT_RULES}
-${FLASH_RULES}
-${FLASH_REPAIR_RULES}
+${implementationRules(true)}
 [执行 FIX_SPEC] 严格按 FIX_SPEC 修复，禁止顺带改动：
 ROOT_CAUSE: ${rca2.ROOT_CAUSE}
 FIX_SPEC: ${j(rca2.FIX_SPEC, 8000)}
-[REPAIR_SCOPE] 只能修改 allowedRepairFiles：${allowedRepairFiles.join(', ') || '（空）'}；治理/pre-existing 文件绝对禁动；禁止任何破坏性或变更类 git 命令。完成后返回 status/summary/filesChanged/gitCommandsRun。`,
+[REPAIR_SCOPE] 只能修改 allowedRepairFiles：${allowedRepairFiles.join(', ') || '（空）'}；${GOVERNANCE_REQUESTED ? "仅精确人工授权且task-owned的治理文件可修复，其他治理/pre-existing文件禁止动" : "治理/pre-existing 文件绝对禁动"}；禁止任何破坏性或变更类 git 命令。完成后返回 status/summary/filesChanged/gitCommandsRun。`,
       'rca-fix', allowedRepairFiles, 'Repair')
     if (rf2g.modelBlocked) return modelBlocked('Repair', rf2g.modelBlocked)
     if (rf2g.violation) {
@@ -2468,7 +2585,7 @@ FIX_SPEC: ${j(rca2.FIX_SPEC, 8000)}
     }
     const rf2 = rf2g.result
     attemptHistory.push({ cycle: cycles, kind: 'MAX_RCA+FLASH_FIX(post-review)', rootCause: rca2.ROOT_CAUSE, status: rf2.status, gitCommandsRun: rf2.gitCommandsRun || [] })
-    if (rf2g.postSnap) { currentSnap = rf2g.postSnap; currentDelta = classifyDelta(WORKTREE_BASELINE, currentSnap, [spec.specPath]); allowedRepairFiles = computeAllowedRepairFiles(currentDelta, spec) }
+    if (rf2g.postSnap) { currentSnap = rf2g.postSnap; currentDelta = classifyDelta(WORKTREE_BASELINE, currentSnap, TASK_DELTA_AUTH); allowedRepairFiles = computeAllowedRepairFiles(currentDelta, spec) }
     gate = await runMachineGate(cycles + 1)
     if (!gate) return modelBlocked('Machine Gate', FLASH + ' (Qwen3.8-Flash)')
     { const term = gateGuardViolation(gate); if (term) return term }
@@ -2490,6 +2607,11 @@ log('MAX REVIEW：PASS')
 
 // ---------- PHASE 10 — VERIFY ----------
 phase('Verify')
+if (GOVERNANCE_REQUESTED) {
+  const ar = await checkGovernanceAuthorization('governance-authorization-verify', spec.specPath)
+  if (ar.modelBlocked) return modelBlocked('Verify', ar.modelBlocked)
+  if (ar.defect) return blocked('BLOCKED_GOVERNANCE_AUTHORIZATION', 'Verify', { DETAIL: ar.defect })
+}
 const ver = await agent(`${PROJECT_RULES}
 ${decisionRules()}
 [最终验收 VERIFY] TASK_SPEC：${spec.specPath}
@@ -2503,7 +2625,7 @@ Machine Gate（区分 required/record）：${j({ COMPUTED: { requiredPassed: gc.
 2. Machine Gate 的 required 命令全部通过、record 采集完整；抽查重跑其中最关键的 1~2 条命令核实退出码与记录一致（防虚报）。注意：record 型基线命令本就可能是红的（如全量 pytest/ruff），抽查重跑应"复现其红色 exitCode"才算记录属实；required 命令则应 exit 0。record 红属基线发现（已入 findings），不得据此判 TASK_FAIL；
 3. Review blockers 均已解决；
 4. Scope 以上方 Task Delta 为准：taskChanged 是否仍在 IN_SCOPE / EXPECTED_FILES 内、是否触碰 FILES_FORBIDDEN_TO_CHANGE；
-5. 治理与边界（对照 Task Delta）：taskGovernance 必须为空（治理文件 AGENTS.md/.qoder/rules/**/.qoder/workflows/**/.qoder/workflow-state/**（本次新生成 spec 除外）/.gitignore/.github/**/docs/workflow/** 不得被本任务改动）；preExistingUnchanged 中的文件属任务前已存在且【确定性 SHA-256 证据显示内容未变】，**不算本任务改动、不判越界**；externalChangedDuringTask / preExistingReverted 必须为空（pre-existing 被改或被还原）；headChanged 必须为 false、stagedAppeared 必须为空。任一不满足 → 必须 TASK_FAIL；
+5. 治理与边界（对照 Task Delta）：治理任务只允许冻结人工授权精确路径（${j(GOVERNANCE_AUTHORIZATION, 3000)}），必须复核授权真实来源；spec不许变动，其他保护均相同。普通任务：taskGovernance 必须为空（治理文件 AGENTS.md/.qoder/rules/**/.qoder/workflows/**/.qoder/workflow-state/**（本次新生成 spec 除外）/.gitignore/.github/**/docs/workflow/** 不得被本任务改动）；preExistingUnchanged 中的文件属任务前已存在且【确定性 SHA-256 证据显示内容未变】，**不算本任务改动、不判越界**；externalChangedDuringTask / preExistingReverted 必须为空（pre-existing 被改或被还原）；headChanged 必须为 false、stagedAppeared 必须为空。任一不满足 → 必须 TASK_FAIL；
 5b. 【D4 身份证据抽查（防虚报，与 exitCode 抽查同级）】上述 Delta 的内容身份来自"脚本逐字下发命令 + 只读执行手原样回传 rawStdout + 脚本侧格式校验"，模型本身不得自报 hash。请从 preExistingUnchanged / taskChanged 中挑 1~2 个路径【自己逐字执行】脚本的确定性取证命令（${buildFingerprintCommand(FP_REPO_ROOT || '.').split('\n').length} 行；至少对单个文件执行 wc -c 与 sha256sum），核对你得到的 64 位小写 SHA-256 与 Delta 记录的 identity 是否一致；不一致或无法验证 → 记入 reasons 并判 TASK_FAIL（或 BLOCKED_FINGERPRINT_EVIDENCE_UNCERTAIN 语义）。mtime 一律不作为内容变更依据。
 5c. 【D4 retry-owned 核验】若 RETRY_OWNERSHIP.accepted 非空（本任务是同一 Task 的重试，产物来自上一 run），核对：①retryOfTaskId 与本任务 TASK_ID 同一 Task；②路径在两版 TASK_SPEC 允许写集合内；③非治理文件；④上一 run manifest/journal 有该路径由该 Task Worker 产出之证据。缺任一证据却仍被放行 → blocker（归属过宽，可能吞用户改动）。
 6. 是否引入明显回归风险；
@@ -2524,7 +2646,7 @@ if (ver.verdict !== 'TASK_PASS') {
     attemptHistory,
     BLOCKERS: ver.reasons,
     FILES_CURRENTLY_CHANGED: ver.changedFiles || (impl.FILES_MODIFIED || []).concat(impl.FILES_CREATED || []),
-    MODEL_USAGE: { PLAN: mname(modelFor('planner')), IMPLEMENT: mname(modelFor('worker')), REVIEW: mname(modelFor('reviewer')) + (HIGH_RISK ? ' + FLASH_REVIEWER_B(' + mname(modelFor('reviewerB')) + ')' : '') },
+    MODEL_USAGE: { PLAN: mname(modelFor('planner')), IMPLEMENT: mname(implementationModel()), REVIEW: mname(modelFor('reviewer')) + (HIGH_RISK ? ' + FLASH_REVIEWER_B(' + mname(modelFor('reviewerB')) + ')' : '') },
     SAFE_NEXT_ACTION: '审查 Verify reasons 与 git diff；人工决定回滚或重定义任务后重跑。',
     ...modeSummary(),
   })
@@ -2535,7 +2657,7 @@ if (ver.verdict !== 'TASK_PASS') {
 {
   const guardSnap = await snapshotWorktree('Verify 后最终 Governance Guard 取证', 'Verify')
   if (!guardSnap) return modelBlocked('Verify', mname(modelFor('snapshot')))
-  const guardEval = await evaluateTaskDelta(WORKTREE_BASELINE, guardSnap, [spec.specPath], 'Verify', 'final_guard')
+  const guardEval = await evaluateTaskDelta(WORKTREE_BASELINE, guardSnap, TASK_DELTA_AUTH, 'Verify', 'final_guard')
   if (guardEval.baseline && guardEval.baseline !== WORKTREE_BASELINE) WORKTREE_BASELINE = guardEval.baseline
   currentDelta = guardEval.delta
   currentSnap = guardEval.current || guardSnap
@@ -2562,7 +2684,7 @@ return {
   MODEL_USAGE: {
     PLAN: mname(modelFor('planner')),
     EXPLORER: mname(modelFor('explorer')),
-    IMPLEMENT: mname(modelFor('worker')),
+    IMPLEMENT: mname(implementationModel()),
     MACHINE_GATE: mname(modelFor('gate')),
     REVIEW: mname(modelFor('reviewer')) + (HIGH_RISK ? ' + FLASH_REVIEWER_B(' + mname(modelFor('reviewerB')) + ')' : '（single，非 HIGH Risk）'),
     VERIFY: mname(modelFor('verifier')),

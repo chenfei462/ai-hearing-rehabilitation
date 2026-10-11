@@ -346,6 +346,17 @@ if (cmd === 'test' || cmd === 'regression') {
     { scenario: 'd6-20-honest-exact-command-passes', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FULL', activeMode: 'FULL', formula: true, noAdjudication: true, rehashNone: true, gateContract: { RECONCILED: true, DECLARED_COUNT: 2, SUBMITTED_COUNT: 2 } },
   ]
 
+  EXPECT.push({ scenario: 'd7-01-exact-governance-authorized', status: 'TASK_PASS', maxGateCalls: 1, dualReview: true, formula: true, forbidLabels: ['implement'], roleModelExpected: { 'governance-write': 'qmodel_38max', 'governance-authorization': 'qmodel_38max' } })
+  for (const n of ['02-no-authorization', '03-blank-id', '04-unknown-id', '05-task-mismatch', '06-path-mismatch', '07-empty-paths', '08-wildcard', '09-directory', '10-traversal', '11-absolute', '12-duplicate', '13-spec-escalation', '14-missing-source', '15-no-regression', '16-source-writable', '17-classification-only', '18-flash-default-denied', '19-spec-forbidden']) EXPECT.push({ scenario: 'd7-' + n, status: 'BLOCKED', block: 'BLOCKED_GOVERNANCE_AUTHORIZATION', maxGateCalls: 0, mode: n === '18-flash-default-denied' ? 'FLASH_ONLY' : 'FULL', forbidLabels: ['governance-write', 'implement', 'self-repair', 'rca-fix', 'fix'] })
+  for (const n of ['20-feature-caller-forgery', '21-feature-spec-forgery', '22-implement-outside', '23-repair-outside', '24-spec-mutated', '25-final-outside']) EXPECT.push({ scenario: 'd7-' + n, status: 'BLOCKED', block: 'BLOCKED_GOVERNANCE_CONFLICT', maxGateCalls: ['23-repair-outside', '25-final-outside'].includes(n) ? 1 : 0 })
+  EXPECT.push({ scenario: 'd7-26-source-drift', status: 'BLOCKED', block: 'BLOCKED_GOVERNANCE_AUTHORIZATION', maxGateCalls: 1 })
+  for (const n of ['27-preexisting-exact', '28-repair-authorized', '29-rca-authorized', '30-review-fix-authorized', '31-caller-frozen']) EXPECT.push({ scenario: 'd7-' + n, status: 'TASK_PASS', maxGateCalls: 3, dualReview: true, formula: true, roleModelExpected: { 'governance-write': 'qmodel_38max' } })
+  EXPECT.find(e => e.scenario === 'd7-28-repair-authorized').roleModelExpected['self-repair'] = 'qmodel_38max'
+  Object.assign(EXPECT.find(e => e.scenario === 'd7-29-rca-authorized').roleModelExpected, { rca: 'qmodel_38max', 'rca-fix': 'qmodel_38max', 'self-repair': 'qmodel_38max' })
+  EXPECT.find(e => e.scenario === 'd7-30-review-fix-authorized').roleModelExpected.fix = 'qmodel_38max'
+  EXPECT.push({ scenario: 'd7-32-flash-separate-authorization', status: 'TASK_PASS', maxGateCalls: 1, mode: 'FLASH_ONLY', dualReview: true, formula: true, roleModelExpected: { 'governance-write': 'qfmodel', 'governance-authorization': 'qfmodel', verify: 'qfmodel' } })
+  EXPECT.push({ scenario: 'd7-33-worker-self-authorized', status: 'BLOCKED', block: 'BLOCKED_GOVERNANCE_CONFLICT', maxGateCalls: 0 })
+  for (const n of ['34-source-write-case-alias', '35-source-spec-case-alias']) EXPECT.push({ scenario: 'd7-' + n, status: 'BLOCKED', block: 'BLOCKED_GOVERNANCE_AUTHORIZATION', maxGateCalls: 0, forbidLabels: ['governance-write', 'implement', 'self-repair', 'rca-fix', 'fix'] })
   const ALLOWED_MODELS = new Set(['qmodel_38max', 'qfmodel'])
   let pass = 0
   const failures = []
@@ -443,9 +454,9 @@ if (cmd === 'test' || cmd === 'regression') {
     else { pass++; console.log(`  PASS ${exp.scenario} -> ${parsed.WORKFLOW_STATUS}${parsed.BLOCK_REASON ? '/' + parsed.BLOCK_REASON : ''} (gateCalls=${parsed.gateCalls}, models=[${(parsed.modelsUsed || []).join(',')}])`) }
   }
   const d6Rows = EXPECT.filter((e) => /^d6-/.test(e.scenario))
-  const oldRows = EXPECT.filter((e) => !/^d6-/.test(e.scenario))
+  const oldRows = EXPECT.filter((e) => !/^d[67]-/.test(e.scenario))
   const oldDigest = createHash('sha256').update(oldRows.map((e) => `${e.scenario}|${e.status}|${e.block || ''}`).sort().join('\n')).digest('hex')
-  console.log(`\nSCENARIO_ROSTER: OLD_SCENARIO_COUNT=${oldRows.length} NEW_SCENARIOS_ADDED=${d6Rows.length} TOTAL_SCENARIOS=${EXPECT.length}`)
+  console.log(`\nSCENARIO_ROSTER: OLD_SCENARIO_COUNT=${oldRows.length} D6_SCENARIOS=${d6Rows.length} D7_SCENARIOS=${EXPECT.filter(e => /^d7-/.test(e.scenario)).length} TOTAL_SCENARIOS=${EXPECT.length}`)
   console.log(`OLD_EXPECTATION_DIGEST=${oldDigest}（106 条既有场景的 scenario|status|block 摘要：与本 Fix 之前 HEAD 版本同法计算的摘要相等 ⇒ 既有断言语义零改动）`)
   console.log(`\nREGRESSION: ${pass}/${EXPECT.length} passed`)
   if (failures.length) { console.error('FAILURES:\n' + failures.map(f => '  - ' + f).join('\n')); process.exit(1) }
@@ -455,6 +466,9 @@ if (cmd === 'test' || cmd === 'regression') {
 
 // --- 干跑：stub agent 按 label 返回罐头数据 ---
 const scenario = cmd
+const D7 = /^d7-/.test(scenario)
+const D7_FEATURE = new Set(['d7-20-feature-caller-forgery', 'd7-21-feature-spec-forgery', 'd7-33-worker-self-authorized']).has(scenario)
+const GOV_AUTH = { taskId: 'kb-pdf-parser', humanAuthorizationId: 'HUMAN-GOV-001', sourcePath: 'deliverables/human-authorization.md', exactPaths: ['.qoder/workflows/project-feature-delivery.js', '.qoder/workflow-state/dryrun-harness.mjs'] }
 let gateCalls = 0
 let reviewCalls = 0
 let reviewBCalls = 0
@@ -477,6 +491,7 @@ const D5_MAX_PROBE_DOWN = new Set(['d5-10-max-probe-down-blocks'])
 const D5_MAX_ROLE_DOWN = { 'd5-11-max-role-down-no-fallback': new Set(['task-spec']) }
 
 const MODE = D5_INVALID_MODE.has(scenario) ? 'INVALID'
+  : ['d7-18-flash-default-denied', 'd7-32-flash-separate-authorization'].includes(scenario) ? 'FLASH_ONLY'
   : D5_NO_MODE_ARG.has(scenario) ? 'FULL_DEFAULT'
   : D5_FLASH_ONLY.has(scenario) ? 'FLASH_ONLY'
   : /^d5-/.test(scenario) ? 'FULL'
@@ -488,6 +503,8 @@ const EXECUTION_MODE_ARG = MODE === 'INVALID' ? 'FLASH-ONLY' : MODE
 const ALLOWED_RUNTIME = MODE === 'FLASH_ONLY' ? new Set(['qfmodel']) : new Set(['qmodel_38max', 'qfmodel'])
 // label → 角色（用于角色分离/独立性断言）
 const ROLE_OF = {
+  'governance-write': 'governanceWriter', 'governance-authorization': 'authorizationReader', 'governance-authorization-verify': 'authorizationReader',
+  'governance-authorization-spec': 'authorizationReader',
   'probe:max': 'probeMax', 'probe:flash': 'probeFlash', 'preflight': 'planner', 'worktree-snapshot': 'snapshot',
   'classify': 'planner', 'explore': 'explorer', 'scope-check': 'planner', 'task-spec': 'planner',
   'implement': 'worker', 'machine-gate': 'gate', 'self-repair': 'fixer', 'rca': 'rca', 'rca-fix': 'fixer',
@@ -499,6 +516,8 @@ const ROLE_OF = {
 }
 // 只读决策角色（禁止 Write/Edit）的 label 集合
 const READ_ONLY = new Set(['explore', 'classify', 'scope-check', 'worktree-snapshot', 'fingerprint-rehash-a', 'fingerprint-rehash-b', 'max-review', 'max-review-b', 'verify', 'rca', 'release-security', 'preflight', 'milestone-verdict', 'release-verdict'])
+READ_ONLY.add('governance-authorization'); READ_ONLY.add('governance-authorization-verify')
+READ_ONLY.add('governance-authorization-spec')
 
 // ============================================================
 // FIX-GOV-001-R1：门禁声明表（对账键 = gateId）
@@ -534,6 +553,7 @@ const G_BASE_TOOL = gd('G-BASE-TOOL', 'record', 'nonexistent-baseline-tool', '�
 const G_LINT_REQ_JSON = gd('G-LINT-REQ', 'required', 'ruff check app/ --output-format=json', 'CI lint 口径（required，绿）')
 const G_LINT_FULL_REC = gd('G-LINT-FULL', 'record', 'ruff check app/', '全量 lint 基线（红）—— 与上条存在前缀关系')
 const G = {
+  GOV: [gd('G-GOV-REGRESSION', 'required', 'node .qoder/workflow-state/dryrun-harness.mjs test', 'Full governance regression')],
   BASE: [GT, GL],
   TARGET_ONLY: [GT],
   BUILD_ONLY: [G_BUILD],
@@ -1135,6 +1155,22 @@ SNAPSHOTS['d5-17-full-governance-write-blocked'] = [
   CLEAN_BASE,
   snap({ trackedModified: ['AGENTS.md', 'backend/app/kb/parser.py'], untracked: ['backend/app/kb/pdf.py'], fingerprints: [fp('AGENTS.md', 'a1'), fp('backend/app/kb/pdf.py', 'pdf1'), fp('backend/app/kb/parser.py', 'par1')] }),
 ]
+const GOV_SPEC = specObj.specPath
+if (scenario === 'd7-34-source-write-case-alias') GOV_AUTH.sourcePath = GOVF.toUpperCase()
+if (scenario === 'd7-35-source-spec-case-alias') GOV_AUTH.sourcePath = GOV_SPEC.toUpperCase()
+const GOV_PRE = snap({ untracked: [GOV_SPEC], fingerprints: [fp(GOV_SPEC, 'spec1')] })
+const GOV_POST = snap({ untracked: [GOV_SPEC], trackedModified: [GOVF], fingerprints: [fp(GOV_SPEC, 'spec1'), fp(GOVF, 'gov1')] })
+if (D7) SNAPSHOTS[scenario] = [CLEAN_BASE, GOV_PRE, GOV_POST]
+const extraGov = s => snap({ untracked: [GOV_SPEC], trackedModified: [GOVF, 'AGENTS.md'], fingerprints: [fp(GOV_SPEC, 'spec1'), fp(GOVF, 'gov1'), fp('AGENTS.md', 'a1')] })
+if (D7_FEATURE) SNAPSHOTS[scenario] = [CLEAN_BASE, extraGov()]
+if (scenario === 'd7-22-implement-outside') SNAPSHOTS[scenario] = [CLEAN_BASE, GOV_PRE, extraGov()]
+if (scenario === 'd7-23-repair-outside') SNAPSHOTS[scenario] = [CLEAN_BASE, GOV_PRE, GOV_POST, GOV_POST, extraGov()]
+if (scenario === 'd7-24-spec-mutated') SNAPSHOTS[scenario] = [CLEAN_BASE, GOV_PRE, snap({ untracked: [GOV_SPEC], trackedModified: [GOVF], fingerprints: [fp(GOV_SPEC, 'spec2'), fp(GOVF, 'gov1')] })]
+if (scenario === 'd7-25-final-outside') SNAPSHOTS[scenario] = [CLEAN_BASE, GOV_PRE, GOV_POST, extraGov()]
+if (scenario === 'd7-27-preexisting-exact') SNAPSHOTS[scenario] = [snap({ trackedModified: [GOVF], fingerprints: [fp(GOVF, 'gov0')] }), snap({ untracked: [GOV_SPEC], trackedModified: [GOVF], fingerprints: [fp(GOV_SPEC, 'spec1'), fp(GOVF, 'gov0')] }), GOV_POST]
+for (const n of ['d7-23-repair-outside', 'd7-28-repair-authorized']) D3_GATE_FAIL_UNTIL[n] = 2
+D3_GATE_FAIL_UNTIL['d7-29-rca-authorized'] = 3
+D3_REVIEW_RC_THEN_PASS.add('d7-30-review-fix-authorized')
 
 let snapCalls = 0
 const rehashCalls = { a: 0, b: 0 }
@@ -1161,6 +1197,11 @@ function specFor(scn) {
   const ov = D4_SPEC[scn]
   const base = Object.assign({}, specObj, ov || {})
   base.MACHINE_GATE_COMMANDS = G[SCEN_GATES[scn] || 'BASE']
+  if (D7 && !D7_FEATURE) { base.EXPECTED_FILES = GOV_AUTH.exactPaths.slice(); base.taskType = 'governance'; base.humanAuthorizationId = GOV_AUTH.humanAuthorizationId; base.MACHINE_GATE_COMMANDS = G.GOV }
+  if (scenario === 'd7-13-spec-escalation') base.EXPECTED_FILES.push('AGENTS.md')
+  if (scenario === 'd7-15-no-regression') base.MACHINE_GATE_COMMANDS = G.BASE
+  if (scenario === 'd7-19-spec-forbidden') base.FILES_FORBIDDEN_TO_CHANGE = [GOVF]
+  if (scenario === 'd7-21-feature-spec-forgery') Object.assign(base, { governanceAuthorization: GOV_AUTH, humanAuthorizationId: GOV_AUTH.humanAuthorizationId, authorizedGovernanceWrites: GOV_AUTH.exactPaths, EXPECTED_FILES: GOV_AUTH.exactPaths })
   return base
 }
 
@@ -1185,6 +1226,7 @@ function stubAgent(prompt, opts) {
     case 'fingerprint-rehash-b': return Promise.resolve(executorEvidence('fingerprint-rehash-b', prompt, pickQueue(D4_REHASH[scenario], rehashCalls, 'b')))
     case 'classify': {
       const base = { blocked: false, taskType: ['backend', 'knowledge', 'rag'], medicalSensitive: false, privacySensitive: false, securitySensitive: false, frontendTouchedExpected: false, backendTouchedExpected: true, schemaTouchedExpected: false, migrationExpected: false, knowledgeTouchedExpected: true, ragTouchedExpected: true, riskLevel: 'medium' }
+      if (D7 && !D7_FEATURE) return Promise.resolve(Object.assign({}, base, { taskType: ['governance'], riskLevel: 'medium' }))
       if (D3_HIGH.has(scenario)) return Promise.resolve(Object.assign({}, base, { riskLevel: 'high' }))
       if (D3_SEC.has(scenario)) return Promise.resolve(Object.assign({}, base, { securitySensitive: true }))
       if (D3_MIGRATION_TYPE.has(scenario)) return Promise.resolve(Object.assign({}, base, { taskType: ['backend', 'migration'], migrationExpected: true }))
@@ -1197,9 +1239,17 @@ function stubAgent(prompt, opts) {
       ? { atomic: false, estimatedDevDays: 12, reason: 'Mega Task：完成整个知识库', recommendedTasks: [{ taskId: 'kb-01', title: 'PDF 解析', objective: 'o', dependencies: [], acceptanceSummary: 's' }, { taskId: 'kb-02', title: 'HTML 解析', objective: 'o2', dependencies: ['kb-01'], acceptanceSummary: 's2' }] }
       : { atomic: true, estimatedDevDays: 1, reason: '单一解析器，规模合适' })
     case 'task-spec': return Promise.resolve(specFor(scenario))
-    case 'implement': return Promise.resolve({ status: 'IMPLEMENTED', TASK_ID: 'kb-pdf-parser', FILES_CREATED: ['backend/app/kb/pdf.py'], FILES_MODIFIED: ['backend/app/kb/parser.py'], FILES_DELETED: [], DATABASE_CHANGES: 'none', API_CHANGES: 'none', FRONTEND_CHANGES: 'none', TESTS_ADDED: ['backend/tests/kb/test_pdf.py'], TESTS_MODIFIED: [], TESTS_RUN: ['pytest backend/tests/kb'], TEST_RESULTS: '12 passed', DEVIATIONS_FROM_SPEC: 'none', KNOWN_LIMITATIONS: '', BLOCKERS: '' })
+    case 'governance-authorization':
+    case 'governance-authorization-spec':
+    case 'governance-authorization-verify': {
+      if (scenario === 'd7-31-caller-frozen') ARGS.governanceAuthorization.exactPaths.push('AGENTS.md')
+      return Promise.resolve({ authorized: !['d7-04-unknown-id', 'd7-14-missing-source'].includes(scenario), authority: 'HUMAN', ...GOV_AUTH, executionMode: MODE, flashOnlyAuthorizationId: scenario === 'd7-32-flash-separate-authorization' ? 'HUMAN-FLASH-GOV-002' : undefined, sourceSha256: (scenario === 'd7-26-source-drift' && label.endsWith('verify') ? 'b' : 'a').repeat(64), evidence: 'Read actual independent human source record; task, files, mode matched.', filesChanged: [], exactFilesConfirmed: true, checkedSpecPath: label === 'governance-authorization' ? '' : GOV_SPEC, sourceIsolationConfirmed: true, sourceIsolationEvidence: 'Harness fixture: source/write/spec canonical entities differ, no source or ancestor symlink/junction aliases.' })
+    }
+    case 'governance-write': return Promise.resolve({ status: 'IMPLEMENTED', TASK_ID: GOV_AUTH.taskId, FILES_CREATED: [], FILES_MODIFIED: [GOVF], FILES_DELETED: [], TESTS_RUN: [], TEST_RESULTS: 'governance regression', BLOCKERS: '' })
+    case 'implement': return Promise.resolve({ status: 'IMPLEMENTED', TASK_ID: 'kb-pdf-parser', FILES_CREATED: ['backend/app/kb/pdf.py'], FILES_MODIFIED: ['backend/app/kb/parser.py'], FILES_DELETED: [], DATABASE_CHANGES: 'none', API_CHANGES: 'none', FRONTEND_CHANGES: 'none', TESTS_ADDED: ['backend/tests/kb/test_pdf.py'], TESTS_MODIFIED: [], TESTS_RUN: ['pytest backend/tests/kb'], TEST_RESULTS: '12 passed', DEVIATIONS_FROM_SPEC: 'none', KNOWN_LIMITATIONS: '', BLOCKERS: '', ...(scenario === 'd7-33-worker-self-authorized' ? { governanceAuthorization: GOV_AUTH, humanAuthorizationId: GOV_AUTH.humanAuthorizationId, authorizedGovernanceWrites: GOV_AUTH.exactPaths } : {}) })
     case 'machine-gate': {
       gateCalls++
+      if (D7 && !D7_FEATURE) return Promise.resolve({ commands: G.GOV.map(d => ({ ...d, exitCode: gateCalls < (D3_GATE_FAIL_UNTIL[scenario] || 1) ? 1 : 0, argvEcho: 'Q|' + d.gateId + '|' + d.command.length + '|' + hb64(d.command), recordStatus: 'EXECUTED_AND_RECORDED' })), findings: [], skippedGates: [] })
       // FIX-GOV-001-R1：诚实执行手的 command/kind 一律取自 TASK_SPEC 的冻结声明（对账键 = gateId）
       const DECL = G[SCEN_GATES[scenario] || 'BASE']
       const byId = {}
@@ -1273,9 +1323,9 @@ function stubAgent(prompt, opts) {
       if (scenario === 'gatealwaysfail' || (scenario === 'gatefail' && gateCalls === 1)) return Promise.resolve({ commands: [Object.assign({}, BARE_TARGET, { exitCode: 1, stdoutSummary: '1 failed', stderrSummary: 'AssertionError' }), Object.assign({}, BARE_LINT, { exitCode: 0 })], allPassed: false, blockedMissingSafeTestEnv: false, skippedGates: [] })
       return Promise.resolve({ commands: [Object.assign({}, BARE_TARGET, { exitCode: 0, stdoutSummary: '12 passed' }), Object.assign({}, BARE_LINT, { exitCode: 0 })], allPassed: true, blockedMissingSafeTestEnv: false, skippedGates: [] })
     }
-    case 'self-repair': return Promise.resolve({ status: 'FIXED', summary: '修正断言', filesChanged: ['backend/app/kb/pdf.py'], gitCommandsRun: D2_SELFREPAIR_GIT[scenario] || [] })
+    case 'self-repair': return Promise.resolve({ status: 'FIXED', summary: '修正断言', filesChanged: D7 ? [GOVF] : ['backend/app/kb/pdf.py'], gitCommandsRun: D2_SELFREPAIR_GIT[scenario] || [] })
     case 'rca': return Promise.resolve({ ROOT_CAUSE: '接口签名不一致', FIX_SPEC: '统一 parse() 签名', affectedFiles: ['backend/app/kb/pdf.py'] })
-    case 'rca-fix': return Promise.resolve({ status: 'FIXED', summary: '按 FIX_SPEC 修复', filesChanged: ['backend/app/kb/pdf.py'], gitCommandsRun: [] })
+    case 'rca-fix': return Promise.resolve({ status: 'FIXED', summary: '按 FIX_SPEC 修复', filesChanged: D7 ? [GOVF] : ['backend/app/kb/pdf.py'], gitCommandsRun: [] })
     case 'max-review': {
       reviewCalls++
       const RC = (why) => ({ verdict: 'REQUEST_CHANGES', acceptanceResults: [{ id: 'AC-01', met: false, evidence: why }], blockers: [{ BLOCKER_ID: 'B1', LOCATION: 'backend/app/kb/pdf.py:20', EVIDENCE: why, IMPACT: '验收未满足', REQUIRED_FIX: '修正实现并通过目标测试', VERIFICATION_METHOD: 'pytest backend/tests/kb' }], nonBlockingNotes: [] })
@@ -1293,7 +1343,7 @@ function stubAgent(prompt, opts) {
       if (D3_REVIEWB_RC_THEN_PASS.has(scenario)) return Promise.resolve(reviewBCalls === 1 ? RCB('D3：Reviewer B 首轮否决') : PSB())
       return Promise.resolve(PSB())
     }
-    case 'fix': return Promise.resolve({ status: 'FIXED', summary: '修复 B1', filesChanged: ['backend/app/kb/pdf.py'] })
+    case 'fix': return Promise.resolve({ status: 'FIXED', summary: '修复 B1', filesChanged: D7 ? [GOVF] : ['backend/app/kb/pdf.py'] })
     case 'verify': {
       if (scenario === 'd3-06-verifier-fail') return Promise.resolve({ verdict: 'TASK_FAIL', acceptanceAllMet: false, scopeIntact: true, unexpectedFiles: [], regressionRisk: 'medium', rollbackIntact: true, changedFiles: ['backend/app/kb/pdf.py', 'backend/app/kb/parser.py'], reasons: ['D3：独立 Verifier 抽查重跑目标测试仍失败，Worker 自报不作为验收依据'], suggestedNextTask: null })
       return Promise.resolve({ verdict: 'TASK_PASS', acceptanceAllMet: true, scopeIntact: true, unexpectedFiles: [], regressionRisk: 'low', rollbackIntact: true, changedFiles: ['backend/app/kb/pdf.py', 'backend/app/kb/parser.py'], reasons: ['全部满足'], suggestedNextTask: 'kb-02 HTML 解析器' })
@@ -1336,6 +1386,25 @@ switch (scenario) {
 }
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+if (D7) {
+  const auth = JSON.parse(JSON.stringify(GOV_AUTH))
+  Object.assign(ARGS, { taskType: D7_FEATURE || scenario === 'd7-17-classification-only' ? 'feature' : 'governance', governanceAuthorization: auth })
+  if (scenario === 'd7-02-no-authorization') delete ARGS.governanceAuthorization
+  if (scenario === 'd7-03-blank-id') auth.humanAuthorizationId = ' '
+  if (scenario === 'd7-04-unknown-id') auth.humanAuthorizationId = 'UNKNOWN'
+  if (scenario === 'd7-05-task-mismatch') auth.taskId = 'other-task'
+  if (scenario === 'd7-06-path-mismatch') auth.exactPaths = ['AGENTS.md']
+  if (scenario === 'd7-07-empty-paths') auth.exactPaths = []
+  if (scenario === 'd7-08-wildcard') auth.exactPaths = ['.qoder/workflows/*.js']
+  if (scenario === 'd7-09-directory') auth.exactPaths = ['.qoder/workflows/']
+  if (scenario === 'd7-10-traversal') auth.exactPaths = ['.qoder/workflows/../rules/20-architecture.md']
+  if (scenario === 'd7-11-absolute') auth.exactPaths = ['/.qoder/workflows/project-feature-delivery.js']
+  if (scenario === 'd7-12-duplicate') auth.exactPaths.push(GOVF)
+  if (scenario === 'd7-14-missing-source') auth.sourcePath = 'deliverables/missing.md'
+  if (scenario === 'd7-16-source-writable') auth.sourcePath = GOVF
+  if (scenario === 'd7-32-flash-separate-authorization') auth.flashOnlyAuthorizationId = 'HUMAN-FLASH-GOV-002'
+  if (scenario === 'd7-33-worker-self-authorized') delete ARGS.governanceAuthorization
+}
 const fn = new AsyncFunction('agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'budget', 'workflow', src)
 const result = await fn(stubs.agent, stubs.parallel, stubs.pipeline, stubs.phase, stubs.log, ARGS, stubs.budget, stubs.workflow)
 
