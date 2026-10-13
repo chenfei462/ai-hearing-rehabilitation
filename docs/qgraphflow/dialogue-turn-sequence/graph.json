@@ -1,0 +1,1515 @@
+{
+  "meta": {
+    "title": "对话陪练一轮链路 · ASR → LLM → TTS",
+    "subtitle": "POST /api/dialogue/sessions/{id}/turn 的完整调用、降级与落库顺序",
+    "sourceRef": "听觉康复@65d9076 (master)",
+    "scope": "backend/app/api/dialogue.py + services/dialogue_service.py + services/dialogue_orchestrator.py + ai 网关",
+    "diagramType": "sequence",
+    "locale": "zh-CN"
+  },
+  "groups": [
+    {
+      "id": "audio-invalid",
+      "label": "音频入参校验",
+      "kind": "opt",
+      "operands": [
+        {
+          "id": "op1",
+          "guard": "audio_bytes 为空 或 >10MB（api/dialogue.py:78-83）",
+          "edgeIds": [
+            "m4"
+          ]
+        }
+      ],
+      "position": {
+        "x": 1912.5,
+        "y": 472
+      },
+      "size": {
+        "width": 701,
+        "height": 264
+      }
+    },
+    {
+      "id": "ownership",
+      "label": "会话归属校验",
+      "kind": "opt",
+      "operands": [
+        {
+          "id": "op2",
+          "guard": "session 不存在 或 session.user_id != current_user.id（api/dialogue.py:89-90）",
+          "edgeIds": [
+            "m9"
+          ]
+        }
+      ],
+      "position": {
+        "x": 1846.5,
+        "y": 1072
+      },
+      "size": {
+        "width": 817,
+        "height": 244
+      }
+    },
+    {
+      "id": "session-guard",
+      "label": "轮次闸门",
+      "kind": "opt",
+      "operands": [
+        {
+          "id": "op3",
+          "guard": "status != 'active' 或 turn_count >= MAX_TURNS = 5（dialogue_service.py:123-130）",
+          "edgeIds": [
+            "m13"
+          ]
+        }
+      ],
+      "position": {
+        "x": 2586.5,
+        "y": 1610
+      },
+      "size": {
+        "width": 747,
+        "height": 264
+      }
+    },
+    {
+      "id": "asr-retry",
+      "label": "ASR 指数退避重试",
+      "kind": "loop",
+      "loop": {
+        "min": 1,
+        "max": 4
+      },
+      "operands": [
+        {
+          "id": "op4",
+          "guard": "attempt <= ASR_MAX_RETRIES=3；单次超时 ASR_TIMEOUT=10s，delay=1.0×2^attempt（ai/retry.py:36-58）",
+          "edgeIds": [
+            "m17",
+            "m18"
+          ]
+        }
+      ],
+      "position": {
+        "x": 4712,
+        "y": 2160
+      },
+      "size": {
+        "width": 1117,
+        "height": 454
+      }
+    },
+    {
+      "id": "asr-degrade",
+      "label": "ASR 降级早退",
+      "kind": "opt",
+      "operands": [
+        {
+          "id": "op5",
+          "guard": "error=='timeout' → 提示重说；error=='unavailable' → ValueError；text 为空 → 「没听清」（dialogue_service.py:136-156）",
+          "edgeIds": [
+            "m21"
+          ]
+        }
+      ],
+      "position": {
+        "x": 2564.5,
+        "y": 2842
+      },
+      "size": {
+        "width": 812,
+        "height": 328
+      }
+    },
+    {
+      "id": "safety-block",
+      "label": "输入安全护栏",
+      "kind": "opt",
+      "operands": [
+        {
+          "id": "op6",
+          "guard": "contains_safety_keyword(user_text, SAFETY_KEYWORDS) == True（dialogue_service.py:159-183, 379）",
+          "edgeIds": [
+            "m22"
+          ]
+        }
+      ],
+      "position": {
+        "x": 2586.5,
+        "y": 3194
+      },
+      "size": {
+        "width": 793,
+        "height": 284
+      }
+    },
+    {
+      "id": "ctx-from-db",
+      "label": "上下文降级重建",
+      "kind": "opt",
+      "operands": [
+        {
+          "id": "op7",
+          "guard": "Redis 键不存在或读取异常 → 由 dialogue_turns 重建 messages（dialogue_service.py:325-340）",
+          "edgeIds": [
+            "m25",
+            "m26"
+          ]
+        }
+      ],
+      "position": {
+        "x": 2558.5,
+        "y": 3682
+      },
+      "size": {
+        "width": 1128,
+        "height": 386
+      }
+    },
+    {
+      "id": "llm-input-safety",
+      "label": "LLM 入参护栏",
+      "kind": "opt",
+      "operands": [
+        {
+          "id": "op8",
+          "guard": "_check_safety_input(last_msg) 不通过 → 直接返回兜底文案，不发外部请求（llm_gateway.py:249-258）",
+          "edgeIds": [
+            "m29"
+          ]
+        }
+      ],
+      "position": {
+        "x": 6835,
+        "y": 4272
+      },
+      "size": {
+        "width": 782,
+        "height": 284
+      }
+    },
+    {
+      "id": "llm-retry",
+      "label": "LLM 指数退避重试",
+      "kind": "loop",
+      "loop": {
+        "min": 1,
+        "max": 4
+      },
+      "operands": [
+        {
+          "id": "op9",
+          "guard": "attempt <= LLM_MAX_RETRIES=3；单次超时 LLM_TIMEOUT=30s，delay=1.0×2^attempt",
+          "edgeIds": [
+            "m31",
+            "m32"
+          ]
+        }
+      ],
+      "position": {
+        "x": 5400,
+        "y": 4662
+      },
+      "size": {
+        "width": 1863,
+        "height": 410
+      }
+    },
+    {
+      "id": "llm-output-safety",
+      "label": "LLM 出参护栏与兜底",
+      "kind": "opt",
+      "operands": [
+        {
+          "id": "op10",
+          "guard": "输出命中屏蔽词 或 重试耗尽 → _get_fallback_response(scenario)（llm_gateway.py:291-305）",
+          "edgeIds": [
+            "m33"
+          ]
+        }
+      ],
+      "position": {
+        "x": 6831,
+        "y": 5096
+      },
+      "size": {
+        "width": 840,
+        "height": 284
+      }
+    },
+    {
+      "id": "tts-retry",
+      "label": "TTS 指数退避重试",
+      "kind": "loop",
+      "loop": {
+        "min": 1,
+        "max": 4
+      },
+      "operands": [
+        {
+          "id": "op11",
+          "guard": "attempt <= TTS_MAX_RETRIES=3；单次超时 TTS_TIMEOUT=15s；无 API Key 直接返回 b''（tts_gateway.py:107-109, 160-180）",
+          "edgeIds": [
+            "m40",
+            "m41"
+          ]
+        }
+      ],
+      "position": {
+        "x": 5418,
+        "y": 5968
+      },
+      "size": {
+        "width": 2420,
+        "height": 402
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "patient",
+      "kind": "actor",
+      "module": "对话",
+      "label": "患者浏览器 · DialoguePage",
+      "subtitle": "useRecorder 录音 → FormData('audio', webm) 提交一轮语音",
+      "facts": [
+        "frontend/src/services/dialogueService.ts:16-20 组装 multipart 并 POST /dialogue/sessions/{id}/turn",
+        "拿到 ai_audio_url 后用音频播放器朗读 AI 回复（听障训练需听觉+文字双通道）"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "frontend/src/services/dialogueService.ts",
+        "lineStart": 16,
+        "lineEnd": 20,
+        "symbol": "handleTurn"
+      },
+      "size": {
+        "width": 628,
+        "height": 7578
+      },
+      "position": {
+        "x": 32,
+        "y": 48
+      }
+    },
+    {
+      "id": "mw",
+      "kind": "participant",
+      "module": "平台",
+      "label": "中间件链 · MonitoringMiddleware",
+      "subtitle": "GZip → 限流 → 响应缓存 → 计时 → 监控（main.py:121）",
+      "facts": [
+        "限流/缓存命中会短路整个链路（middleware/performance.py:54,144）",
+        "本图只画监控环节，其余环节对语音轮次是透传"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/middleware/monitoring.py",
+        "lineStart": 12,
+        "lineEnd": 27,
+        "symbol": "MonitoringMiddleware"
+      },
+      "size": {
+        "width": 579,
+        "height": 7578
+      },
+      "position": {
+        "x": 724,
+        "y": 48
+      }
+    },
+    {
+      "id": "metrics",
+      "kind": "participant",
+      "module": "平台",
+      "label": "MetricsCollector",
+      "subtitle": "进程内计数器/直方图，经 /api/metrics 暴露",
+      "facts": [
+        "record_ai_latency 已定义但全仓无调用点，AI 分段延迟只随响应体返回，未进指标",
+        "对话链路耗时会以 latency_ms 字段返回前端"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/monitoring/metrics.py",
+        "lineStart": 23,
+        "lineEnd": 79,
+        "symbol": "MetricsCollector"
+      },
+      "size": {
+        "width": 432,
+        "height": 7578
+      },
+      "position": {
+        "x": 1367,
+        "y": 48
+      }
+    },
+    {
+      "id": "turnapi",
+      "kind": "service",
+      "module": "对话",
+      "label": "POST /api/dialogue/sessions/{id}/turn",
+      "subtitle": "音频校验 · 归属校验 · 组装 DialogueService + DialogueOrchestrator",
+      "facts": [
+        "_service() 每请求注入 asr/llm/tts 三个网关单例（api/dialogue.py:24-33）",
+        "UploadFile 整段读取，10MB 上限（:77-83）；异常统一转 code 40001/50001（:94-98）"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/api/dialogue.py",
+        "lineStart": 64,
+        "lineEnd": 98,
+        "symbol": "handle_turn"
+      },
+      "size": {
+        "width": 699,
+        "height": 7578
+      },
+      "position": {
+        "x": 1863,
+        "y": 48
+      }
+    },
+    {
+      "id": "svc",
+      "kind": "service",
+      "module": "对话",
+      "label": "DialogueService.handle_turn",
+      "subtitle": "编排一轮：ASR → 护栏 → 取上下文 → LLM → TTS → 落库",
+      "facts": [
+        "MAX_TURNS=5、CONTEXT_TTL=3600（dialogue_service.py:26,28）",
+        "三段延迟分别记在 asr/llm/tts 的 latency_ms 并汇总 total_ms（:215-219）"
+      ],
+      "tags": [
+        "core"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/services/dialogue_service.py",
+        "lineStart": 110,
+        "lineEnd": 228,
+        "symbol": "handle_turn"
+      },
+      "size": {
+        "width": 601,
+        "height": 7578
+      },
+      "position": {
+        "x": 2626,
+        "y": 48
+      }
+    },
+    {
+      "id": "orch",
+      "kind": "participant",
+      "module": "对话",
+      "label": "DialogueOrchestrator",
+      "subtitle": "AI 管线薄封装：异常不外抛，返回 {text|audio_url, latency_ms, error}",
+      "facts": [
+        "recognize_speech 只捕获 AIServiceTimeout/AIServiceUnavailable，映射为 error='timeout'/'unavailable'（dialogue_orchestrator.py:58-71）",
+        "generate_reply / synthesize_speech 捕获全部异常并降级为空文本或空 URL（:89-95, 112-118）"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/services/dialogue_orchestrator.py",
+        "lineStart": 21,
+        "lineEnd": 118,
+        "symbol": "DialogueOrchestrator"
+      },
+      "size": {
+        "width": 710,
+        "height": 7578
+      },
+      "position": {
+        "x": 4018,
+        "y": 48
+      }
+    },
+    {
+      "id": "asr",
+      "kind": "participant",
+      "module": "AI 网关",
+      "label": "FunASRGateway.recognize",
+      "subtitle": "整段上传：临时 .wav → asyncio.to_thread 包裹同步 SDK",
+      "facts": [
+        "client.AudioRecognition.call(model, 'file://tmp.wav', language_hints)（asr_gateway.py:85-90）",
+        "非 200 抛异常 → 重试耗尽后包成 AIServiceUnavailable（:101-118）",
+        "临时文件在 finally 中删除（:104-109）"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/ai/asr_gateway.py",
+        "lineStart": 64,
+        "lineEnd": 118,
+        "symbol": "recognize"
+      },
+      "size": {
+        "width": 574,
+        "height": 7578
+      },
+      "position": {
+        "x": 4792,
+        "y": 48
+      }
+    },
+    {
+      "id": "llm",
+      "kind": "participant",
+      "module": "AI 网关",
+      "label": "QwenLLMGateway.chat",
+      "subtitle": "非流式对话：双向安全过滤 + 场景 system_prompt 注入",
+      "facts": [
+        "_build_messages 按 scenario 注入 SCENARIO_PROMPTS 的 system_prompt（llm_gateway.py:172-204, 33）",
+        "max_tokens/temperature 来自配置 LLM_MAX_TOKENS / LLM_TEMPERATURE（:268-269）",
+        "失败或护栏命中返回兜底话术，不向编排层抛异常（:255-258, 299-305）"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/ai/llm_gateway.py",
+        "lineStart": 241,
+        "lineEnd": 305,
+        "symbol": "chat"
+      },
+      "size": {
+        "width": 528,
+        "height": 7578
+      },
+      "position": {
+        "x": 6935,
+        "y": 48
+      }
+    },
+    {
+      "id": "tts",
+      "kind": "participant",
+      "module": "AI 网关",
+      "label": "QwenTTSGateway.synthesize_to_url",
+      "subtitle": "缓存 → 合成 → 上传 OSS → 回写 URL 缓存",
+      "facts": [
+        "先查 Redis URL 缓存，命中直接返回（tts_gateway.py:191-199）",
+        "内部 synthesize() 还有一层 base64 音频缓存，未配置 Key 时返回空字节（:107-135）",
+        "老年适配参数固定：rate=0.9、volume=80（:144-147）",
+        "OSS 未配置或上传失败 → 返回空串，前端降级 Web Speech（:221-223, 247-249）"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/ai/tts_gateway.py",
+        "lineStart": 182,
+        "lineEnd": 223,
+        "symbol": "synthesize_to_url"
+      },
+      "size": {
+        "width": 493,
+        "height": 7578
+      },
+      "position": {
+        "x": 7527,
+        "y": 48
+      }
+    },
+    {
+      "id": "redis",
+      "kind": "database",
+      "module": "存储",
+      "label": "Redis 7",
+      "subtitle": "dialogue:context:{session_id}（TTL 3600）· TTS 缓存（TTL 7 天）",
+      "facts": [
+        "上下文以 JSON history 存储，_update_context 追加本轮（dialogue_service.py:342-360）",
+        "不可用时整条链路继续，仅降级为 DB 读上下文"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/core/redis.py",
+        "lineStart": 9,
+        "lineEnd": 16,
+        "symbol": "redis_client"
+      },
+      "size": {
+        "width": 707,
+        "height": 7578
+      },
+      "position": {
+        "x": 6164,
+        "y": 48
+      }
+    },
+    {
+      "id": "pg",
+      "kind": "database",
+      "module": "存储",
+      "label": "PostgreSQL · dialogue_sessions / dialogue_turns",
+      "subtitle": "会话状态与逐轮记录（含 ai_audio_url、latency_ms）",
+      "facts": [
+        "turn_index 从 0（开场白）递增，>0 才是真实练习轮（dialogue_service.py:330）",
+        "会话/轮次定义见 models/dialogue.py:6,21"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "backend/app/models/dialogue.py",
+        "lineStart": 6,
+        "lineEnd": 26,
+        "symbol": "DialogueTurn"
+      },
+      "size": {
+        "width": 663,
+        "height": 7578
+      },
+      "position": {
+        "x": 3291,
+        "y": 48
+      }
+    },
+    {
+      "id": "bailian",
+      "kind": "external",
+      "label": "阿里云百炼 DashScope",
+      "subtitle": "FUN-ASR 录音文件识别 · 通义千问 Generation · Qwen3-TTS 合成",
+      "facts": [
+        "同步 SDK 调用，统一由 asyncio.wait_for 施加超时后重试"
+      ],
+      "size": {
+        "width": 670,
+        "height": 7578
+      },
+      "position": {
+        "x": 5430,
+        "y": 48
+      }
+    },
+    {
+      "id": "oss",
+      "kind": "external",
+      "label": "阿里云 OSS",
+      "subtitle": "存放合成音频并返回可播放的签名 URL",
+      "size": {
+        "width": 360,
+        "height": 7578
+      },
+      "position": {
+        "x": 8084,
+        "y": 48
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "m1",
+      "source": "patient",
+      "target": "mw",
+      "kind": "sync",
+      "order": 1,
+      "label": "POST /api/dialogue/sessions/{id}/turn（multipart audio/*，≤10MB）",
+      "evidence": "source",
+      "route": {
+        "messageY": 286
+      }
+    },
+    {
+      "id": "m2",
+      "source": "mw",
+      "target": "metrics",
+      "kind": "sync",
+      "order": 2,
+      "label": "increment('http_requests')",
+      "evidence": "source",
+      "route": {
+        "messageY": 352
+      }
+    },
+    {
+      "id": "m3",
+      "source": "mw",
+      "target": "turnapi",
+      "kind": "sync",
+      "order": 3,
+      "label": "放行请求并计时（X-Process-Time）",
+      "evidence": "source",
+      "route": {
+        "messageY": 442
+      }
+    },
+    {
+      "id": "m4",
+      "source": "turnapi",
+      "target": "turnapi",
+      "kind": "sync",
+      "order": 4,
+      "label": "早退：error_response(code=40001, '音频文件为空'/'音频文件过大')",
+      "evidence": "source",
+      "route": {
+        "messageY": 618
+      }
+    },
+    {
+      "id": "m5",
+      "source": "turnapi",
+      "target": "svc",
+      "kind": "sync",
+      "order": 5,
+      "label": "get_session(session_id) 归属校验",
+      "evidence": "source",
+      "route": {
+        "messageY": 820
+      }
+    },
+    {
+      "id": "m6",
+      "source": "svc",
+      "target": "pg",
+      "kind": "sync",
+      "order": 6,
+      "label": "SELECT dialogue_sessions WHERE id",
+      "evidence": "source",
+      "route": {
+        "messageY": 910
+      }
+    },
+    {
+      "id": "m7",
+      "source": "pg",
+      "target": "svc",
+      "kind": "return",
+      "order": 7,
+      "replyTo": "m6",
+      "label": "DialogueSession | None",
+      "evidence": "source",
+      "route": {
+        "messageY": 976
+      }
+    },
+    {
+      "id": "m8",
+      "source": "svc",
+      "target": "turnapi",
+      "kind": "return",
+      "order": 8,
+      "replyTo": "m5",
+      "label": "session",
+      "evidence": "source",
+      "route": {
+        "messageY": 1042
+      }
+    },
+    {
+      "id": "m9",
+      "source": "turnapi",
+      "target": "turnapi",
+      "kind": "sync",
+      "order": 9,
+      "label": "早退：HTTPException 403（code 40301 无权访问该对话session）",
+      "evidence": "source",
+      "route": {
+        "messageY": 1210
+      }
+    },
+    {
+      "id": "m10",
+      "source": "turnapi",
+      "target": "svc",
+      "kind": "sync",
+      "order": 10,
+      "label": "handle_turn(session_id, audio_bytes)",
+      "evidence": "source",
+      "route": {
+        "messageY": 1400
+      }
+    },
+    {
+      "id": "m11",
+      "source": "svc",
+      "target": "pg",
+      "kind": "sync",
+      "order": 11,
+      "label": "SELECT dialogue_sessions（再次读取会话状态）",
+      "evidence": "source",
+      "route": {
+        "messageY": 1490
+      }
+    },
+    {
+      "id": "m12",
+      "source": "pg",
+      "target": "svc",
+      "kind": "return",
+      "order": 12,
+      "replyTo": "m11",
+      "label": "session{status, turn_count, scenario}",
+      "evidence": "source",
+      "route": {
+        "messageY": 1580
+      }
+    },
+    {
+      "id": "m13",
+      "source": "svc",
+      "target": "svc",
+      "kind": "sync",
+      "order": 13,
+      "label": "早退：raise ValueError → 40001（会话不存在/已结束/已达 5 轮）",
+      "evidence": "source",
+      "route": {
+        "messageY": 1768
+      }
+    },
+    {
+      "id": "m14",
+      "source": "svc",
+      "target": "orch",
+      "kind": "sync",
+      "order": 14,
+      "label": "recognize_speech(audio_bytes, session_id)",
+      "evidence": "source",
+      "route": {
+        "messageY": 1958
+      }
+    },
+    {
+      "id": "m15",
+      "source": "orch",
+      "target": "asr",
+      "kind": "sync",
+      "order": 15,
+      "label": "asr.recognize(audio_bytes, language='zh')",
+      "evidence": "source",
+      "route": {
+        "messageY": 2048
+      }
+    },
+    {
+      "id": "m16",
+      "source": "asr",
+      "target": "asr",
+      "kind": "sync",
+      "order": 16,
+      "label": "写临时 .wav，asyncio.to_thread 包装同步 SDK",
+      "evidence": "source",
+      "route": {
+        "messageY": 2094
+      }
+    },
+    {
+      "id": "m17",
+      "source": "asr",
+      "target": "bailian",
+      "kind": "sync",
+      "order": 17,
+      "label": "AudioRecognition.call(FUN-ASR, file://tmp.wav, language_hints=['zh'])",
+      "evidence": "source",
+      "route": {
+        "messageY": 2430
+      }
+    },
+    {
+      "id": "m18",
+      "source": "bailian",
+      "target": "asr",
+      "kind": "return",
+      "order": 18,
+      "replyTo": "m17",
+      "label": "200: output.results[0]{text, confidence} | 非 200: raise",
+      "evidence": "source",
+      "route": {
+        "messageY": 2544
+      }
+    },
+    {
+      "id": "m19",
+      "source": "asr",
+      "target": "orch",
+      "kind": "return",
+      "order": 19,
+      "replyTo": "m15",
+      "label": "ASRResult{text, confidence} | AIServiceTimeout | AIServiceUnavailable",
+      "evidence": "source",
+      "route": {
+        "messageY": 2722
+      }
+    },
+    {
+      "id": "m20",
+      "source": "orch",
+      "target": "svc",
+      "kind": "return",
+      "order": 20,
+      "replyTo": "m14",
+      "label": "{text, latency_ms, error: None|'timeout'|'unavailable'}",
+      "evidence": "source",
+      "route": {
+        "messageY": 2812
+      }
+    },
+    {
+      "id": "m21",
+      "source": "svc",
+      "target": "svc",
+      "kind": "sync",
+      "order": 21,
+      "label": "早退：'语音识别超时了，请再说一遍。' / '抱歉，我没有听清…'（ai_audio_url=None，不调 LLM）",
+      "evidence": "source",
+      "route": {
+        "messageY": 3040
+      }
+    },
+    {
+      "id": "m22",
+      "source": "svc",
+      "target": "svc",
+      "kind": "sync",
+      "order": 22,
+      "label": "早退分支：固定拒答话术 → 仅走 TTS 后落库返回，跳过 LLM",
+      "evidence": "source",
+      "route": {
+        "messageY": 3372
+      }
+    },
+    {
+      "id": "m23",
+      "source": "svc",
+      "target": "redis",
+      "kind": "sync",
+      "order": 23,
+      "label": "GET dialogue:context:{session_id}",
+      "evidence": "source",
+      "route": {
+        "messageY": 3562
+      }
+    },
+    {
+      "id": "m24",
+      "source": "redis",
+      "target": "svc",
+      "kind": "return",
+      "order": 24,
+      "replyTo": "m23",
+      "label": "history JSON（user/assistant 交替） | None",
+      "evidence": "source",
+      "route": {
+        "messageY": 3652
+      }
+    },
+    {
+      "id": "m25",
+      "source": "svc",
+      "target": "pg",
+      "kind": "sync",
+      "order": 25,
+      "label": "SELECT dialogue_turns WHERE turn_index>0 ORDER BY turn_index",
+      "evidence": "source",
+      "route": {
+        "messageY": 3908
+      }
+    },
+    {
+      "id": "m26",
+      "source": "pg",
+      "target": "svc",
+      "kind": "return",
+      "order": 26,
+      "replyTo": "m25",
+      "label": "[DialogueTurn…] → messages",
+      "evidence": "source",
+      "route": {
+        "messageY": 3998
+      }
+    },
+    {
+      "id": "m27",
+      "source": "svc",
+      "target": "orch",
+      "kind": "sync",
+      "order": 27,
+      "label": "generate_reply(messages + {user: user_text}, scenario)",
+      "evidence": "source",
+      "route": {
+        "messageY": 4152
+      }
+    },
+    {
+      "id": "m28",
+      "source": "orch",
+      "target": "llm",
+      "kind": "sync",
+      "order": 28,
+      "label": "llm.chat(messages, scenario=session.scenario)",
+      "evidence": "source",
+      "route": {
+        "messageY": 4242
+      }
+    },
+    {
+      "id": "m29",
+      "source": "llm",
+      "target": "llm",
+      "kind": "sync",
+      "order": 29,
+      "label": "早退：LLMResponse('抱歉，我无法回答这个问题…', finish_reason='safety')",
+      "evidence": "source",
+      "route": {
+        "messageY": 4438
+      }
+    },
+    {
+      "id": "m30",
+      "source": "llm",
+      "target": "llm",
+      "kind": "sync",
+      "order": 30,
+      "label": "_build_messages 注入场景 system_prompt + greeting",
+      "evidence": "source",
+      "route": {
+        "messageY": 4596
+      }
+    },
+    {
+      "id": "m31",
+      "source": "llm",
+      "target": "bailian",
+      "kind": "sync",
+      "order": 31,
+      "label": "Generation.call(qwen, messages, max_tokens, temperature)",
+      "evidence": "source",
+      "route": {
+        "messageY": 4888
+      }
+    },
+    {
+      "id": "m32",
+      "source": "bailian",
+      "target": "llm",
+      "kind": "return",
+      "order": 32,
+      "replyTo": "m31",
+      "label": "200: choices[0].message.content | 非 200: raise",
+      "evidence": "source",
+      "route": {
+        "messageY": 5002
+      }
+    },
+    {
+      "id": "m33",
+      "source": "llm",
+      "target": "llm",
+      "kind": "sync",
+      "order": 33,
+      "label": "content ← _get_fallback_response(scenario)，finish_reason='fallback'",
+      "evidence": "source",
+      "route": {
+        "messageY": 5262
+      }
+    },
+    {
+      "id": "m34",
+      "source": "llm",
+      "target": "orch",
+      "kind": "return",
+      "order": 34,
+      "replyTo": "m28",
+      "label": "LLMResponse{content, finish_reason: stop|safety|fallback}",
+      "evidence": "source",
+      "route": {
+        "messageY": 5488
+      }
+    },
+    {
+      "id": "m35",
+      "source": "orch",
+      "target": "svc",
+      "kind": "return",
+      "order": 35,
+      "replyTo": "m27",
+      "label": "{text: ai_text, latency_ms, error}",
+      "evidence": "source",
+      "route": {
+        "messageY": 5578
+      }
+    },
+    {
+      "id": "m36",
+      "source": "svc",
+      "target": "orch",
+      "kind": "sync",
+      "order": 36,
+      "label": "synthesize_speech(ai_text, voice='zhixiaoxuan')",
+      "evidence": "source",
+      "route": {
+        "messageY": 5668
+      }
+    },
+    {
+      "id": "m37",
+      "source": "orch",
+      "target": "tts",
+      "kind": "sync",
+      "order": 37,
+      "label": "tts.synthesize_to_url(text, voice)",
+      "evidence": "source",
+      "route": {
+        "messageY": 5758
+      }
+    },
+    {
+      "id": "m38",
+      "source": "tts",
+      "target": "redis",
+      "kind": "sync",
+      "order": 38,
+      "label": "GET tts:{md5(text|voice)}（URL 缓存）",
+      "evidence": "source",
+      "route": {
+        "messageY": 5848
+      }
+    },
+    {
+      "id": "m39",
+      "source": "redis",
+      "target": "tts",
+      "kind": "return",
+      "order": 39,
+      "replyTo": "m38",
+      "label": "oss_url（命中即返回） | None（继续合成）",
+      "evidence": "source",
+      "route": {
+        "messageY": 5938
+      }
+    },
+    {
+      "id": "m40",
+      "source": "tts",
+      "target": "bailian",
+      "kind": "sync",
+      "order": 40,
+      "label": "SpeechSynthesizer.call(text, voice, rate=0.9, volume=80)",
+      "evidence": "source",
+      "route": {
+        "messageY": 6210
+      }
+    },
+    {
+      "id": "m41",
+      "source": "bailian",
+      "target": "tts",
+      "kind": "return",
+      "order": 41,
+      "replyTo": "m40",
+      "label": "get_audio_data() 音频字节 | 非 200: raise | 失败/无 Key: b''",
+      "evidence": "source",
+      "route": {
+        "messageY": 6300
+      }
+    },
+    {
+      "id": "m42",
+      "source": "tts",
+      "target": "oss",
+      "kind": "sync",
+      "order": 42,
+      "label": "oss2.Bucket.put_object(音频) → 签名 URL",
+      "evidence": "source",
+      "route": {
+        "messageY": 6454
+      }
+    },
+    {
+      "id": "m43",
+      "source": "oss",
+      "target": "tts",
+      "kind": "return",
+      "order": 43,
+      "replyTo": "m42",
+      "label": "url | ''（OSS 未配置或上传失败 → 前端降级）",
+      "evidence": "source",
+      "route": {
+        "messageY": 6544
+      }
+    },
+    {
+      "id": "m44",
+      "source": "tts",
+      "target": "redis",
+      "kind": "sync",
+      "order": 44,
+      "label": "SETEX tts:{key} = oss_url, TTL 86400×7",
+      "evidence": "source",
+      "route": {
+        "messageY": 6634
+      }
+    },
+    {
+      "id": "m45",
+      "source": "tts",
+      "target": "orch",
+      "kind": "return",
+      "order": 45,
+      "replyTo": "m37",
+      "label": "audio_url | ''",
+      "evidence": "source",
+      "route": {
+        "messageY": 6700
+      }
+    },
+    {
+      "id": "m46",
+      "source": "orch",
+      "target": "svc",
+      "kind": "return",
+      "order": 46,
+      "replyTo": "m36",
+      "label": "{audio_url, latency_ms, error}",
+      "evidence": "source",
+      "route": {
+        "messageY": 6790
+      }
+    },
+    {
+      "id": "m47",
+      "source": "svc",
+      "target": "pg",
+      "kind": "sync",
+      "order": 47,
+      "label": "INSERT dialogue_turns(turn_index, user_text, ai_text, ai_audio_url, latency_ms) + UPDATE dialogue_sessions.turn_count",
+      "evidence": "source",
+      "route": {
+        "messageY": 6952
+      }
+    },
+    {
+      "id": "m48",
+      "source": "pg",
+      "target": "svc",
+      "kind": "return",
+      "order": 48,
+      "replyTo": "m47",
+      "label": "flush ok",
+      "evidence": "source",
+      "route": {
+        "messageY": 7018
+      }
+    },
+    {
+      "id": "m49",
+      "source": "svc",
+      "target": "redis",
+      "kind": "sync",
+      "order": 49,
+      "label": "SETEX dialogue:context:{id} history += {user, ai}, TTL 3600",
+      "evidence": "source",
+      "route": {
+        "messageY": 7108
+      }
+    },
+    {
+      "id": "m50",
+      "source": "svc",
+      "target": "turnapi",
+      "kind": "return",
+      "order": 50,
+      "replyTo": "m10",
+      "label": "{turn_index, user_text, ai_text, ai_audio_url, latency_ms, remaining_turns}",
+      "evidence": "source",
+      "route": {
+        "messageY": 7222
+      }
+    },
+    {
+      "id": "m51",
+      "source": "turnapi",
+      "target": "mw",
+      "kind": "return",
+      "order": 51,
+      "replyTo": "m3",
+      "label": "ApiResponse{code:0, data} | 40001（ValueError） | 50001（未捕获异常）",
+      "evidence": "source",
+      "route": {
+        "messageY": 7336
+      }
+    },
+    {
+      "id": "m52",
+      "source": "mw",
+      "target": "metrics",
+      "kind": "sync",
+      "order": 52,
+      "label": "observe('http_request_duration_ms')；≥500 → increment('http_errors') + record_error",
+      "evidence": "source",
+      "route": {
+        "messageY": 7474
+      }
+    },
+    {
+      "id": "m53",
+      "source": "mw",
+      "target": "patient",
+      "kind": "return",
+      "order": 53,
+      "replyTo": "m1",
+      "label": "200 JSON（文字回复 + ai_audio_url 播放地址）",
+      "evidence": "source",
+      "route": {
+        "messageY": 7564
+      }
+    }
+  ],
+  "executions": [
+    {
+      "id": "x-mw",
+      "participantId": "mw",
+      "start": {
+        "edgeId": "m1",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m53",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-api",
+      "participantId": "turnapi",
+      "start": {
+        "edgeId": "m3",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m51",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-svc-own",
+      "participantId": "svc",
+      "start": {
+        "edgeId": "m5",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m8",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-svc-turn",
+      "participantId": "svc",
+      "start": {
+        "edgeId": "m10",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m50",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-pg-get",
+      "participantId": "pg",
+      "start": {
+        "edgeId": "m6",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m7",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-pg-session",
+      "participantId": "pg",
+      "start": {
+        "edgeId": "m11",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m12",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-pg-ctx",
+      "participantId": "pg",
+      "start": {
+        "edgeId": "m25",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m26",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-pg-write",
+      "participantId": "pg",
+      "start": {
+        "edgeId": "m47",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m48",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-orch-asr",
+      "participantId": "orch",
+      "start": {
+        "edgeId": "m14",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m20",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-orch-llm",
+      "participantId": "orch",
+      "start": {
+        "edgeId": "m27",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m35",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-orch-tts",
+      "participantId": "orch",
+      "start": {
+        "edgeId": "m36",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m46",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-asr",
+      "participantId": "asr",
+      "start": {
+        "edgeId": "m15",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m19",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-bailian-asr",
+      "participantId": "bailian",
+      "start": {
+        "edgeId": "m17",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m18",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-llm",
+      "participantId": "llm",
+      "start": {
+        "edgeId": "m28",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m34",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-bailian-llm",
+      "participantId": "bailian",
+      "start": {
+        "edgeId": "m31",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m32",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-tts",
+      "participantId": "tts",
+      "start": {
+        "edgeId": "m37",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m45",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-bailian-tts",
+      "participantId": "bailian",
+      "start": {
+        "edgeId": "m40",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m41",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-oss",
+      "participantId": "oss",
+      "start": {
+        "edgeId": "m42",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m43",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-redis-ctx",
+      "participantId": "redis",
+      "start": {
+        "edgeId": "m23",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m24",
+        "at": "send"
+      }
+    },
+    {
+      "id": "x-redis-tts",
+      "participantId": "redis",
+      "start": {
+        "edgeId": "m38",
+        "at": "receive"
+      },
+      "end": {
+        "edgeId": "m39",
+        "at": "send"
+      }
+    }
+  ],
+  "layout": {
+    "participantOrder": [
+      "patient",
+      "mw",
+      "metrics",
+      "turnapi",
+      "svc",
+      "pg",
+      "orch",
+      "asr",
+      "bailian",
+      "redis",
+      "llm",
+      "tts",
+      "oss"
+    ],
+    "version": "adaptive-v2-elkjs-0.11.0",
+    "strategy": "sequence-0"
+  }
+}

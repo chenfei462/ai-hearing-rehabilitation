@@ -306,6 +306,13 @@
     "F-01": {
       "summary": "metrics endpoint auth contract mismatch (401 vs test expecting 200)",
       "status": "OPEN",
+      "flaggedDiscrepancy": {
+  "label": "FLAGGED-DISCREPANCY (未裁决，待 M0 Milestone Gate)",
+  "ledgerView": "TASK_LEDGER.json findings['F-01'].status = OPEN",
+  "catalogView": "docs/workflow/TASK_CATALOG.md 记 F-01 CLOSED via FIX-PERF-03",
+  "handling": "两文件既有 F-01 表述均原样保留、本任务不改写、不静默解决；M0 Milestone Gate 必须据当前证据裁决",
+  "statusUnchanged": "OPEN"
+},
       "disposition": "Max must judge API contract per §107; do NOT let Flash pick code-vs-test.",
       "severity": "P1"
     },
@@ -1273,7 +1280,33 @@
       "priorObservationRef": "lastRun_M0_006.baselineFindings[4]（ENV 笔记已写过『conftest.py:47 硬编码 localhost:6379/1』）",
       "notANewDiscoveryBecause": "事实本体已在 M0-006 ENV 笔记留痕；本条只是把它升格为可跟踪状态并补实测『当前惰性』判据。",
       "impact": "HD-N-10 ②（显式端口隔离）目前靠运行期 env 与 fixture patch 成立，仓库内无强制；与 postgres 侧的 :5432 禁区属同一隔离纪律缺口。",
-      "status": "OPEN-LATENT",
+      "status": "CLOSED",
+      "closureEvidence": {
+  "sealedAtCommit": "31e6fe8",
+  "sealedAtCommitFull": "31e6fe87af1b18913ef2047dbb38c3bbe661c01a",
+  "formalEvidenceRun": "wf_13f9c2b1-a02",
+  "verdictMode": "FULL_MODE 双模型证据（Reviewer A/B 与 Verifier = qmodel_38max；实施与 Machine Gate 执行手 = qfmodel）——非降级模式判据，Max 额度恢复后无需重新确认",
+  "verdictModeEvidence": "独立只读复核 .qoder/sessions/1fd76533-93be-48fa-afa3-8260219a300a/workflows/runs/wf_13f9c2b1-a02/output.json：ACTIVE_EXECUTION_MODE=FULL、DEFAULT_EXECUTION_MODE=FULL、MODEL_USAGE.REVIEW='qmodel_38max (Qwen3.8-Max) + FLASH_REVIEWER_B(qmodel_38max (Qwen3.8-Max))'、MODEL_USAGE.VERIFY='qmodel_38max (Qwen3.8-Max)'、ROLE_RUNTIME_MODELS={planner/explorer/reviewer/reviewerB/verifier/rca/snapshot/governanceWriter:'qmodel_38max (Qwen3.8-Max)'}、{worker,gate}='qfmodel (Qwen3.8-Flash)'、REVIEW_INVOCATIONS=[max-review,max-review-b]、HIGH_RISK=true、MAX_REVIEW.verdict=PASS、REPAIR_CYCLES_USED=0、WORKFLOW_STATUS=TASK_PASS",
+  "machineGate": "GATE_HEALTH requiredTotal=14 全部 passed + recordTotal=1 collected = owner 所述 15/15 总数；record 未谎称 required；门禁执行手在 FULL 模式下本就是 qfmodel（不影响 Reviewer/Verifier 为 Max 的事实）",
+  "reviewerA": "PASS (FULL_MODE：qmodel_38max 独立 invocation max-review)",
+  "reviewerB": "PASS (FULL_MODE：qmodel_38max 独立 invocation max-review-b，与 A 彼此不可见；HIGH_RISK=true ⇒ DOUBLE_REVIEW_REQUIRED=true 已满足)",
+  "verify": "TASK_PASS (FULL_MODE：qmodel_38max 独立验收 invocation)",
+  "taskDelta": "PASS",
+  "governanceGuard": "PASS",
+  "repairAttempts": 0,
+  "verdictModeCorrection": {
+    "priorMislabel": "此前本条记为 'FLASH_ONLY-mode verdicts (非 FULL_MODE 双模型证据；Max 额度恢复后须可重新确认)'，且 reviewerA/reviewerB/verify 均标注 (FLASH_ONLY-mode)",
+    "falsifiedBy": "verdictModeEvidence 所列 wf_13f9c2b1-a02 输出的字节证据——该 run 实际以 FULL 模式运行并由 Max 完成双独立 Review 与 Verify",
+    "rootCause": "任务合同 DEPENDENCIES/IN_SCOPE/AC-07 只对 F-69 的 run 模式做了核实，对 F-67 未查证即 blanket-assume 为 FLASH_ONLY；转录纪律把该错误假设原样写进权威账本。G-LEDGER-ASSERTIONS 只校验 token 存在、不校验 verdictMode 取值 ⇒ 无机器门禁可拦此类误标",
+    "impactIfUncorrected": "M0 Milestone Gate 与后续审计会把 F-67 读作降级模式判据，从而丢弃真实的 Max 双审/双模型证据，并对一个已按 FULL 封存的项目施加虚假的『Max 额度恢复后须可重新确认』义务",
+    "governanceFollowUp": "冻结合同 .qoder/workflow-state/m0-pregate-ledger-bookkeeping.spec.json 的 IN_SCOPE F-67 条目与 AC-07 文本仍写着 F-67 须标注 FLASH_ONLY-mode，属合同缺陷；验收标准文本只能由 owner/Max 在治理阶段重新裁定，实施者无权修改治理文件",
+    "specDefectFlagged": "F67-PROVENANCE-MODE-MISLABEL",
+    "at": "2026-10-12"
+  },
+  "sealScope": "seal 31e6fe8 仅改 backend/tests/conftest.py (+31) 与新增 backend/tests/test_redis_isolation.py (+111)",
+  "doNotReimplement": "已封存，本任务不得重实现",
+  "redisIsolationRule": "自动测试绝不得隐式连接宿主 Redis localhost:6379、无回退（隔离测试 Redis 此前为 localhost:16479）"
+},
       "disposition": "本批零改动（不动 conftest）。候选口径交人工：把 test_settings 的 REDIS_URL 改为读取显式 env 并默认指向非宿主端口，或加一条 required 门禁断言测试进程不打开 :6379。"
     },
     "F-68": {
@@ -1286,7 +1319,12 @@
       "priorArt": "F-50（P1-SECRET-SURFACE：三级 .dockerignore 全缺 + `COPY . .` ⇒ 秘密入层）——本条是【关闭 F-50 的那次修复】带来的新侧面，不是 F-50 本身。",
       "novelAspectOnly": "F-50 说的是秘密漏进镜像；本条说的是修好之后模板文件被一起挡在镜像外，方向相反、对象不同。",
       "impact": "低。若需修复，口径是把 `**/.env*` 收紧为 `**/.env` + `**/.env.*` 并加 `!**/.env.example`（Docker 支持 ! 反选），属新的实施决策，本批不改（改即作废刚取到的构建字节证据）。",
-      "status": "OPEN",
+      "status": "DEFERRED_NON_BLOCKING_P2",
+      "deferralEvidence": {
+  "note": "`**/.env*` 亦排除 backend/.env.example，但运行镜像已核实 NO_DOTENV 且 NO_VENV 并正常构建",
+  "dockerignoreUnchangedThisBatch": true,
+  "blocksM0": false
+},
       "disposition": "随 FIX-DEP-01 封存时一并如实披露；不在本批改动 .dockerignore。"
     },
     "ENV-F04": {
@@ -1297,7 +1335,19 @@
       "title": "宿主 egress 经 fake-IP 代理（198.18.0.x）时对 deb.debian.org / registry 间歇 500+unexpected EOF",
       "detail": "compose 构建在 backend 基础层 `apt-get install ffmpeg libsndfile1` 失败：libx11-6 与 libelf1t64 拉取报 500 reading HTTP response body: unexpected EOF，IP 落在 198.18.0.0/15（典型 fake-IP 代理段），exit 100。同一时间窗内 node:20-alpine 里新锁 `npm ci` 首跑也 exit 1、重试 exit 0。⇒ 属机器/网络条件，不是仓库缺陷，也不是 HD-N-09 丙的 compose 项目名修复失败。",
       "impact": "HD-N-09 丙所需的『真实 compose build 成功』证据获取受阻于 egress；重试可成，不得为此放松构建门。",
-      "status": "OPEN-ENVIRONMENT",
+      "status": "ACCEPTED_EXTERNAL_NETWORK_FLAKE",
+      "resolutionEvidence": {
+  "observed": "相同 docker build 命令因外部网络抖动失败、之后成功",
+  "policy": "BOUNDED_RETRY_ONLY",
+  "policyDetail": "逐字节相同命令重试，绝不 retry-until-green，达上限记 BLOCKED_EXTERNAL_NETWORK",
+  "forbiddenRemediations": [
+    "改基础镜像",
+    "加 --fix-missing",
+    "换镜像源",
+    "降级依赖",
+    "编辑 Dockerfile 强行变绿"
+  ]
+},
       "disposition": "留痕；不改 Dockerfile 镜像源、不加 --fix-missing、不换基础镜像（任何一项都等于放松门）。"
     },
     "F-69": {
@@ -1309,7 +1359,20 @@
       "detail": "原文口径：『解析优先级：compose 顶层 `name:` > `COMPOSE_PROJECT_NAME`（环境变量/.env）> 项目目录名规范化』。实测（本会话现场，只读）：加了顶层 `name: ai-hearing-rehabilitation` 之后，`COMPOSE_PROJECT_NAME=rotest docker compose config` 仍输出 `name: rotest`（exit 0）⇒ 前两级顺序与文档相反。该文档是 M0-008 的封存产物，其 F-M0008-01 结论（项目名为空导致 compose 全命令 exit 1）不受影响，错的只是这三者排序。",
       "dedupCheck": "入账前按本链去重纪律回查：TASK_LEDGER.json 与 GOAL_PROGRESS.md 中 'precedence' 与 'DEPLOY_BASELINE.md:78' 命中数均为 0；catalog / DEPLOY_BASELINE 内既有条目只陈述失败事实与修复建议，未主张过正确顺序 ⇒ 非重复、非既有记录的复现。",
       "impact": "两处实际决策依赖这条口径：(a) 若以为顶层 name: 不可被 env 覆盖，会误判『硬编码项目名使多检出共享 postgres_data/redis_data 卷且无法按开发者隔离』——实测可隔离；(b) HD-N-09 的修复方案比较当时是在这个错误排序上做的。",
-      "status": "OPEN",
+      "status": "CLOSED",
+      "closureEvidence": {
+  "sealedAtCommitFull": "05a0a8b1aa0cec28d95c47a13e065318fe60be51",
+  "sealedCommitMessage": "docs(deploy): correct compose project-name precedence",
+  "formalEvidenceRun": "wf_c9e9ec4e-160",
+  "REPAIR_CYCLES_USED": 1,
+  "frozenSpec": ".qoder/workflow-state/FIX-DOC-DEPLOY-01-31e6fe8.spec.json",
+  "verdictMode": "FLASH_ONLY-mode verdicts (非 FULL_MODE 双模型证据；Max 额度恢复后须可重新确认)",
+  "verdictModeEvidence": "独立只读复核 .qoder/sessions/17e35f7d-d0a7-41e1-9eca-5673ddf75925/workflows/runs/wf_c9e9ec4e-160/output.json：ACTIVE_EXECUTION_MODE=FLASH_ONLY、DEFAULT_EXECUTION_MODE=FULL、MODEL_USAGE={PLAN/EXPLORER/IMPLEMENT/MACHINE_GATE/REVIEW/VERIFY/RCA/SNAPSHOT} 全为 qfmodel (Qwen3.8-Flash)、ROLE_RUNTIME_MODELS 全部角色 = qfmodel ⇒ 本条 FLASH_ONLY 标注与该 run 的真实模式一致（与 F-67 的 FULL_MODE 形成对照，二者判据模式必须逐条按各自 run 取证，不得 blanket 假设）",
+  "taskPassFormula": "MACHINE_GATE_PASS(10/10 required 绿 + 1 record 采集) AND HIGH-risk 双独立 Review A PASS AND Review B PASS AND Verify PASS AND Task Delta PASS AND Governance Guard PASS = 全子句 true",
+  "gDocDeltaOnlyCorrected": "G-DOC-DELTA-ONLY 已订正为字面点号 DEPLOY_BASELINE[.]md 形式（禁双反斜杠式）",
+  "correctedEngineeringFact": "优先级：COMPOSE_PROJECT_NAME（进程 env > 根 .env）> compose 顶层 name: > 规范化项目目录名，Compose 5.1.4 实测",
+  "sealScope": "seal 05a0a8b 仅改 deliverables/baseline/DEPLOY_BASELINE.md +2/-1，L78 现文已是正确优先级"
+},
       "disposition": "本批不改 deliverables/baseline/DEPLOY_BASELINE.md：人工授权的治理写范围恰为 MILESTONES.md + TASK_CATALOG.md 两文件，扩到基线产物即越权。事实已在 catalog 附录与本条留档，交人工决定是否立一条 docs 修复任务。"
     }
   },
@@ -1462,7 +1525,24 @@
       "decisionPackageRoutedBy": "人工（M0 PRE-GATE HUMAN DECISION CLEARANCE（2026-10-10） §1.F：同 HD-N-05，读真实记录形成 Decision Package，不得实施）",
       "statusNote": "DECISION-PACKAGE-REQUIRED-NOT-IMPLEMENTED（:5432 未知实例仍禁止触碰，BLOCKED_UNSAFE_DATABASE_TARGET 继续有效）",
       "decisionPackage": "见 phaseH_decisionPackages.packages['HD-N-10']（只读，未实施）",
-      "decisionState": "RULED-1PLUS2-PARTIAL-1STILL-HUMAN",
+      "decisionState": "DECIDED",
+      "finalRuling": {
+  "HOST_5432_CLASSIFICATION": "PROTECTED_UNKNOWN_HOST_DATABASE",
+  "HOST_5432_AUTOMATED_DESTRUCTIVE_USE": "DENIED",
+  "forbiddenOperations": [
+    "migration",
+    "seed",
+    "truncate",
+    "drop",
+    "write",
+    "restart",
+    "stop",
+    "destructive SQL"
+  ],
+  "noProbingForContent": "禁止仅为窥探内容而连接探测宿主 :5432",
+  "automatedTestIsolation": "自动测试必须使用隔离的非 5432 PostgreSQL（项目自建测试实例此前为 localhost:55432）",
+  "provenance": "FLASH_ONLY-mode 转录（Max 额度恢复后须可重新确认）"
+},
       "materialRevision": "PID 由旧记 6740 漂移为实测 6888；身份结论不变 = 原生 Windows 服务 postgresql-x64-15、非容器（版本串 15.19 与 listen_addresses='*' 属子代理报告、编排器未复跑，见 phaseH_decisionPackages.orchestratorIndependentVerification.notIndependentlyReverified）；新增真实写入向量 F-66 与 CI 盲区 F-64",
       "resolution": {
         "choice": "①+② safe isolation",
@@ -1565,6 +1645,27 @@
         "不改 classifyDelta 来放行本任务": "classifyDelta 未被改动（本轮 diff 仅两个治理文件的 argv 部分）",
         "SCRIPT_SIDE_HASH_AVAILABLE 必须仍为 false": "实测 :251 仍为 false，禁用 API 扫描 FORBIDDEN_HITS=0"
       }
+    },
+    {
+      "id": "HD-N-FIX-GOV-009-E2E-FLASH",
+      "at": "2026-10-12",
+      "decisionState": "APPROVED_BY_HUMAN_THIS_SESSION",
+      "decision": "FIX-GOV-009 正式治理端到端在 FLASH_ONLY 下需要一条独立于 HD-N-FIX-GOV-009-E2E 的治理写授权（feature 级 FLASH_ONLY 降级不继承治理写权限）。",
+      "question": "FIX-GOV-009 正式治理端到端在 FLASH_ONLY 下需要一条独立于 HD-N-FIX-GOV-009-E2E 的治理写授权。你现在给不给？",
+      "blocks": "Task #18 FIX-GOV-009 formal governance run 的治理写通道；不授权本 #17 run、不授权任何账本写入、不授权 M1/#19/M0 Milestone Gate。",
+      "resolution": {
+        "choice": "单独授权，ID 用 -FLASH 后缀",
+        "scope": "FLASH_ONLY governance write channel for the later task #18 FIX-GOV-009 formal run only, taskType governance, authorized write set is an exact-path allowlist of exactly one file docs/workflow/TASK_CATALOG.md with no wildcard and no directory-level permission, the worker may not add, remove or widen it, deliverables/overnight/TASK_LEDGER.json is the intended sourcePath for the independent authorization verification and must never be writable in that run, purpose solely to obtain formal TASK_DELTA_PASS plus GOVERNANCE_GUARD_PASS evidence for the governance channel",
+        "state": "APPROVED_BY_HUMAN_THIS_SESSION",
+        "at": "2026-10-12",
+        "authorizationId": "HD-N-FIX-GOV-009-E2E",
+        "flashOnlyAuthorizationId": "HD-N-FIX-GOV-009-E2E-FLASH",
+        "source": "human authorization prompt answered in this session on 2026-10-12, recorded by the #17 retry-2 bookkeeping run; distinct from the GPT handover source used by HD-N-05/HD-N-10/HD-N-14",
+        "userVerbatim": [
+          "单独授权，ID 用 -FLASH 后缀"
+        ]
+      },
+      "provenance": "FLASH_ONLY-mode 转录：本 run 只如实登记房主已授予的授权，不代为行使；#18 必须自行经独立只读授权核验（checkGovernanceAuthorization）取得形式判据。"
     }
   ],
   "pendingFixTasks": {
@@ -1772,6 +1873,20 @@
     },
     "FIX-GOV-009": {
       "status": "AUTHORIZED_GPT_INDEPENDENT_VERIFIED_AWAITING_SEAL",
+      "pendingAuthorization": {
+  "humanAuthorizationId": "HD-N-FIX-GOV-009-E2E",
+  "purpose": "仅允许后续任务在一个真实 project-feature-delivery run 内证明精确路径授权写集可以形式化取得 Task Delta PASS 与 Governance Guard PASS；非编辑任何事物的通用许可证",
+  "constraints": {
+    "requiredTaskType": "governance",
+    "humanAuthorizationIdMustMatch": "HD-N-FIX-GOV-009-E2E",
+    "writeSetMustBeExactPathAllowlist": "是（无通配符、无目录级权限）",
+    "workerMayNotAddRemoveOrWiden": "是",
+    "mustCarryIndependentFlashOnlyAuthorizationId": "是，且必须不同于 humanAuthorizationId（feature 级 FLASH_ONLY 不继承治理写权限）",
+    "intendedSourcePath": "deliverables/overnight/TASK_LEDGER.json"
+  },
+  "scheduling": "FIX-GOV-009 保持排期（后续正式端到端 run），本 run 不启动该 run",
+  "f61": "F-61 必须保持 OPEN——本任务禁止关闭，仅当后续正式 run 自己签发 Task Delta PASS 与 Governance Guard PASS 才能闭合"
+},
       "title": "Human-authorized governance write-set protocol（为 F-61 建立合法的治理任务写入通道）",
       "registeredAt": "2026-10-10T16:24:59Z",
       "authorizedToImplementTonight": false,
@@ -4009,5 +4124,16 @@
       "本链第三次同类自查（F-64/F-66 之后）⇒ 规则沿用：登记任何新 F-*/ENV-* 前必须回查台账 findings、GOAL_PROGRESS 原文。"
     ],
     "redLinesHonored": "零 push / merge / rebase / tag / git reset / git clean / git stash；每次仅 git add -- <精确路径>（无 add . / -A）；宿主 :5432 零连接；既有容器与数据卷零启停零删除；Secret 值零输出；仅新建并使用带标签的一次性隔离资源（:55432 / :16479）。"
-  }
+  },
+  "executionModeProvenance": {
+  "ownerAuthorizationVerbatim": "全部先用flash完成",
+  "authorizedAt": "2026-10-12",
+  "DEFAULT_EXECUTION_MODE": "FULL",
+  "FULL_MODE_remains_policy_target": "是",
+  "automaticModelFallbackForbidden": "是（绝不使用 qmodel_38max/第三模型/default/auto/fallback）",
+  "reconfirmAfterMaxQuotaRecovery": "仅适用于本 run 自身产出的判据（这些判据须可重新确认）；不适用于既往 run 已按其真实模式取证的封存判据 —— 例如 F-67 的 wf_13f9c2b1-a02 为 FULL_MODE Max 双模型证据，不存在『待 Max 额度恢复后重新确认』义务",
+  "verdictLabeling": "适用范围限定：本标注只约束【本次 bookkeeping run 自己产出的判据】（须标注 FLASH_ONLY-mode verdicts，绝不冒充 FULL_MODE 双模型证据）。对【既往 run 的封存判据】一律按各 run 输出中的 ACTIVE_EXECUTION_MODE / MODEL_USAGE / ROLE_RUNTIME_MODELS 逐条取证转录，禁止 blanket 假设为同一模式 —— 已核实：F-69（wf_c9e9ec4e-160）=FLASH_ONLY，F-67（wf_13f9c2b1-a02）=FULL。此前把 F-67 一并标为 FLASH_ONLY 属转录缺陷，见 findings.F-67.closureEvidence.verdictModeCorrection（blocker F67-PROVENANCE-MODE-MISLABEL）",
+  "labelingScopeIncidentCorrected": "F67-PROVENANCE-MODE-MISLABEL（2026-10-12 修复）：合同的 DEPENDENCIES/IN_SCOPE/AC-07 只核实了 F-69 的 run 模式，对 F-67 未查证即 blanket-assume FLASH_ONLY，并由转录带入权威账本。G-LEDGER-ASSERTIONS 只校验 token 存在、不校验 verdictMode 取值 ⇒ 无机器门禁可拦，须由独立 Reviewer 逐条比对 verdictMode 与所引 run 的 ACTIVE_EXECUTION_MODE。合同文本的更正属治理裁定，交 owner/Max。",
+  "authorizedContext": "两次 FULL_MODE 派发被 qmodel_38max 信用额度拦截后由 owner 显式授权"
+}
 }
